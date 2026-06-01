@@ -2,7 +2,7 @@ from django import template
 from django.core.cache import cache
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from configuracion.models import Materia
+from programacion.configuracion.models import Materia
 
 register = template.Library()
 

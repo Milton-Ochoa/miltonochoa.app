@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from configuracion.models import Profesor, Materia
+from programacion.configuracion.models import Profesor, Materia
 
 
 class ProfesorSerializer(serializers.ModelSerializer):

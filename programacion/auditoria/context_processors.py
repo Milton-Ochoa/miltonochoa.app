@@ -6,7 +6,7 @@ def alertas_vigentes(request):
         return {}
     count = cache.get('alertas_vigentes_count')
     if count is None:
-        from auditoria.models import AlertaAuditoria
+        from programacion.auditoria.models import AlertaAuditoria
         count = AlertaAuditoria.objects.filter(vigente=True).count()
         cache.set('alertas_vigentes_count', count, 60)
     return {'alertas_vigentes_count': count}

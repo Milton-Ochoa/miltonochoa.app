@@ -17,8 +17,8 @@ from datetime import date
 from django.core.cache import cache
 from django.utils import timezone
 
-from auditoria.models import AlertaAuditoria
-from colegios.models import Clase, Asignacion
+from programacion.auditoria.models import AlertaAuditoria
+from programacion.colegios.models import Clase, Asignacion
 
 # Clave de caché compartida entre engine.py y signals.py.
 # CRÍTICO: si algún módulo invalida la caché, debe usar esta misma constante

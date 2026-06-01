@@ -56,7 +56,7 @@ class ControlAccesoMiddleware:
             return self.get_response(request)
 
         try:
-            from configuracion.models import ColegioAnio  # import diferido: evita circular import al cargar el módulo
+            from programacion.configuracion.models import ColegioAnio  # import diferido: evita circular import al cargar el módulo
             perfil = request.user.perfil_colegio
             request.perfil_colegio  = perfil
             request.perfil_profesor = None

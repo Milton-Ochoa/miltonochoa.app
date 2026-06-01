@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from auditoria.engine import sincronizar
+from programacion.auditoria.engine import sincronizar
 
 
 class Command(BaseCommand):

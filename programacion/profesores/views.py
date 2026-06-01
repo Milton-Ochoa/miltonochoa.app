@@ -2,8 +2,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from datetime import time, date
-from colegios.models import Clase, Asignacion, ClaseParticular, Grado
-from configuracion.models import Colegio, Profesor, NombreLibro, Unidad, Materia
+from programacion.colegios.models import Clase, Asignacion, ClaseParticular, Grado
+from programacion.configuracion.models import Colegio, Profesor, NombreLibro, Unidad, Materia
 from collections import defaultdict
 
 

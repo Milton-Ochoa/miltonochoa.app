@@ -9,9 +9,9 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from datetime import date, time
 
-from configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia
-from colegios.models import Bloque, Asignacion, Clase, ClaseParticular, Grado
-from colegios.utils import (
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia
+from programacion.colegios.models import Bloque, Asignacion, Clase, ClaseParticular, Grado
+from programacion.colegios.utils import (
     extraer_numero_grado,
     calcular_rango_fechas,
     ordenar_grados,
@@ -385,7 +385,7 @@ class ConstruirStatsTest(TestCase):
             hora_inicio=time(8, 0), hora_fin=time(10, 0),
         )
         self.libro = NombreLibro.objects.create(nombre='Libro Stats Test')
-        from configuracion.models import Unidad
+        from programacion.configuracion.models import Unidad
         self.unidad1 = Unidad.objects.create(
             libro=self.libro, materia=self.materia, numero=1, nombre='Unidad 1'
         )
@@ -413,7 +413,7 @@ class ConstruirStatsTest(TestCase):
         )
 
     def test_unidad_usada_una_vez_es_dado(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         self._clase('1')
         stats = _construir_stats(self.colegio)
         libros = stats['11-1']['Matematicas']['libros']
@@ -423,7 +423,7 @@ class ConstruirStatsTest(TestCase):
         self.assertEqual(u1['tipo'], 'dado')
 
     def test_unidad_usada_dos_veces_es_repetido(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         self._clase('1', fecha=date(2026, 3, 10))
         self._clase('1', fecha=date(2026, 3, 11))
         stats = _construir_stats(self.colegio)
@@ -435,7 +435,7 @@ class ConstruirStatsTest(TestCase):
         self.assertEqual(u1['count'], 2)
 
     def test_unidad_en_clase_pero_no_en_libro_es_invalido(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         self._clase('99')
         stats = _construir_stats(self.colegio)
         libros = stats['11-1']['Matematicas']['libros']
@@ -446,7 +446,7 @@ class ConstruirStatsTest(TestCase):
         self.assertEqual(u99['tipo'], 'invalido')
 
     def test_clase_cancelada_no_aparece_en_conteo(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         self._clase('1', cancelada=True)
         stats = _construir_stats(self.colegio)
         unidades = stats.get('11-1', {}).get('Matematicas', {}).get('unidades', [])
@@ -456,7 +456,7 @@ class ConstruirStatsTest(TestCase):
             self.assertEqual(u1['count'], 0)
 
     def test_clase_evento_no_aparece_en_conteo(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         clase = Clase.objects.create(
             colegio=self.colegio, bloque=self.bloque,
             fecha=date(2026, 3, 10),
@@ -470,7 +470,7 @@ class ConstruirStatsTest(TestCase):
             self.assertEqual(u1['count'], 0)
 
     def test_grado_sin_asignacion_no_aparece(self):
-        from colegios.views import _construir_stats
+        from programacion.colegios.views import _construir_stats
         grado2 = Grado.objects.create(nombre='10-1')
         bloque2 = Bloque.objects.create(
             colegio=self.colegio, grado=grado2,
@@ -505,7 +505,7 @@ class HistorialCambioTest(TestCase):
             {'accion': 'add_bloque', 'grado': '11-1',
              'hora_inicio': '08:00', 'hora_fin': '10:00', 'orden': 1}
         )
-        from colegios.models import HistorialCambio
+        from programacion.colegios.models import HistorialCambio
         self.assertTrue(
             HistorialCambio.objects.filter(
                 colegio=self.colegio, tipo='crear', objeto_tipo='Bloque'
@@ -657,7 +657,7 @@ class KanbanHTMXTest(TestCase):
         self.assertEqual(r.status_code, 302)
 
     def test_cambiar_estado_htmx_devuelve_html_card(self):
-        from pendientes.models import Tarea
+        from programacion.pendientes.models import Tarea
         t = Tarea.objects.create(titulo='Tarea estado', creado_por=self.admin)
         r = self.client.post(
             f'/pendientes/cambiar-estado/{t.id}/gestion/',

@@ -13,7 +13,7 @@ import logging
 
 from .models import UsuarioColegio, UsuarioProfesor
 from .ratelimit import rate_limit
-from configuracion.models import Colegio, Profesor
+from programacion.configuracion.models import Colegio, Profesor
 
 logger = logging.getLogger('aamo')
 
@@ -52,7 +52,7 @@ def login_redirect(request):
         return redirect('home')
     try:
         perfil = request.user.perfil_colegio
-        from configuracion.models import ColegioAnio
+        from programacion.configuracion.models import ColegioAnio
         ca = perfil.colegio.anios.filter(activo=True).order_by('-anio').first()
         id_col = ca.id if ca else ''
         return redirect(f'{reverse("dashboard")}?id_col={id_col}')

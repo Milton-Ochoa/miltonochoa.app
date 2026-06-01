@@ -8,9 +8,9 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import Informe
-from configuracion.models import Profesor
-from colegios.models import Clase, Asignacion
-from colegios.historial import registrar_cambio
+from programacion.configuracion.models import Profesor
+from programacion.colegios.models import Clase, Asignacion
+from programacion.colegios.historial import registrar_cambio
 import json
 import logging
 import re

@@ -4,7 +4,7 @@ Tests del endpoint /api/v1/profesores/.
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from configuracion.models import Profesor, Materia
+from programacion.configuracion.models import Profesor, Materia
 
 
 def _make_profesor(**kwargs):

@@ -7,7 +7,7 @@ Middleware: ControlAccesoMiddleware
 from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from configuracion.models import Colegio, ColegioAnio, Profesor
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 from usuarios.models import UsuarioColegio, UsuarioProfesor
 from usuarios.ratelimit import rate_limit
 

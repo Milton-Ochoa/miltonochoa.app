@@ -7,10 +7,10 @@ from django.db.models import Q
 from datetime import date
 from collections import defaultdict
 
-from colegios.models import HistorialCambio, Bloque, Clase
-from colegios.historial import aplicar_filtros_historial
-from colegios.utils import extraer_numero_grado, ordenar_grados
-from configuracion.models import Colegio, ColegioAnio, Profesor
+from programacion.colegios.models import HistorialCambio, Bloque, Clase
+from programacion.colegios.historial import aplicar_filtros_historial
+from programacion.colegios.utils import extraer_numero_grado, ordenar_grados
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 
 
 def home(request):

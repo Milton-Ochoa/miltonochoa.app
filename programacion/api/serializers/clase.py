@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from colegios.models import Clase, ClaseParticular
+from programacion.colegios.models import Clase, ClaseParticular
 
 
 class ClaseSerializer(serializers.ModelSerializer):

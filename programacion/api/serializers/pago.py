@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from exportar.models import PagoRealizado
+from programacion.exportar.models import PagoRealizado
 
 
 class PagoRealizadoSerializer(serializers.ModelSerializer):

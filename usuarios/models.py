@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from configuracion.models import Colegio, Profesor
+from programacion.configuracion.models import Colegio, Profesor
 
 
 class UsuarioColegio(models.Model):

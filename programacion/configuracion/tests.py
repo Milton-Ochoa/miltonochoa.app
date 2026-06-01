@@ -4,7 +4,7 @@ Modelos: Materia, NombreLibro, Unidad, Colegio, Profesor
 """
 from django.test import TestCase
 from django.db import IntegrityError
-from configuracion.models import Materia, NombreLibro, Unidad, Colegio, Profesor
+from programacion.configuracion.models import Materia, NombreLibro, Unidad, Colegio, Profesor
 
 
 # ── NombreLibro ──────────────────────────────────────────────

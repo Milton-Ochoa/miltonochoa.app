@@ -5,8 +5,8 @@ from datetime import date
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from configuracion.models import Colegio, ColegioAnio, Profesor
-from exportar.models import PagoRealizado
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
+from programacion.exportar.models import PagoRealizado
 
 
 def _setup():

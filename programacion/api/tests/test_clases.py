@@ -5,8 +5,8 @@ from datetime import date, time
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from configuracion.models import Colegio, ColegioAnio, Profesor, Materia
-from colegios.models import Grado, Bloque, Clase, ClaseParticular
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, Materia
+from programacion.colegios.models import Grado, Bloque, Clase, ClaseParticular
 
 
 def _setup_base():

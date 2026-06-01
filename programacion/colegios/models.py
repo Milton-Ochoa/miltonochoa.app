@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User as _User
 from django.core.exceptions import ValidationError
-from configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia
 from datetime import date
 
 

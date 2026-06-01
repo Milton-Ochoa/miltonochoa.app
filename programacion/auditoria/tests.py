@@ -1,8 +1,8 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 
-from auditoria.models import AlertaAuditoria
-from configuracion.models import Colegio, ColegioAnio
+from programacion.auditoria.models import AlertaAuditoria
+from programacion.configuracion.models import Colegio, ColegioAnio
 
 
 class AlertaAuditoriaModelTest(TestCase):

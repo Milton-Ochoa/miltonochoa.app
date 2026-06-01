@@ -1,6 +1,6 @@
 from django.db import models
-from configuracion.models import Profesor
-from colegios.models import Clase, ClaseParticular
+from programacion.configuracion.models import Profesor
+from programacion.colegios.models import Clase, ClaseParticular
 
 
 class Informe(models.Model):

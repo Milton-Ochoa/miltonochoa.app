@@ -8,9 +8,9 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from datetime import date
 from datetime import time as dt_time
-from configuracion.models import Colegio, ColegioAnio, Profesor, Materia
-from colegios.models import Bloque, Clase, ClaseParticular, Grado
-from informes.models import Informe
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, Materia
+from programacion.colegios.models import Bloque, Clase, ClaseParticular, Grado
+from programacion.informes.models import Informe
 from usuarios.models import UsuarioColegio, UsuarioProfesor
 
 

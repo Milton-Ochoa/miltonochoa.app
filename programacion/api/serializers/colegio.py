@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from configuracion.models import Colegio, ColegioAnio
+from programacion.configuracion.models import Colegio, ColegioAnio
 
 
 class ColegioSerializer(serializers.ModelSerializer):

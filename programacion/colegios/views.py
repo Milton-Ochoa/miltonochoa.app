@@ -16,7 +16,7 @@ import json
 import logging
 import threading
 
-from configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Unidad, Materia
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Unidad, Materia
 from .models import Bloque, Clase, Asignacion, Grado, HistorialCambio
 from .historial import registrar_cambio, aplicar_filtros_historial
 from .utils import extraer_numero_grado, ordenar_grados
@@ -1073,8 +1073,8 @@ def dashboard_colegios(request):
 
     # Alertas de auditoría vigentes para el colegio seleccionado
     if request.user.is_staff and ctx.get('sel_col'):
-        from auditoria.models import AlertaAuditoria
-        from auditoria.engine import sincronizar
+        from programacion.auditoria.models import AlertaAuditoria
+        from programacion.auditoria.engine import sincronizar
 
         def _sync_safe():
             try:

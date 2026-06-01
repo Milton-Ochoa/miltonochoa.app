@@ -6,10 +6,10 @@ import json
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from datetime import date, time
-from configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia, Unidad
-from colegios.models import Asignacion, Clase, ClaseParticular, Grado
+from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia, Unidad
+from programacion.colegios.models import Asignacion, Clase, ClaseParticular, Grado
 from usuarios.models import UsuarioProfesor
-from profesores.views import extraer_minutos, _resolver_unidad, _libro_para_fecha
+from programacion.profesores.views import extraer_minutos, _resolver_unidad, _libro_para_fecha
 from collections import defaultdict
 
 

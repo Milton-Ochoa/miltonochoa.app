@@ -22,10 +22,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from configuracion.models import Profesor, NombreLibro, Unidad, ColegioAnio
-from colegios.models import Clase, Asignacion, ClaseParticular, Bloque
-from colegios.utils import extraer_numero_grado, ordenar_grados
-from exportar.models import PagoRealizado
+from programacion.configuracion.models import Profesor, NombreLibro, Unidad, ColegioAnio
+from programacion.colegios.models import Clase, Asignacion, ClaseParticular, Bloque
+from programacion.colegios.utils import extraer_numero_grado, ordenar_grados
+from programacion.exportar.models import PagoRealizado
 
 
 # ══════════════════════════════════════════════════════════════

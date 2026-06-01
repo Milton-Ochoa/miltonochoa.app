@@ -7,7 +7,7 @@ import json
 from django.test import TestCase, Client
 from django.core.cache import cache
 from django.contrib.auth.models import User
-from configuracion.models import Colegio, Profesor
+from programacion.configuracion.models import Colegio, Profesor
 from usuarios.models import UsuarioProfesor
 
 

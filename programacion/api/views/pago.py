@@ -1,8 +1,8 @@
 from rest_framework import mixins, viewsets
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
-from exportar.models import PagoRealizado
-from api.serializers import PagoRealizadoSerializer
+from programacion.exportar.models import PagoRealizado
+from programacion.api.serializers import PagoRealizadoSerializer
 
 
 class PagoRealizadoViewSet(

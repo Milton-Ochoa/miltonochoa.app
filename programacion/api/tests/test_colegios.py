@@ -4,7 +4,7 @@ Tests del endpoint /api/v1/colegios/ y /api/v1/colegios-anio/.
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from configuracion.models import Colegio, ColegioAnio
+from programacion.configuracion.models import Colegio, ColegioAnio
 
 
 def _make_colegio(**kwargs):

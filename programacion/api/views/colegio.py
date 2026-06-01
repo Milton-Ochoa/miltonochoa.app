@@ -1,8 +1,8 @@
 from rest_framework import mixins, viewsets
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
-from configuracion.models import Colegio, ColegioAnio
-from api.serializers import ColegioSerializer, ColegioAnioSerializer
+from programacion.configuracion.models import Colegio, ColegioAnio
+from programacion.api.serializers import ColegioSerializer, ColegioAnioSerializer
 
 
 class ColegioViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):

@@ -14,7 +14,7 @@ from .models import NombreLibro, Materia, Unidad, Colegio, ColegioAnio, Profesor
 from .forms import ColegioForm, ProfesorForm
 from .colombia_geo import DEPARTAMENTOS, DEPARTAMENTOS_CIUDADES, ciudades_de
 from usuarios.ratelimit import rate_limit
-from colegios.historial import registrar_cambio
+from programacion.colegios.historial import registrar_cambio
 
 # Decorador reutilizable — centraliza la verificación de superusuario para
 # todas las vistas de configuración sin repetir el lambda en cada una.

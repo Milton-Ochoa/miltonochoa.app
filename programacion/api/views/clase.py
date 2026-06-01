@@ -2,8 +2,8 @@ from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
-from colegios.models import Clase, ClaseParticular
-from api.serializers import ClaseSerializer, ClaseParticularSerializer
+from programacion.colegios.models import Clase, ClaseParticular
+from programacion.api.serializers import ClaseSerializer, ClaseParticularSerializer
 
 
 class ClaseFilter(filters.FilterSet):

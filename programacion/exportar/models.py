@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from configuracion.models import Profesor, ColegioAnio
+from programacion.configuracion.models import Profesor, ColegioAnio
 
 
 class PagoRealizado(models.Model):
