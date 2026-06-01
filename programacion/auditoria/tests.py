@@ -53,12 +53,12 @@ class ListaAlertasViewTest(TestCase):
         )
 
     def test_no_autenticado_redirige(self):
-        r = self.client.get('/auditoria/')
+        r = self.client.get('/programacion/auditoria/')
         self.assertEqual(r.status_code, 302)
 
     def test_admin_puede_acceder(self):
         self.client.login(username='admin_audit', password='pass123')
-        r = self.client.get('/auditoria/')
+        r = self.client.get('/programacion/auditoria/')
         self.assertEqual(r.status_code, 200)
 
     def test_filtro_vigentes(self):
@@ -71,5 +71,5 @@ class ListaAlertasViewTest(TestCase):
             tipo=AlertaAuditoria.Tipo.SECUENCIA,
             huella='res1', mensaje='Resuelta', vigente=False,
         )
-        r = self.client.get('/auditoria/')
+        r = self.client.get('/programacion/auditoria/')
         self.assertEqual(len(r.context['alertas']), 1)

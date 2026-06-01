@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Sin área asignada — AAMO{% endblock %}
+{% block content %}
+<div class="container py-5 text-center">
+  <h1 class="h4 mb-3">No tienes ningún área asignada</h1>
+  <p class="text-muted">
+    Tu cuenta está activa pero todavía no tiene acceso a ninguna área del sistema.
+    Contacta con un administrador para que te asigne acceso.
+  </p>
+  <a href="{% url 'logout' %}" class="btn btn-outline-secondary mt-3"
+     onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
+    Cerrar sesión
+  </a>
+  <form id="logout-form" action="{% url 'logout' %}" method="post" class="d-none">{% csrf_token %}</form>
+</div>
+{% endblock %}

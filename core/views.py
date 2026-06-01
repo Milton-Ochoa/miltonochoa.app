@@ -1,5 +1,5 @@
 import calendar
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
@@ -15,6 +15,59 @@ from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 
 def home(request):
     return render(request, 'home.html')
+
+
+# ── Enrutado por áreas (login único AAMO) ───────────────────────────────────
+#
+# Cada área del edificio AAMO se representa con un dict {slug, nombre, landing}.
+# `landing` es el nombre de URL al que se redirige al usuario al entrar al área.
+# Por ahora solo existe 'programacion'; logistica/financiera son placeholders.
+AREAS = {
+    'programacion': {'slug': 'programacion', 'nombre': 'Programación', 'landing': 'home'},
+}
+
+
+def _areas_del_usuario(user):
+    """Devuelve la lista de áreas a las que el usuario tiene acceso.
+
+    Reglas (lo más simple posible, documentado para escalar a logistica/financiera):
+      - Superusuario → todas las áreas.
+      - Acceso a 'programacion' si: pertenece al grupo 'area:programacion', o ya
+        tiene un perfil de colegio/profesor (que son conceptos de programacion).
+
+    Cuando se añadan nuevas áreas, basta con crear su grupo 'area:<slug>' y
+    registrar el área en AREAS.
+    """
+    if user.is_superuser:
+        return list(AREAS.values())
+
+    from usuarios.models import UsuarioColegio, UsuarioProfesor  # import diferido: evita circular
+
+    areas = []
+    tiene_programacion = (
+        user.groups.filter(name='area:programacion').exists()
+        or UsuarioColegio.objects.filter(user=user).exists()
+        or UsuarioProfesor.objects.filter(user=user).exists()
+    )
+    if tiene_programacion:
+        areas.append(AREAS['programacion'])
+    return areas
+
+
+@login_required
+def seleccion_area(request):
+    """Punto de entrada AAMO tras el login.
+
+    - Sin área asignada → mensaje claro (403).
+    - Una sola área     → redirige directo a su landing.
+    - Varias áreas      → página de selección.
+    """
+    areas = _areas_del_usuario(request.user)
+    if not areas:
+        return render(request, 'core/sin_area.html', status=403)
+    if len(areas) == 1:
+        return redirect(areas[0]['landing'])
+    return render(request, 'core/seleccion_area.html', {'areas': areas})
 
 
 @user_passes_test(lambda u: u.is_superuser, login_url='login')
@@ -220,7 +273,7 @@ def ajax_busqueda_global(request):
             results.append({
                 'tipo': 'Colegio',
                 'nombre': ca.nombre,
-                'url': f'/colegios/?id_col={ca.pk}',
+                'url': f'/programacion/colegios/?id_col={ca.pk}',
                 'icon': 'fa-school',
             })
 
@@ -235,7 +288,7 @@ def ajax_busqueda_global(request):
             results.append({
                 'tipo': 'Profesor',
                 'nombre': nombre_completo,
-                'url': f'/profesores/?profesor_id={p.pk}',
+                'url': f'/programacion/profesores/?profesor_id={p.pk}',
                 'icon': 'fa-user-tie',
             })
 

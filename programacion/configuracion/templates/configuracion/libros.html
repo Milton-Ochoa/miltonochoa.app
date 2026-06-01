@@ -505,7 +505,7 @@ function actualizarBadgeMaterialAsignado(esMat) {
 }
 
 async function toggleMaterialAsignado() {
-    const url  = `/configuracion/ajax/libros/${_libroActual.id}/toggle-material/`;
+    const url  = `/programacion/configuracion/ajax/libros/${_libroActual.id}/toggle-material/`;
     const data = await csrfPost(url, {});
     if (data.ok) {
         _libroActual.esMaterialAsignado = data.es_material_asignado;
@@ -516,7 +516,7 @@ async function toggleMaterialAsignado() {
 
 async function cargarUnidades() {
     const materiaId = document.getElementById('filtroMateriaGest').value;
-    const url = `/configuracion/ajax/libros/${_libroActual.id}/unidades/` +
+    const url = `/programacion/configuracion/ajax/libros/${_libroActual.id}/unidades/` +
                 (materiaId ? `?materia_id=${materiaId}` : '');
     const data = await fetch(url).then(r => r.json());
     renderTablaUnidades(data.unidades || []);
@@ -570,7 +570,7 @@ function renderTablaUnidades(unidades) {
 
 // ── Toggle activo ─────────────────────────────────────────────
 async function toggleActivo() {
-    const url  = `/configuracion/ajax/libros/${_libroActual.id}/toggle/`;
+    const url  = `/programacion/configuracion/ajax/libros/${_libroActual.id}/toggle/`;
     const data = await csrfPost(url, {});
     if (data.ok) {
         _libroActual.activo = data.activo;
@@ -583,7 +583,7 @@ async function toggleActivo() {
 async function editarNombreLibro() {
     const nuevoNombre = prompt('Nuevo nombre del libro:', _libroActual.nombre);
     if (!nuevoNombre || nuevoNombre.trim() === _libroActual.nombre) return;
-    const url  = `/configuracion/ajax/libros/${_libroActual.id}/editar/`;
+    const url  = `/programacion/configuracion/ajax/libros/${_libroActual.id}/editar/`;
     const data = await csrfPost(url, { nombre: nuevoNombre.trim() });
     if (data.ok) {
         _libroActual.nombre = data.nombre;
@@ -597,7 +597,7 @@ async function editarNombreLibro() {
 // ── Eliminar libro ────────────────────────────────────────────
 async function confirmarEliminarLibro() {
     if (!confirm(`¿Seguro que deseas eliminar "${_libroActual.nombre}"?\nSe eliminarán todas sus unidades.`)) return;
-    const url  = `/configuracion/ajax/libros/${_libroActual.id}/eliminar/`;
+    const url  = `/programacion/configuracion/ajax/libros/${_libroActual.id}/eliminar/`;
     const data = await csrfPost(url, {});
     if (data.ok) {
         bootstrap.Modal.getInstance(document.getElementById('modalGestionar')).hide();
@@ -669,7 +669,7 @@ async function guardarUnidad() {
 
     let url, extraData = {};
     if (editId) {
-        url = `/configuracion/ajax/unidades/${editId}/editar/`;
+        url = `/programacion/configuracion/ajax/unidades/${editId}/editar/`;
     } else {
         url = URL_CREAR_UNIDAD;
         extraData = { libro_id: _libroActual.id };
@@ -685,7 +685,7 @@ async function guardarUnidad() {
 
 async function eliminarUnidad(id) {
     if (!confirm('¿Eliminar esta unidad?')) return;
-    const data = await csrfPost(`/configuracion/ajax/unidades/${id}/eliminar/`, {});
+    const data = await csrfPost(`/programacion/configuracion/ajax/unidades/${id}/eliminar/`, {});
     if (data.ok) { _huboCambios = true; await cargarUnidades(); }
     else alert(data.error || 'Error al eliminar');
 }
@@ -744,7 +744,7 @@ async function guardarMateria(id) {
     const nombre = document.getElementById(`materia-nombre-${id}`).value.trim();
     const color  = document.getElementById(`materia-color-${id}`).value;
     if (!nombre) return;
-    const data = await csrfPost(`/configuracion/ajax/materias/${id}/editar/`, { nombre, color });
+    const data = await csrfPost(`/programacion/configuracion/ajax/materias/${id}/editar/`, { nombre, color });
     if (!data.ok) {
         alert(data.error || 'Error al guardar');
     }
@@ -760,7 +760,7 @@ function editarMateria(id) {
 
 async function eliminarMateria(id, nombre) {
     if (!confirm(`¿Eliminar la materia "${nombre}"?`)) return;
-    const data = await csrfPost(`/configuracion/ajax/materias/${id}/eliminar/`, {});
+    const data = await csrfPost(`/programacion/configuracion/ajax/materias/${id}/eliminar/`, {});
     if (data.ok) {
         document.getElementById(`materia-row-${id}`)?.remove();
     } else {

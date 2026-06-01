@@ -13,7 +13,6 @@ urlpatterns = [
     path('libros/',     configuracion_libros,     name='configuracion_libros'),
     path('colegios/',   configuracion_colegios,   name='configuracion_colegios'),
     path('profesores/', configuracion_profesores, name='configuracion_profesores'),
-    path('usuarios/',   include('usuarios.urls')),
 
     # ── AJAX geo ──
     path('ajax/ciudades/', ajax_ciudades, name='ajax_ciudades'),

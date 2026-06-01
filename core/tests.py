@@ -19,12 +19,12 @@ class HomeViewTest(TestCase):
     def test_home_no_autenticado_redirige_a_login(self):
         r = self.client.get('/')
         self.assertEqual(r.status_code, 302)
-        self.assertIn('/configuracion/usuarios/login/', r['Location'])
+        self.assertIn('/usuarios/login/', r['Location'])
 
     def test_home_admin_devuelve_200(self):
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/')
+        r = self.client.get('/programacion/')
         self.assertEqual(r.status_code, 200)
 
 
@@ -35,13 +35,13 @@ class GeneralViewTest(TestCase):
         self.admin = User.objects.create_superuser(username='admin', password='pass')
 
     def test_no_autenticado_redirige_a_login(self):
-        r = self.client.get('/general/')
+        r = self.client.get('/programacion/general/')
         self.assertEqual(r.status_code, 302)
-        self.assertIn('/configuracion/usuarios/login/', r['Location'])
+        self.assertIn('/usuarios/login/', r['Location'])
 
     def test_admin_puede_acceder(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/general/')
+        r = self.client.get('/programacion/general/')
         self.assertEqual(r.status_code, 200)
 
     def test_usuario_profesor_no_puede_acceder_a_general(self):
@@ -49,7 +49,7 @@ class GeneralViewTest(TestCase):
         user = User.objects.create_user(username='prof', password='pass')
         UsuarioProfesor.objects.create(user=user, profesor=profesor)
         self.client.login(username='prof', password='pass')
-        r = self.client.get('/general/')
+        r = self.client.get('/programacion/general/')
         # Middleware redirige al horario del profesor
         self.assertEqual(r.status_code, 302)
         self.assertIn(f'profesor_id={profesor.id}', r['Location'])
@@ -58,8 +58,8 @@ class GeneralViewTest(TestCase):
         """Segunda llamada devuelve exactamente el mismo HTML (desde caché)."""
         cache.clear()
         self.client.login(username='admin', password='pass')
-        r1 = self.client.get('/general/?mes=4')
-        r2 = self.client.get('/general/?mes=4')
+        r1 = self.client.get('/programacion/general/?mes=4')
+        r2 = self.client.get('/programacion/general/?mes=4')
         self.assertEqual(r1.status_code, 200)
         self.assertEqual(r1.content, r2.content)
 
@@ -67,8 +67,8 @@ class GeneralViewTest(TestCase):
         """Meses distintos producen respuestas independientes (sin colisión de clave)."""
         cache.clear()
         self.client.login(username='admin', password='pass')
-        r_abr = self.client.get('/general/?mes=4')
-        r_may = self.client.get('/general/?mes=5')
+        r_abr = self.client.get('/programacion/general/?mes=4')
+        r_may = self.client.get('/programacion/general/?mes=5')
         self.assertEqual(r_abr.status_code, 200)
         self.assertEqual(r_may.status_code, 200)
 

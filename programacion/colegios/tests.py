@@ -253,29 +253,29 @@ class DashboardColegiosViewTest(TestCase):
         self.colegio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
 
     def test_no_autenticado_redirige_a_login(self):
-        r = self.client.get('/colegios/')
+        r = self.client.get('/programacion/colegios/')
         self.assertEqual(r.status_code, 302)
-        self.assertIn('/configuracion/usuarios/login/', r['Location'])
+        self.assertIn('/usuarios/login/', r['Location'])
 
     def test_admin_puede_acceder_sin_seleccionar_colegio(self):
         self.client.login(username='admin_col', password='pass123')
-        r = self.client.get('/colegios/')
+        r = self.client.get('/programacion/colegios/')
         self.assertEqual(r.status_code, 200)
 
     def test_admin_puede_acceder_con_colegio_seleccionado(self):
         self.client.login(username='admin_col', password='pass123')
-        r = self.client.get(f'/colegios/?id_col={self.colegio.id}')
+        r = self.client.get(f'/programacion/colegios/?id_col={self.colegio.id}')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['sel_col'], self.colegio)
 
     def test_contexto_incluye_hoy(self):
         self.client.login(username='admin_col', password='pass123')
-        r = self.client.get(f'/colegios/?id_col={self.colegio.id}')
+        r = self.client.get(f'/programacion/colegios/?id_col={self.colegio.id}')
         self.assertIn('hoy', r.context)
 
     def test_colegio_inexistente_devuelve_404(self):
         self.client.login(username='admin_col', password='pass123')
-        r = self.client.get('/colegios/?id_col=99999')
+        r = self.client.get('/programacion/colegios/?id_col=99999')
         self.assertEqual(r.status_code, 404)
 
 
@@ -301,14 +301,14 @@ class CargarGradosViewTest(TestCase):
         )
 
     def test_devuelve_grados_del_colegio(self):
-        r = self.client.get(f'/colegios/ajax/cargar-grados/?colegio_id={self.colegio.id}')
+        r = self.client.get(f'/programacion/colegios/ajax/cargar-grados/?colegio_id={self.colegio.id}')
         self.assertEqual(r.status_code, 200)
         data = json.loads(r.content)
         self.assertIn('11-1', data)
         self.assertIn('10-1', data)
 
     def test_sin_colegio_id_devuelve_lista_vacia(self):
-        r = self.client.get('/colegios/ajax/cargar-grados/')
+        r = self.client.get('/programacion/colegios/ajax/cargar-grados/')
         self.assertEqual(r.status_code, 200)
         data = json.loads(r.content)
         self.assertEqual(data, [])
@@ -338,7 +338,7 @@ class ClonarConfiguracionTest(TestCase):
 
     def test_clonar_crea_nuevo_colegio_anio_siguiente(self):
         r = self.client.post(
-            f'/colegios/ajax/clonar/{self.colegio.id}/',
+            f'/programacion/colegios/ajax/clonar/{self.colegio.id}/',
             content_type='application/json',
         )
         self.assertEqual(r.status_code, 200)
@@ -349,13 +349,13 @@ class ClonarConfiguracionTest(TestCase):
         self.assertEqual(nuevo.nombre, 'Col Origen')
 
     def test_clonar_copia_bloques(self):
-        self.client.post(f'/colegios/ajax/clonar/{self.colegio.id}/',
+        self.client.post(f'/programacion/colegios/ajax/clonar/{self.colegio.id}/',
                          content_type='application/json')
         nuevo = ColegioAnio.objects.get(colegio=self.col_perm, anio=2027)
         self.assertEqual(Bloque.objects.filter(colegio=nuevo).count(), 1)
 
     def test_clonar_copia_asignaciones_con_fechas_del_nuevo_anio(self):
-        self.client.post(f'/colegios/ajax/clonar/{self.colegio.id}/',
+        self.client.post(f'/programacion/colegios/ajax/clonar/{self.colegio.id}/',
                          content_type='application/json')
         nuevo = ColegioAnio.objects.get(colegio=self.col_perm, anio=2027)
         asig = Asignacion.objects.filter(colegio=nuevo).first()
@@ -365,7 +365,7 @@ class ClonarConfiguracionTest(TestCase):
 
     def test_no_se_puede_clonar_si_ya_existe_el_anio_siguiente(self):
         ColegioAnio.objects.create(colegio=self.col_perm, anio=2027, activo=True)
-        r = self.client.post(f'/colegios/ajax/clonar/{self.colegio.id}/',
+        r = self.client.post(f'/programacion/colegios/ajax/clonar/{self.colegio.id}/',
                               content_type='application/json')
         data = r.json()
         self.assertFalse(data['ok'])
@@ -501,7 +501,7 @@ class HistorialCambioTest(TestCase):
     def test_crear_bloque_registra_historial(self):
         Grado.objects.get_or_create(nombre='11-1')
         self.client.post(
-            f'/colegios/configurar-colegio/{self.colegio.id}/',
+            f'/programacion/colegios/configurar-colegio/{self.colegio.id}/',
             {'accion': 'add_bloque', 'grado': '11-1',
              'hora_inicio': '08:00', 'hora_fin': '10:00', 'orden': 1}
         )
@@ -513,11 +513,11 @@ class HistorialCambioTest(TestCase):
         )
 
     def test_historial_colegio_accesible_por_admin(self):
-        r = self.client.get(f'/colegios/historial/{self.colegio.id}/')
+        r = self.client.get(f'/programacion/colegios/historial/{self.colegio.id}/')
         self.assertEqual(r.status_code, 200)
 
     def test_historial_global_accesible_por_admin(self):
-        r = self.client.get('/historial/')
+        r = self.client.get('/programacion/historial/')
         self.assertEqual(r.status_code, 200)
 
     def test_historial_global_no_accesible_por_usuario_colegio(self):
@@ -525,7 +525,7 @@ class HistorialCambioTest(TestCase):
         user_col = User.objects.create_user('user_hist_col', password='pass')
         UsuarioColegio.objects.create(user=user_col, colegio=self.colegio.colegio)
         self.client.login(username='user_hist_col', password='pass')
-        r = self.client.get('/historial/')
+        r = self.client.get('/programacion/historial/')
         self.assertNotEqual(r.status_code, 200)
 
 
@@ -570,7 +570,7 @@ class AjaxGuardarClaseHtmxTest(TestCase):
         payload.update(data)
         headers = extra_headers or {}
         return self.client.post(
-            f'/colegios/ajax/guardar-clase/{self.colegio.id}/',
+            f'/programacion/colegios/ajax/guardar-clase/{self.colegio.id}/',
             data=payload,
             **headers,
         )
@@ -643,7 +643,7 @@ class KanbanHTMXTest(TestCase):
 
     def test_crear_tarea_htmx_devuelve_html_card(self):
         r = self.client.post(
-            '/',
+            '/programacion/',
             {'crear_tarea': '1', 'titulo': 'Test HTMX tarea'},
             HTTP_HX_REQUEST='true',
         )
@@ -653,14 +653,14 @@ class KanbanHTMXTest(TestCase):
         self.assertIn(b'kanban-card', r.content)
 
     def test_crear_tarea_sin_htmx_redirige(self):
-        r = self.client.post('/', {'crear_tarea': '1', 'titulo': 'Tarea normal'})
+        r = self.client.post('/programacion/', {'crear_tarea': '1', 'titulo': 'Tarea normal'})
         self.assertEqual(r.status_code, 302)
 
     def test_cambiar_estado_htmx_devuelve_html_card(self):
         from programacion.pendientes.models import Tarea
         t = Tarea.objects.create(titulo='Tarea estado', creado_por=self.admin)
         r = self.client.post(
-            f'/pendientes/cambiar-estado/{t.id}/gestion/',
+            f'/programacion/pendientes/cambiar-estado/{t.id}/gestion/',
             HTTP_HX_REQUEST='true',
         )
         self.assertEqual(r.status_code, 200)

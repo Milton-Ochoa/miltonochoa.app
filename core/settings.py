@@ -84,7 +84,7 @@ MIDDLEWARE = [
     'usuarios.middleware.ControlAccesoMiddleware',
 ]
 
-LOGIN_URL = '/configuracion/usuarios/login/'
+LOGIN_URL = '/usuarios/login/'
 
 ROOT_URLCONF = 'core.urls'
 

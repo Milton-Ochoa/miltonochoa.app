@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Seleccionar área — AAMO{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <h1 class="h4 mb-4">Selecciona un área</h1>
+  <div class="row g-3">
+    {% for area in areas %}
+    <div class="col-12 col-sm-6 col-md-4">
+      <a href="{% url area.landing %}" class="card text-decoration-none h-100">
+        <div class="card-body">
+          <h2 class="h5 card-title mb-0">{{ area.nombre }}</h2>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -11,12 +11,12 @@ class AuthRequiredTest(TestCase):
     """Todos los endpoints deben devolver 401 sin autenticación."""
 
     ENDPOINTS = [
-        '/api/v1/profesores/',
-        '/api/v1/colegios/',
-        '/api/v1/colegios-anio/',
-        '/api/v1/clases/',
-        '/api/v1/clases-particulares/',
-        '/api/v1/pagos/',
+        '/programacion/api/v1/profesores/',
+        '/programacion/api/v1/colegios/',
+        '/programacion/api/v1/colegios-anio/',
+        '/programacion/api/v1/clases/',
+        '/programacion/api/v1/clases-particulares/',
+        '/programacion/api/v1/pagos/',
     ]
 
     def setUp(self):
@@ -38,7 +38,7 @@ class JWTAuthTest(TestCase):
         )
 
     def test_obtain_token_ok(self):
-        resp = self.client.post('/api/v1/auth/token/', {
+        resp = self.client.post('/programacion/api/v1/auth/token/', {
             'username': 'testapi', 'password': 'testpass123!'
         }, format='json')
         self.assertEqual(resp.status_code, 200)
@@ -46,29 +46,29 @@ class JWTAuthTest(TestCase):
         self.assertIn('refresh', resp.data)
 
     def test_obtain_token_credenciales_invalidas(self):
-        resp = self.client.post('/api/v1/auth/token/', {
+        resp = self.client.post('/programacion/api/v1/auth/token/', {
             'username': 'testapi', 'password': 'wrong'
         }, format='json')
         self.assertEqual(resp.status_code, 401)
 
     def test_refresh_token_ok(self):
-        r1 = self.client.post('/api/v1/auth/token/', {
+        r1 = self.client.post('/programacion/api/v1/auth/token/', {
             'username': 'testapi', 'password': 'testpass123!'
         }, format='json')
         refresh = r1.data['refresh']
-        r2 = self.client.post('/api/v1/auth/token/refresh/', {'refresh': refresh}, format='json')
+        r2 = self.client.post('/programacion/api/v1/auth/token/refresh/', {'refresh': refresh}, format='json')
         self.assertEqual(r2.status_code, 200)
         self.assertIn('access', r2.data)
 
     def test_acceso_con_jwt_ok(self):
-        r1 = self.client.post('/api/v1/auth/token/', {
+        r1 = self.client.post('/programacion/api/v1/auth/token/', {
             'username': 'testapi', 'password': 'testpass123!'
         }, format='json')
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r1.data['access']}")
-        resp = self.client.get('/api/v1/profesores/')
+        resp = self.client.get('/programacion/api/v1/profesores/')
         self.assertEqual(resp.status_code, 200)
 
     def test_acceso_con_token_invalido_401(self):
         self.client.credentials(HTTP_AUTHORIZATION='Bearer tokeninvalido')
-        resp = self.client.get('/api/v1/profesores/')
+        resp = self.client.get('/programacion/api/v1/profesores/')
         self.assertEqual(resp.status_code, 401)

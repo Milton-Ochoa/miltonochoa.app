@@ -3,18 +3,19 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
-RUTAS_PUBLICAS = ['/configuracion/usuarios/login/', '/configuracion/usuarios/logout/', '/admin/']
+RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/admin/']
 
 # La API REST usa JWT propio — DRF maneja auth y permisos internamente.
-# El ControlAccesoMiddleware no aplica a estas rutas.
-_RUTAS_API = ['/api/']
+# El ControlAccesoMiddleware no aplica a estas rutas. (Ahora bajo el área programacion.)
+_RUTAS_API = ['/programacion/api/']
 
 # Recursos PWA: el navegador los pide sin cookies/sesión activa.
 _RUTAS_PWA = ['/manifest.json', '/sw.js']
 
 # Allocated once at import time, not on every request.
-_PERMITIDAS_COLEGIO  = ['/colegios/', '/informes/']
-_PERMITIDAS_PROFESOR = ['/profesores/', '/informes/', '/informes/ajax/']
+# Prefijos del área programacion a los que cada rol tiene acceso.
+_PERMITIDAS_COLEGIO  = ['/programacion/colegios/', '/programacion/informes/']
+_PERMITIDAS_PROFESOR = ['/programacion/profesores/', '/programacion/informes/', '/programacion/informes/ajax/']
 
 
 class ControlAccesoMiddleware:

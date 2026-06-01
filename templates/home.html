@@ -164,8 +164,8 @@
     function abrirModalEditar(id, titulo, descripcion) {
         _editandoId = id;
         const form = document.getElementById('formEditarTarea');
-        form.action = `/pendientes/editar-tarea/${id}/`;
-        form.setAttribute('hx-post', `/pendientes/editar-tarea/${id}/`);
+        form.action = `/programacion/pendientes/editar-tarea/${id}/`;
+        form.setAttribute('hx-post', `/programacion/pendientes/editar-tarea/${id}/`);
         htmx.process(form);  // re-procesar atributos HTMX después de cambiar hx-post
 
         document.getElementById('edit_titulo_display').innerText = titulo;

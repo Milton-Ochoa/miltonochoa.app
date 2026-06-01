@@ -310,7 +310,7 @@ function submitCrear() {
     body.append('username', username);
     body.append(TIPO === 'colegio' ? 'colegio_id' : 'profesor_id', entidadId);
 
-    fetch('/configuracion/usuarios/ajax/crear/', { method: 'POST', body, credentials: 'same-origin' })
+    fetch('/usuarios/ajax/crear/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (data.ok) {
@@ -343,7 +343,7 @@ function submitEditar() {
     body.append('username', username);
     body.append(TIPO === 'colegio' ? 'colegio_id' : 'profesor_id', entidadId);
 
-    fetch('/configuracion/usuarios/ajax/editar/', { method: 'POST', body, credentials: 'same-origin' })
+    fetch('/usuarios/ajax/editar/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (data.ok) location.reload();
@@ -361,7 +361,7 @@ function resetearPassword(perfilId, username) {
     body.append('tipo', TIPO);
     body.append('perfil_id', perfilId);
 
-    fetch('/configuracion/usuarios/ajax/resetear-password/', { method: 'POST', body, credentials: 'same-origin' })
+    fetch('/usuarios/ajax/resetear-password/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (data.ok) mostrarModalPassword('Contraseña reseteada', data.username, data.nueva_password);
@@ -379,7 +379,7 @@ function confirmarEliminar(perfilId, username) {
     body.append('tipo', TIPO);
     body.append('perfil_id', perfilId);
 
-    fetch('/configuracion/usuarios/ajax/eliminar/', { method: 'POST', body, credentials: 'same-origin' })
+    fetch('/usuarios/ajax/eliminar/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (data.ok) location.reload();

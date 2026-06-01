@@ -49,7 +49,7 @@ def login_redirect(request):
     if not request.user.is_authenticated:
         return redirect('login')
     if request.user.is_superuser:
-        return redirect('home')
+        return redirect('seleccion_area')
     try:
         perfil = request.user.perfil_colegio
         from programacion.configuracion.models import ColegioAnio
@@ -63,7 +63,7 @@ def login_redirect(request):
         return redirect(f'{reverse("ver_horario")}?profesor_id={perfil.profesor.id}')
     except UsuarioProfesor.DoesNotExist:
         pass
-    return redirect('home')
+    return redirect('seleccion_area')
 
 @rate_limit(max_calls=10, periodo=60)
 def vista_login(request):

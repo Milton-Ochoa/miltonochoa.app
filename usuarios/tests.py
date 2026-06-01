@@ -61,17 +61,17 @@ class LoginViewTest(TestCase):
         User.objects.create_superuser(username='admin', password='adminpass')
 
     def test_get_login_devuelve_200(self):
-        r = self.client.get('/configuracion/usuarios/login/')
+        r = self.client.get('/usuarios/login/')
         self.assertEqual(r.status_code, 200)
 
     def test_login_correcto_redirige(self):
-        r = self.client.post('/configuracion/usuarios/login/', {
+        r = self.client.post('/usuarios/login/', {
             'username': 'admin', 'password': 'adminpass'
         })
         self.assertEqual(r.status_code, 302)
 
     def test_login_incorrecto_muestra_error(self):
-        r = self.client.post('/configuracion/usuarios/login/', {
+        r = self.client.post('/usuarios/login/', {
             'username': 'admin', 'password': 'clave_incorrecta'
         })
         self.assertEqual(r.status_code, 200)
@@ -79,13 +79,13 @@ class LoginViewTest(TestCase):
 
     def test_logout_redirige_a_login(self):
         self.client.login(username='admin', password='adminpass')
-        r = self.client.get('/configuracion/usuarios/logout/')
+        r = self.client.get('/usuarios/logout/')
         self.assertEqual(r.status_code, 302)
         self.assertIn('login', r['Location'])
 
     def test_usuario_ya_autenticado_no_ve_el_login(self):
         self.client.login(username='admin', password='adminpass')
-        r = self.client.get('/configuracion/usuarios/login/')
+        r = self.client.get('/usuarios/login/')
         self.assertEqual(r.status_code, 302)
 
 
@@ -101,7 +101,7 @@ class AjaxCrearUsuarioTest(TestCase):
         self.profesor = Profesor.objects.create(nombre='Ana', apellido='García')
 
     def test_crear_usuario_colegio_retorna_password(self):
-        r = self.client.post('/configuracion/usuarios/ajax/crear/', {
+        r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'colegio',
             'username': 'col_test',
             'colegio_id': self.colegio.id,
@@ -113,7 +113,7 @@ class AjaxCrearUsuarioTest(TestCase):
         self.assertTrue(User.objects.filter(username='col_test').exists())
 
     def test_crear_usuario_profesor_retorna_password(self):
-        r = self.client.post('/configuracion/usuarios/ajax/crear/', {
+        r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'profesor',
             'username': 'prof_test',
             'profesor_id': self.profesor.id,
@@ -127,7 +127,7 @@ class AjaxCrearUsuarioTest(TestCase):
         UsuarioColegio.objects.create(
             user=User.objects.get(username='existente'), colegio=self.colegio
         )
-        r = self.client.post('/configuracion/usuarios/ajax/crear/', {
+        r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'colegio',
             'username': 'existente',
             'colegio_id': self.colegio.id,
@@ -138,7 +138,7 @@ class AjaxCrearUsuarioTest(TestCase):
     def test_resetear_password_genera_nueva(self):
         user = User.objects.create_user(username='reset_test', password='antigua')
         perfil = UsuarioColegio.objects.create(user=user, colegio=self.colegio)
-        r = self.client.post('/configuracion/usuarios/ajax/resetear-password/', {
+        r = self.client.post('/usuarios/ajax/resetear-password/', {
             'tipo': 'colegio',
             'perfil_id': perfil.id,
         })
@@ -169,23 +169,23 @@ class MiddlewareAccesoTest(TestCase):
         UsuarioProfesor.objects.create(user=user_prof, profesor=self.profesor)
 
     def test_usuario_no_autenticado_redirige_a_login(self):
-        r = self.client.get('/colegios/')
-        self.assertRedirects(r, '/configuracion/usuarios/login/?next=/colegios/', fetch_redirect_response=False)
+        r = self.client.get('/programacion/colegios/')
+        self.assertRedirects(r, '/usuarios/login/?next=/programacion/colegios/', fetch_redirect_response=False)
 
     def test_usuario_colegio_no_accede_a_configuracion(self):
         self.client.login(username='user_col_mw', password='pass')
-        r = self.client.get('/configuracion/libros/')
+        r = self.client.get('/programacion/configuracion/libros/')
         self.assertEqual(r.status_code, 302)
-        self.assertNotIn('/configuracion/', r['Location'])
+        self.assertNotIn('/programacion/configuracion/', r['Location'])
 
     def test_usuario_profesor_no_accede_a_colegios(self):
         self.client.login(username='user_prof_mw', password='pass')
-        r = self.client.get('/colegios/')
+        r = self.client.get('/programacion/colegios/')
         self.assertEqual(r.status_code, 302)
 
     def test_usuario_colegio_accede_a_su_propio_colegio(self):
         self.client.login(username='user_col_mw', password='pass')
-        r = self.client.get(f'/colegios/?id_col={self.colegio_anio.id}')
+        r = self.client.get(f'/programacion/colegios/?id_col={self.colegio_anio.id}')
         self.assertEqual(r.status_code, 200)
 
 
