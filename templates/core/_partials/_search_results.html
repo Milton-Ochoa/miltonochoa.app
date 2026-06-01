@@ -1,0 +1,20 @@
+{% if results %}
+<ul class="list-group list-group-flush">
+    {% for r in results %}
+    <li class="list-group-item list-group-item-action p-0">
+        <a href="{{ r.url }}" class="result-link d-flex align-items-center gap-2 px-3 py-2 text-decoration-none text-dark w-100">
+            <i class="fas {{ r.icon }} text-muted" style="width:18px; text-align:center; flex-shrink:0;"></i>
+            <div class="flex-grow-1 min-w-0">
+                <div class="fw-semibold text-truncate">{{ r.nombre }}</div>
+            </div>
+            <span class="badge bg-secondary search-type-badge flex-shrink-0">{{ r.tipo }}</span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+{% elif q %}
+<div class="text-muted p-4 text-center">
+    <i class="fas fa-search-minus d-block mb-2" style="font-size:1.5rem; opacity:.4;"></i>
+    Sin resultados para "<strong>{{ q }}</strong>"
+</div>
+{% endif %}

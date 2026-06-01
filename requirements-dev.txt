@@ -1,0 +1,24 @@
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║ requirements-dev.txt — herramientas locales de desarrollo y test   ║
+# ║ Instalar:  pip install -r requirements.txt -r requirements-dev.txt ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
+-r requirements.txt
+
+# ── Debug / introspección ───────────────────────────────────────────────────
+django-debug-toolbar==4.4.6   # Panel de queries SQL, plantillas, signals
+django-extensions==4.1        # shell_plus, graph_models, runserver_plus
+django-silk==5.4.0            # Profiling y trazas de queries
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+# La suite actual usa unittest/Django TestCase (manage.py test). Pytest está
+# disponible para futura migración a pytest-django con --reuse-db / --nomigrations.
+pytest==8.3.4
+pytest-django==4.9.0
+factory-boy==3.3.1            # Fixtures declarativos para reemplazar setUp manuales
+coverage==7.6.10              # Reporte de cobertura (objetivo: 80% en apps/)
+
+# ── Linters opcionales ──────────────────────────────────────────────────────
+# Descomentar si se adopta CI con linting estricto.
+# ruff==0.7.0
+# black==24.10.0

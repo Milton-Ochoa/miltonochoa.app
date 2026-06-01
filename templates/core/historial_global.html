@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block header_title %}Historial Global{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Historial</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Historial Global de Cambios</h5>
+    </div>
+    <div class="card-body border-bottom py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Acción</label>
+                <select name="tipo" class="form-select form-select-sm">
+                    <option value="">Todas</option>
+                    <option value="crear" {% if tipo_filtro == 'crear' %}selected{% endif %}>Creado</option>
+                    <option value="editar" {% if tipo_filtro == 'editar' %}selected{% endif %}>Editado</option>
+                    <option value="eliminar" {% if tipo_filtro == 'eliminar' %}selected{% endif %}>Eliminado</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Objeto</label>
+                <input type="text" name="objeto" class="form-control form-control-sm"
+                       placeholder="Bloque, Clase..." value="{{ objeto_filtro }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Colegio</label>
+                <input type="text" name="colegio" class="form-control form-control-sm"
+                       placeholder="Nombre..." value="{{ colegio_filtro }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Desde</label>
+                <input type="date" name="desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Hasta</label>
+                <input type="date" name="hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100">Filtrar</button>
+            </div>
+            <div class="col-md-1">
+                <a href="?" class="btn btn-sm btn-outline-secondary w-100">Limpiar</a>
+            </div>
+        </form>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-secondary">
+                <tr>
+                    <th>Fecha</th>
+                    <th>Colegio</th>
+                    <th>Acción</th>
+                    <th>Objeto</th>
+                    <th>Descripción</th>
+                    <th>Usuario</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in cambios %}
+                <tr>
+                    <td class="text-muted small text-nowrap">{{ c.fecha|date:"d/m/Y H:i" }}</td>
+                    <td>
+                        {% if c.colegio %}
+                            <a href="/colegios/historial/{{ c.colegio.id }}/" class="text-decoration-none">{{ c.colegio.nombre }}</a>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if c.tipo == 'crear' %}<span class="badge bg-success">Creado</span>
+                        {% elif c.tipo == 'editar' %}<span class="badge bg-warning text-dark">Editado</span>
+                        {% else %}<span class="badge bg-danger">Eliminado</span>{% endif %}
+                    </td>
+                    <td><span class="badge bg-secondary">{{ c.objeto_tipo }}</span></td>
+                    <td>{{ c.objeto_str }}</td>
+                    <td class="text-muted small">{{ c.usuario.username|default:"—" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center py-4 text-muted">Sin cambios registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer d-flex justify-content-between align-items-center py-2">
+        <small class="text-muted">
+            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+            &nbsp;·&nbsp; {{ page_obj.paginator.count }} registros totales
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">&laquo;</a>
+                </li>
+                {% endif %}
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">&raquo;</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

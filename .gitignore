@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.sqlite3
+.env
+logs/
+backups/
+.claude
+.superpowers/
+importar/
+CLAUDE.md

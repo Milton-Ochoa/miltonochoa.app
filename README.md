@@ -1,0 +1,489 @@
+<div align="center">
+
+<img src="https://img.shields.io/badge/AAMO-Programaci%C3%B3n-212529?style=for-the-badge&labelColor=0d6efd" alt="AAMO Programación"/>
+
+# 📚 Programación AAMO
+
+### Sistema integral de gestión académica para colegios — Milton Ochoa / AAMO
+
+*Calendario, programación, auditoría automática, informes pedagógicos, liquidación de pagos y API REST en una sola plataforma.*
+
+<br/>
+
+[![Django](https://img.shields.io/badge/Django-5.2.11-092E20?style=flat&logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat&logo=postgresql&logoColor=white)](https://supabase.com/)
+[![DRF](https://img.shields.io/badge/DRF-3.15-A30000?style=flat&logo=django&logoColor=white)](https://www.django-rest-framework.org/)
+[![HTMX](https://img.shields.io/badge/HTMX-1.9-3D72D7?style=flat&logo=htmx&logoColor=white)](https://htmx.org/)
+[![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-7952B3?style=flat&logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
+[![PWA](https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+[![Render](https://img.shields.io/badge/Deploy-Render-46E3B7?style=flat&logo=render&logoColor=white)](https://render.com/)
+[![License](https://img.shields.io/badge/Uso-Interno-lightgrey?style=flat)](#-licencia)
+
+</div>
+
+---
+
+## 📖 Tabla de contenidos
+
+- [✨ Visión general](#-visión-general)
+- [🚀 Características principales](#-características-principales)
+- [🛠️ Stack tecnológico](#️-stack-tecnológico)
+- [🏗️ Arquitectura](#️-arquitectura)
+- [📦 Instalación local](#-instalación-local)
+- [⚙️ Variables de entorno](#️-variables-de-entorno)
+- [🧭 Estructura del proyecto](#-estructura-del-proyecto)
+- [🔐 Roles y control de acceso](#-roles-y-control-de-acceso)
+- [📡 API REST](#-api-rest)
+- [🧪 Tests y calidad](#-tests-y-calidad)
+- [☁️ Despliegue en producción](#️-despliegue-en-producción)
+- [🩹 Mantenimiento](#-mantenimiento)
+- [🤝 Contribuir](#-contribuir)
+- [📜 Licencia](#-licencia)
+
+---
+
+## ✨ Visión general
+
+**Programación AAMO** es una aplicación web desarrollada en Django para que la organización educativa **Milton Ochoa / AAMO** gestione su programación académica de extremo a extremo:
+
+- 📅 Programar **clases por colegio, grado, bloque, profesor, materia, libro y unidad** con detección automática de inconsistencias.
+- 🎯 Registrar **clases particulares** fuera del horario regular.
+- 🚨 Detectar errores de programación en tiempo real (**duplicados, choques de profesor, saltos de secuencia**) con un motor de auditoría dedicado.
+- 📝 Generar **informes pedagógicos** vinculados a cada sesión de clase.
+- 💵 Liquidar **pagos semanales a profesores** con tarifas por colegio/año y registro inmutable.
+- 📊 Exportar **archivos Excel** de horarios y pagos generados completamente en memoria.
+- 🔌 Exponer una **API REST documentada** (Swagger / ReDoc) para integraciones externas (sistema financiero).
+- 📱 Funcionar como **PWA**: instalable en móvil con manifest, service worker y diseño responsive.
+
+> **Idioma:** Español (Colombia) · **Zona horaria:** America/Bogota · **Moneda:** COP
+
+---
+
+## 🚀 Características principales
+
+### 🗓️ Programación visual
+
+- **Vista general**: calendario unificado de todos los colegios activos, agrupado por colegio → grado → bloque, con caché HTML por mes (10 min).
+- **Dashboard por colegio**: matriz `grado × fecha` editable inline con HTMX. Incluye recálculo automático de secuencia cuando se mueven clases.
+- **Recomendación inteligente** de la siguiente unidad al programar una clase, considerando libro asignado, fecha y socializaciones.
+
+### 🎯 Catálogo modular
+
+- **Colegio ↔ Colegio-Año**: separación entre datos invariantes (nombre, ciudad…) y datos anuales (tarifa por hora, activo/inactivo) que permite mantener historial sin duplicar registros.
+- **Libros normales vs. material asignado**: dos categorías con flujos distintos.
+- **Asignaciones por rango de fechas**: un grado puede cambiar de libro a mitad de año sin perder consistencia.
+
+### 🚨 Auditoría automática
+
+| Tipo de alerta | Detecta |
+|----------------|---------|
+| 🔁 **Duplicado** | Misma unidad de la misma materia programada >1 vez en el mismo `(colegio, grado, libro)` |
+| ⚔️ **Conflicto** | Un profesor con clases en >1 colegio el mismo día |
+| 📉 **Secuencia** | Salto en la numeración de unidades (ej. pasó de 2 a 4) |
+
+- Deduplicación por **hash MD5** → no se crean alertas repetidas.
+- Reactivación automática si un error reaparece (salvo que el admin la haya ignorado manualmente).
+- Throttle de 5 minutos para evitar barridos concurrentes a la BD.
+- Comando de cron: `python manage.py ejecutar_auditoria`.
+
+### 📝 Informes pedagógicos
+
+- Un `Informe` está vinculado a **exactamente una** clase regular o particular (garantizado por `CheckConstraint` a nivel BD).
+- Datos de cabecera **desnormalizados** para sobrevivir aunque se elimine la clase original.
+- Estados: borrador → completado (al rellenar `actividades`).
+
+### 💵 Liquidación de pagos
+
+- Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha.
+- Registro `PagoRealizado` **inmutable** con valor desnormalizado (preserva tarifa histórica).
+- Constraint `unique_together (profesor, colegio, fecha)` impide doble liquidación.
+
+### 📊 Exportación Excel
+
+- Generación 100 % en memoria con **openpyxl** (sin tocar disco — ideal para Render).
+- ZIPs masivos (un Excel por profesor o por colegio).
+- Filtro de URLs `_safe_url()` contra hipervínculos maliciosos en celdas.
+- Días/meses **siempre en español**, independiente del locale del SO.
+
+### 📱 Tablero Kanban (home)
+
+Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Completado), totalmente operable con HTMX y arrastrable entre estados.
+
+### 🔌 API REST
+
+- JWT con tokens de **8 h (access)** y **7 d (refresh)**.
+- Filtros declarativos (`django-filter`), búsqueda full-text en campos clave, paginación configurable (200/página, máx 1000).
+- Throttle global `1000/hora/usuario`.
+- **Documentación OpenAPI** lista en [`/api/v1/docs/`](http://localhost:8000/api/v1/docs/) (Swagger) y [`/api/v1/redoc/`](http://localhost:8000/api/v1/redoc/).
+
+### 📲 PWA
+
+- `manifest.json` y `sw.js` servidos desde la raíz para scope `/`.
+- Instalable como app standalone en móvil.
+- Theme color y safe-area-inset para edge-to-edge en iOS/Android.
+
+---
+
+## 🛠️ Stack tecnológico
+
+<table>
+<tr><th>Capa</th><th>Tecnología</th><th>Versión</th></tr>
+<tr><td>🐍 Backend</td><td>Django</td><td>5.2.11</td></tr>
+<tr><td>⚡ Interactividad</td><td>HTMX</td><td>1.9.12</td></tr>
+<tr><td>🎨 UI</td><td>Bootstrap + Font Awesome</td><td>5.3 / 6.0</td></tr>
+<tr><td>🗄️ BD producción</td><td>PostgreSQL (Supabase pooler)</td><td>—</td></tr>
+<tr><td>🧪 BD tests</td><td>SQLite</td><td>auto</td></tr>
+<tr><td>🔌 API</td><td>Django REST Framework</td><td>3.15.2</td></tr>
+<tr><td>🔑 Auth API</td><td>djangorestframework-simplejwt</td><td>5.3.1</td></tr>
+<tr><td>📚 Docs API</td><td>drf-spectacular (OpenAPI 3)</td><td>0.27.2</td></tr>
+<tr><td>🔍 Filtros API</td><td>django-filter</td><td>24.3</td></tr>
+<tr><td>⚡ Caché</td><td>locmem (default) · django-redis (opt)</td><td>5.4.0</td></tr>
+<tr><td>📦 Estáticos</td><td>WhiteNoise (gzip + manifest)</td><td>6.12.0</td></tr>
+<tr><td>📊 Excel</td><td>openpyxl</td><td>3.1.5</td></tr>
+<tr><td>🚀 WSGI prod</td><td>gunicorn</td><td>25.3.0</td></tr>
+<tr><td>🌐 PaaS</td><td>Render</td><td>—</td></tr>
+</table>
+
+---
+
+## 🏗️ Arquitectura
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                      🌐 Cliente (navegador / PWA)                 │
+│   Bootstrap 5 · HTMX · Vanilla JS · Service Worker · Manifest    │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │ HTTP(S)
+┌──────────────────────────▼───────────────────────────────────────┐
+│              🛡️  WhiteNoise · ControlAccesoMiddleware             │
+│              (login, scope por rol, perfil inyectado)             │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────────────┐
+        │                  │                          │
+┌───────▼───────┐ ┌────────▼──────────┐ ┌─────────────▼──────────┐
+│  📄 Vistas     │ │  🔌 API REST       │ │  ⚙️  Comandos manage   │
+│  (HTMX/HTML)  │ │  (DRF + JWT)      │ │  (auditoría, etc.)     │
+└───────┬───────┘ └────────┬──────────┘ └─────────────┬──────────┘
+        │                  │                          │
+        └──────────────────┼──────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────────┐
+│              💾  ORM Django · Signals · Caché (locmem/Redis)      │
+│           (invalidación auto: vista_general, auditoría)           │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────────┐
+│   🐘 PostgreSQL (Supabase)            🗃️  SQLite (local/tests)    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Patrón híbrido HTMX + DRF**: las pantallas internas usan HTML server-rendered con HTMX para interactividad parcial. La API DRF expone los datos al sistema financiero externo con JWT.
+
+---
+
+## 📦 Instalación local
+
+### Requisitos previos
+
+- **Python 3.11+**
+- **PostgreSQL** (o usar la BD remota de Supabase con la URL del `.env`)
+- **Git**
+
+### 1 · Clonar e instalar dependencias
+
+```bash
+git clone <url-del-repo>
+cd ProgramacionAAMO
+
+# Crear y activar entorno virtual
+python -m venv venv
+# Windows (PowerShell)
+.\venv\Scripts\Activate.ps1
+# Linux / macOS
+source venv/bin/activate
+
+# Instalar dependencias (producción + desarrollo)
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+### 2 · Configurar variables de entorno
+
+Crea un archivo `.env` en la raíz:
+
+```dotenv
+SECRET_KEY=<genera-una-con-get_random_secret_key>
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+PASSWORD_ENCRYPT_KEY=<clave-fernet>
+DATABASE_URL=postgresql://user:password@host:port/dbname
+SECURE_SSL_REDIRECT=False
+CACHE_BACKEND=locmem
+```
+
+Para generar una `SECRET_KEY`:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+### 3 · Migrar y crear superusuario
+
+```bash
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+### 4 · Levantar el servidor
+
+```bash
+python manage.py runserver
+```
+
+🌐 Abrir [http://localhost:8000](http://localhost:8000) y entrar con el superusuario.
+
+---
+
+## ⚙️ Variables de entorno
+
+| Variable                | Obligatoria | Default              | Descripción                                                              |
+|-------------------------|:-----------:|----------------------|--------------------------------------------------------------------------|
+| `SECRET_KEY`            | ✅          | —                    | Clave secreta de Django. Sin ella la app no arranca.                     |
+| `DEBUG`                 | ❌          | `False`              | `True` para desarrollo local.                                            |
+| `ALLOWED_HOSTS`         | ❌          | `localhost,127.0.0.1`| Hosts permitidos (CSV).                                                  |
+| `PASSWORD_ENCRYPT_KEY`  | ✅          | —                    | Clave Fernet para datos sensibles.                                       |
+| `DATABASE_URL`          | ✅          | —                    | URL completa de PostgreSQL (Supabase, Render…).                          |
+| `SECURE_SSL_REDIRECT`   | ❌          | `False`              | `True` en producción si el dominio sirve HTTPS.                          |
+| `CACHE_BACKEND`         | ❌          | `locmem`             | `locmem` o `redis`.                                                      |
+| `REDIS_URL`             | ⚠️          | `redis://127.0.0.1:6379/1` | Solo si `CACHE_BACKEND=redis`.                                  |
+| `BACKUP_DIR`            | ❌          | `../backups/`        | Directorio para backups (fuera del repo por defecto).                    |
+
+> 💡 Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin tocar la config de producción.
+
+---
+
+## 🧭 Estructura del proyecto
+
+```
+ProgramacionAAMO/
+│
+├── 🧩 core/                  # Proyecto Django: settings, URLs raíz, vistas globales
+├── 🗂️  configuracion/        # Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
+├── 🏫 colegios/              # Programación: Grado, Bloque, Asignacion, Clase, ClaseParticular
+├── 👨‍🏫 profesores/             # Vista de horario propio del profesor
+├── 👥 usuarios/              # Auth, perfiles (UsuarioColegio/UsuarioProfesor), middleware, rate-limit
+├── 🚨 auditoria/             # Motor de detección de errores + AlertaAuditoria + cron command
+├── 📝 informes/              # Informes pedagógicos por sesión
+├── 📊 exportar/              # Generación de Excel + modelo PagoRealizado
+├── 📋 pendientes/            # Tablero Kanban del home
+├── 🔌 api/                   # DRF: serializers, viewsets, urls, paginación, tests
+│
+├── 🎨 templates/             # Templates compartidos (base.html, home.html, 404, 500, sw.js)
+├── 📜 logs/                  # Rotating file handler (5MB × 5 backups, gitignored)
+│
+├── 🚀 manage.py              # Entry point Django
+├── 📦 requirements.txt       # Dependencias de producción
+├── 🛠️  requirements-dev.txt  # Adicionales de desarrollo y testing
+├── 🔒 .env                   # Variables locales (gitignored)
+├── 📄 README.md              # Este archivo
+└── 🤖 CLAUDE.md              # Guía para sesiones de Claude Code
+```
+
+---
+
+## 🔐 Roles y control de acceso
+
+El middleware [`usuarios/middleware.py`](usuarios/middleware.py) impone scope por rol y ruta:
+
+| Rol                    | Vinculación                  | Rutas permitidas                       | Atributos inyectados en `request`              |
+|------------------------|------------------------------|----------------------------------------|------------------------------------------------|
+| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                   | `perfil_colegio=None`, `perfil_profesor=None`  |
+| 🏫 **Gestor colegio**  | `UsuarioColegio` (OneToOne)  | `/colegios/`, `/informes/`             | `perfil_colegio`, `colegio_anio_activo`        |
+| 👨‍🏫 **Profesor**         | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/`           | `perfil_profesor`                              |
+
+> ⚠️ Un usuario autenticado **sin perfil vinculado** se desloguea automáticamente. La API REST y rutas PWA quedan fuera del middleware (la API usa JWT propio).
+
+**Ratelimit**: el decorador `@rate_limit(max_calls, periodo)` (en `usuarios/ratelimit.py`) protege endpoints sensibles:
+- 🔐 Login: **10 intentos / 60 s** por IP.
+- 📚 AJAX de unidades/materias: **200 / 60 s**.
+
+---
+
+## 📡 API REST
+
+**Prefijo:** `/api/v1/`
+
+### 🔑 Autenticación
+
+```bash
+# Obtener token
+curl -X POST http://localhost:8000/api/v1/auth/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "***"}'
+# → { "access": "eyJ...", "refresh": "eyJ..." }
+
+# Refrescar
+curl -X POST http://localhost:8000/api/v1/auth/token/refresh/ \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": "eyJ..."}'
+```
+
+| Token   | Vigencia |
+|---------|----------|
+| Access  | 8 horas  |
+| Refresh | 7 días   |
+
+### 📚 Documentación interactiva
+
+| Recurso          | URL                                                                                  |
+|------------------|--------------------------------------------------------------------------------------|
+| 🧪 Swagger UI     | [`/api/v1/docs/`](http://localhost:8000/api/v1/docs/)                                |
+| 📖 ReDoc          | [`/api/v1/redoc/`](http://localhost:8000/api/v1/redoc/)                              |
+| 📄 OpenAPI schema | [`/api/v1/schema/`](http://localhost:8000/api/v1/schema/)                            |
+
+### 🛣️ Endpoints disponibles
+
+| Recurso                          | Métodos | Descripción                                                  |
+|----------------------------------|---------|--------------------------------------------------------------|
+| `/api/v1/profesores/`            | `GET`   | Listado de profesores con filtros y búsqueda                 |
+| `/api/v1/colegios/`              | `GET`   | Catálogo base de colegios                                    |
+| `/api/v1/colegios-anio/`         | `GET`   | Instancias anuales con `valor_hora`                          |
+| `/api/v1/clases/`                | `GET`   | Clases programadas (filtros: desde/hasta, profesor, colegio) |
+| `/api/v1/clases-particulares/`   | `GET`   | Clases particulares                                           |
+| `/api/v1/pagos/`                 | `GET`, `POST` | Pagos realizados — crear marca `marcado_por=request.user` |
+
+**Paginación**: 200/página por defecto, `?page_size=N` (max 1000).
+**Throttle**: `1000/hora/usuario`.
+
+---
+
+## 🧪 Tests y calidad
+
+```bash
+# Ejecutar toda la suite (usa SQLite en test_db.sqlite3)
+python manage.py test
+
+# Tests de una app específica
+python manage.py test api
+python manage.py test colegios
+python manage.py test auditoria
+
+# Cobertura (requiere coverage)
+coverage run --source='.' manage.py test
+coverage report -m
+coverage html  # → htmlcov/index.html
+```
+
+**Convenciones**:
+- Tests con `unittest`/`Django TestCase` (no pytest todavía, aunque está disponible).
+- BD de tests siempre SQLite — forzado en `core/settings.py` cuando `'test' in sys.argv`.
+- Cobertura objetivo: **80 %** en `api/`, `auditoria/`, `colegios/`, `usuarios/`.
+
+**Herramientas dev disponibles** (ver `requirements-dev.txt`):
+
+- 🐛 `django-debug-toolbar` — panel de SQL/templates/signals
+- 🔬 `django-extensions` — `shell_plus`, `runserver_plus`, `graph_models`
+- 🧵 `django-silk` — profiling de queries y request timing
+- 🏭 `factory-boy` — fixtures declarativos
+
+---
+
+## ☁️ Despliegue en producción
+
+### Render
+
+**Build command**:
+```bash
+pip install -r requirements.txt && \
+python manage.py collectstatic --noinput && \
+python manage.py migrate
+```
+
+**Start command**:
+```bash
+gunicorn core.wsgi:application
+```
+
+**Variables de entorno** (Settings → Environment):
+- `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS=<tu-dominio>`
+- `DATABASE_URL` (Supabase pooler con SSL)
+- `PASSWORD_ENCRYPT_KEY`, `SECURE_SSL_REDIRECT=True`
+- `CACHE_BACKEND=redis` + `REDIS_URL` (opcional)
+
+**Cron sugerido** (Render Cron Jobs, cada 30 min):
+```bash
+python manage.py ejecutar_auditoria
+```
+
+> ⚠️ Render tiene **filesystem efímero** — todos los Excel/ZIP se generan en `BytesIO` y se devuelven directamente en la respuesta.
+
+**Cabeceras de seguridad activadas con `DEBUG=False`**:
+- 🔒 `SECURE_SSL_REDIRECT` (configurable)
+- 🍪 `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`
+- 🛡️ `SECURE_CONTENT_TYPE_NOSNIFF`
+- ⏳ HSTS 1 año con `includeSubDomains` y `preload`
+- 🪟 `XFrameOptions` (clickjacking)
+
+---
+
+## 🩹 Mantenimiento
+
+### Comandos útiles
+
+```bash
+# Crear migraciones tras cambios en modelos
+python manage.py makemigrations
+python manage.py migrate
+
+# Auditoría manual (ignora throttle de 5 min)
+python manage.py ejecutar_auditoria
+
+# Recolectar estáticos antes de desplegar
+python manage.py collectstatic --noinput
+
+# Shell con autoload de modelos (django-extensions)
+python manage.py shell_plus
+
+# Ver SQL de una migración sin aplicarla
+python manage.py sqlmigrate <app> <numero>
+```
+
+### Logs
+
+- Rotating file handler: `logs/app.log` (5 MB × 5 backups).
+- Logger principal: `aamo` (DEBUG en dev, INFO en prod).
+- En `DEBUG=True` también va a consola.
+
+### Caché
+
+Si trabajas en `vista_general` o `auditoria/engine.py`, recuerda invalidar la caché (los signals de `colegios/signals.py` lo hacen al modificar `Clase`/`Asignacion`).
+
+---
+
+## 🤝 Contribuir
+
+1. Crea una rama desde `main`: `git checkout -b feat/mi-feature`.
+2. Sigue las convenciones de comentarios del repo: explica el **porqué** de decisiones no obvias, no el **qué**.
+3. Añade/actualiza tests en la app correspondiente (`apps/<nombre>/tests.py` o `api/tests/`).
+4. Ejecuta `python manage.py test` y verifica que pase todo.
+5. Si tocas modelos, **incluye la migración** en el commit.
+6. Abre un PR contra `main` con una descripción clara del cambio y su motivación.
+
+> 📖 Si modificas algo estructural (rutas, modelos, signals, caché), **actualiza también [`CLAUDE.md`](CLAUDE.md)** para mantener la guía interna sincronizada.
+
+---
+
+## 📜 Licencia
+
+Este proyecto es **de uso interno** de la organización **Milton Ochoa / AAMO**. No está licenciado para distribución pública.
+
+---
+
+<div align="center">
+
+**Hecho con ❤️ por el equipo AAMO**
+
+<sub>© 2026 Programación AAMO · Versión Web</sub>
+
+</div>

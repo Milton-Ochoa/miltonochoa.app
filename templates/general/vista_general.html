@@ -1,0 +1,222 @@
+{% extends 'base.html' %}
+{% load materia_tags %}
+{% block header_title %}Cronograma General{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Vista General</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<form method="GET" class="d-flex align-items-center gap-2 mb-0">
+    <label class="fw-bold text-secondary small mb-0"><i class="fas fa-calendar-alt me-1"></i>Mes:</label>
+    <select name="mes" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+        {% for num, nombre in meses %}
+        <option value="{{ num }}" {% if num == mes_sel %}selected{% endif %}>{{ nombre }}</option>
+        {% endfor %}
+    </select>
+    <label class="fw-bold text-secondary small mb-0 ms-1">Año:</label>
+    <select name="anio" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+        {% for a in anios %}
+        <option value="{{ a }}" {% if a == anio_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endblock %}
+
+{% block content %}
+<style>
+    .table-container { 
+        overflow: auto; 
+        max-width: 100%; 
+        max-height: 75vh; /* Activa el scroll vertical manteniendo la cabecera fija */
+        position: relative; 
+    }
+    
+    table { border-collapse: separate; border-spacing: 0; width: auto !important; }
+    .table-bordered > :not(caption) > * > * { border-width: 0; } 
+
+    /* Celdas comunes para mantener la cuadrícula visible */
+    th, td { border-right: 1px solid #dee2e6; border-bottom: 1px solid #dee2e6; }
+
+    /* Columnas fijas Horizontales SOLO para el cuerpo de la tabla */
+    tbody td.sticky-col-1 { position: sticky; left: 0; z-index: 5; background: #fff !important; width: 120px; min-width: 120px; max-width: 120px; text-align: center; vertical-align: middle; }
+    tbody td.sticky-col-2 { position: sticky; left: 120px; z-index: 5; background: #f8f9fa !important; width: 80px; min-width: 80px; max-width: 80px; text-align: center; vertical-align: middle; }
+    tbody td.sticky-col-3 { position: sticky; left: 200px; z-index: 5; background: #fff !important; width: 130px; min-width: 130px; max-width: 130px; font-size: 0.85rem; text-align: center; vertical-align: middle; border-right: 2px solid #adb5bd !important; }
+
+    /* Fila de Fechas Fija (Cabecera negra con texto blanco asegurado) */
+    thead th { 
+        position: sticky; 
+        top: 0; 
+        z-index: 6; 
+        background: #212529 !important; 
+        color: #ffffff !important; 
+        border-bottom: 2px solid #000;
+        vertical-align: middle;
+    }
+    
+    /* Esquinas superiores ancladas */
+    thead th.sticky-col-1 { left: 0; z-index: 7; background: #212529 !important; border-right: 1px solid #495057; width: 120px; min-width: 120px; max-width: 120px; }
+    thead th.sticky-col-2 { left: 120px; z-index: 7; background: #212529 !important; border-right: 1px solid #495057; width: 80px; min-width: 80px; max-width: 80px; }
+    thead th.sticky-col-3 { left: 200px; z-index: 7; background: #212529 !important; border-right: 2px solid #adb5bd !important; width: 130px; min-width: 130px; max-width: 130px; }
+
+    /* FILAS DIVISORAS NEGRAS - Se quita el z-index para que fluyan debajo de la cabecera */
+    tbody tr.divisor-grado td { padding: 0 !important; border: none !important; background-color: #000 !important; height: 12px !important; }
+    tbody tr.divisor-colegio td { padding: 0 !important; border: none !important; background-color: #000 !important; height: 20px !important; }
+
+    .cell-hover:hover { background-color: #f1f8ff !important; transition: 0.2s; }
+</style>
+
+<div class="container-fluid py-2">
+    <!-- Selector de mes/año (solo mobile, en desktop va en el header) -->
+    <div class="mb-2 d-flex d-md-none align-items-center gap-2 flex-wrap">
+        <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+            <label class="fw-bold text-secondary me-1 mb-0"><i class="fas fa-calendar-alt me-1"></i> Mes:</label>
+            <select name="mes" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                {% for num, nombre in meses %}
+                <option value="{{ num }}" {% if num == mes_sel %}selected{% endif %}>{{ nombre }}</option>
+                {% endfor %}
+            </select>
+            <label class="fw-bold text-secondary mb-0 ms-1">Año:</label>
+            <select name="anio" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                {% for a in anios %}
+                <option value="{{ a }}" {% if a == anio_sel %}selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+    {% if not dias_header %}
+    <div class="mb-2">
+        <span class="text-muted small"><i class="fas fa-info-circle me-1"></i>Sin clases programadas este mes.</span>
+    </div>
+    {% endif %}
+    <div class="table-container shadow-sm rounded bg-white border">
+        <table class="table text-center align-middle mb-0 table-sm">
+            <thead>
+                <tr>
+                    <th class="sticky-col-1">Colegio</th>
+                    <th class="sticky-col-2">Grado</th>
+                    <th class="sticky-col-3">Horario</th>
+                    {% for dia in dias_header %}
+                    <th style="min-width: 160px; padding: 10px 0;" data-fecha="{{ dia|date:"Y-m-d" }}">
+                        <span class="text-capitalize">{{ dia|date:"D d" }}</span><br>
+                        <small class="fw-light text-uppercase">{{ dia|date:"M" }}</small>
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% comment %}
+                Estructura de 3 columnas sticky con rowspan calculado en Python (core/views.py):
+                  - Columna Colegio: rowspan = total_rowspan (todos los bloques + separadores de grado).
+                    Solo se emite en forloop.parentloop.first AND forloop.first (primer bloque del primer grado).
+                  - Columna Grado: rowspan = rowspan_grado (# de bloques del grado).
+                    Solo se emite en forloop.first (primer bloque del grado).
+                  - Columna Horario: se emite en cada bloque (sin rowspan).
+                  Los separadores divisor-grado y divisor-colegio son filas extra contadas en total_rowspan.
+                {% endcomment %}
+                {% for datos_col in estructura_general %}
+                    {% for grado_data in datos_col.grados_data %}
+                        {% for bloque in grado_data.bloques %}
+
+                        <tr>
+                            {% if forloop.parentloop.first and forloop.first %}
+                                <td rowspan="{{ datos_col.total_rowspan }}" class="sticky-col-1 text-primary fw-bold bg-light border-end">
+                                    {{ datos_col.colegio.nombre }}
+                                </td>
+                            {% endif %}
+
+                            {% if forloop.first %}
+                                <td rowspan="{{ grado_data.rowspan }}" class="sticky-col-2 fw-bold">
+                                    {{ grado_data.nombre_grado }}
+                                </td>
+                            {% endif %}
+                            
+                            <td class="sticky-col-3 fw-bold text-muted">{{ bloque.hora }}</td>
+
+                            {% for dia in dias_header %}
+                                {% with dia_str=dia|date:"Y-m-d" %}
+                                <td class="p-0 position-relative cell-hover" style="height: 55px; vertical-align: top;">
+                                    {% with clase=matriz|get_item:bloque.id|get_item:dia_str %}
+                                        {% if clase %}
+                                            <div class="p-1 text-start border-start border-3 h-100 position-relative
+                                                {% if clase.cancelada %}border-danger bg-danger bg-opacity-10
+                                                {% elif clase.es_evento %}border-warning bg-warning bg-opacity-10
+                                                {% endif %}"
+                                                style="font-size: 0.75rem; line-height: 1;{% if not clase.cancelada and not clase.es_evento %}{% materia_color clase.materia__nombre as mc %} border-color:{{ mc }} !important; background-color:{{ mc }}1a;{% endif %}">
+
+                                                {% if clase.cancelada %}
+                                                    <span class="badge bg-danger mb-1" style="font-size: 0.6rem;">Cancelada</span>
+                                                    <div class="text-decoration-line-through" style="line-height: 1.1;">{% materia_badge clase.materia__nombre %}</div>
+                                                    <div class="text-muted small text-decoration-line-through">{{ clase.profesor__nombre_corto }}</div>
+                                                {% elif clase.es_evento %}
+                                                    <span class="badge bg-warning text-dark mb-1" style="font-size: 0.6rem;"><i class="fas fa-star"></i> Evento</span>
+                                                    <div class="fw-bold text-dark" style="line-height: 1.1;">{{ clase.titulo_evento }}</div>
+                                                {% else %}
+                                                    <div style="line-height: 1.1;">{% materia_badge clase.materia__nombre %}</div>
+                                                    <div class="text-muted small">{{ clase.profesor__nombre_corto }}</div>
+                                                    {% if clase.unidad %}
+                                                        <div class="badge bg-dark mt-1" style="font-size: 0.6rem;">
+                                                            {% if clase.unidad == 'S' %}Socialización
+                                                            {% elif clase.unidad == 'A' %}Material
+                                                            {% else %}Unidad {{ clase.unidad }}{% endif %}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                    {% endwith %}
+                                </td>
+                                {% endwith %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        
+                        {% comment %}
+                        divisor-grado: franja negra de 12px entre grados del mismo colegio.
+                        Las celdas sticky llevan la misma clase para que el fondo negro tape el contenido.
+                        {% endcomment %}
+                        {% if not forloop.last %}
+                        <tr class="divisor-grado">
+                            <td class="sticky-col-2"></td>
+                            <td class="sticky-col-3"></td>
+                            <td colspan="{{ dias_header|length }}"></td>
+                        </tr>
+                        {% endif %}
+
+                    {% endfor %}
+                    
+                    {# divisor-colegio: franja negra de 20px más gruesa, entre colegios distintos. #}
+                    {% if not forloop.last %}
+                    <tr class="divisor-colegio">
+                        <td class="sticky-col-1"></td>
+                        <td class="sticky-col-2"></td>
+                        <td class="sticky-col-3"></td>
+                        <td colspan="{{ dias_header|length }}"></td>
+                    </tr>
+                    {% endif %}
+
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const hoy = "{{ hoy }}";
+            if (hoy) {
+                const container = document.querySelector('.table-container');
+                const headers = container ? container.querySelectorAll('thead th[data-fecha]') : [];
+                for (const th of headers) {
+                    if (th.getAttribute('data-fecha') >= hoy) {
+                        const offsetLeft = th.offsetLeft - 330;
+                        container.scrollLeft = Math.max(0, offsetLeft);
+                        break;
+                    }
+                }
+            }
+        });
+    </script>
+</div>
+{% endblock %}

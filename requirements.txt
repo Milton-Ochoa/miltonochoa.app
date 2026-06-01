@@ -1,0 +1,32 @@
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║ requirements.txt — dependencias de PRODUCCIÓN (Render)             ║
+# ║ Para herramientas de desarrollo/testing usa requirements-dev.txt   ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
+# ── Servidor web (producción) ───────────────────────────────────────────────
+gunicorn==25.3.0           # WSGI server para Render
+whitenoise==6.12.0         # Servir archivos estáticos sin Nginx
+
+# ── Django y base de datos ──────────────────────────────────────────────────
+Django==5.2.11
+dj-database-url==3.1.0     # Parsea DATABASE_URL (PostgreSQL en Supabase)
+psycopg2-binary==2.9.11    # Adaptador PostgreSQL
+
+# ── Exportación Excel ───────────────────────────────────────────────────────
+openpyxl==3.1.5            # Generación de .xlsx en exportar/views.py y carga_masiva.py
+
+# ── Utilidades ──────────────────────────────────────────────────────────────
+python-dotenv==1.2.1       # Cargar variables desde .env / .env.dev-api
+tzdata==2025.3             # Datos de zonas horarias (Windows + producción)
+
+# ── HTMX ─────────────────────────────────────────────────────────────────────
+django-htmx==1.19.0        # Detecta HX-Request y expone request.htmx en vistas
+
+# ── API REST ─────────────────────────────────────────────────────────────────
+djangorestframework==3.15.2           # DRF core
+djangorestframework-simplejwt==5.3.1  # JWT auth para API (8h access / 7d refresh)
+drf-spectacular==0.27.2               # OpenAPI schema + Swagger UI (/api/v1/docs/)
+django-filter==24.3                   # Filtros declarativos para DRF viewsets
+
+# ── Caché Redis (opcional — solo si CACHE_BACKEND=redis) ────────────────────
+django-redis==5.4.0        # Backend Redis para Django cache
