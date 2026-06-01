@@ -60,15 +60,15 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'django_filters',
     'core',
-    'configuracion',
-    'colegios',
-    'profesores',
+    'programacion.configuracion',
+    'programacion.colegios',
+    'programacion.profesores',
     'usuarios',
-    'informes',
-    'auditoria',
-    'exportar',
-    'pendientes',
-    'api',
+    'programacion.informes',
+    'programacion.auditoria',
+    'programacion.exportar',
+    'programacion.pendientes',
+    'programacion.api',
 ]
 
 MIDDLEWARE = [
@@ -98,7 +98,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'auditoria.context_processors.alertas_vigentes',
+                'programacion.auditoria.context_processors.alertas_vigentes',
             ],
         },
     },
@@ -166,7 +166,7 @@ else:
 # ─────────────────────────────────────────────────────────────
 BACKUP_DIR = os.environ.get(
     'BACKUP_DIR',
-    str(BASE_DIR.parent / 'backups')  # ../backups/ fuera del proyecto
+    str(BASE_DIR / 'backups')  # AAMO/backups/ dentro del proyecto
 )
 
 LOG_DIR = BASE_DIR / 'logs'
@@ -239,7 +239,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'api.pagination.StandardPagination',
+    'DEFAULT_PAGINATION_CLASS': 'programacion.api.pagination.StandardPagination',
     'PAGE_SIZE': 200,
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.UserRateThrottle',
