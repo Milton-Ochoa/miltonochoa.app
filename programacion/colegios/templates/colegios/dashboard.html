@@ -1,0 +1,1406 @@
+{% extends 'base.html' %}
+{% load materia_tags %}
+{% block header_title %}Colegios{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Colegios</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+{% if anios_disponibles|length > 1 %}
+<form method="GET" class="d-flex align-items-center gap-2 mb-0">
+    <label class="fw-bold text-secondary small mb-0"><i class="fas fa-calendar-alt me-1"></i>Año:</label>
+    <select name="anio" class="form-select form-select-sm" style="width:auto;" onchange="window.location.href='?anio=' + this.value">
+        {% for y in anios_disponibles %}
+        <option value="{{ y }}" {% if y == anio_sel %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<style>
+    .hora-plana { white-space: nowrap; font-size: 0.85rem; padding-left: 10px !important; text-align: left !important; }
+    
+    .table-container { overflow: auto; max-width: 100%; max-height: 75vh; position: relative; }
+    
+    table { border-collapse: separate; border-spacing: 0; width: auto !important; }
+    .table-bordered > :not(caption) > * > * { border-width: 0; } 
+    th, td { border-right: 1px solid #dee2e6; border-bottom: 1px solid #dee2e6; }
+
+    /* Columnas fijas Horizontales SOLO para el cuerpo de la tabla */
+    tbody td.sticky-col { position: sticky; left: 0; z-index: 5; background: #f8f9fa !important; min-width: 80px; text-align: center; vertical-align: middle; }
+    tbody td.sticky-col-2 { position: sticky; left: 80px; z-index: 5; background: #fff !important; min-width: 130px; text-align: center; vertical-align: middle; border-right: 2px solid #adb5bd !important; }
+
+    /* Fila de Fechas Fija (Cabecera negra impecable) */
+    thead th { position: sticky; top: 0; z-index: 6; background: #212529 !important; color: #ffffff !important; border-bottom: 2px solid #000; vertical-align: middle; }
+
+    /* Esquinas superiores ancladas */
+    thead th.sticky-col { left: 0; z-index: 7; background: #212529 !important; border-right: 1px solid #495057; }
+    thead th.sticky-col-2 { left: 80px; z-index: 7; background: #212529 !important; border-right: 2px solid #adb5bd !important; }
+
+    /* FILA DIVISORA NEGRA (Cero conflictos de z-index) */
+    tbody tr.divisor-grado td { padding: 0 !important; border: none !important; background-color: #000 !important; height: 12px !important; }
+
+    .cell-hover:hover { background-color: #f1f8ff !important; transition: 0.2s; }
+    .stats-tab-btn { font-size:0.78rem; padding:3px 12px; border-radius:4px; border:1px solid #6c757d; background:transparent; color:#fff; cursor:pointer; transition:0.15s; }
+    .stats-tab-btn.activo { background:#fff; color:#212529; font-weight:bold; border-color:#fff; }
+    .stats-legend-box { display:inline-block; width:13px; height:13px; border-radius:3px; border:1px solid; vertical-align:middle; margin-right:4px; }
+</style>
+
+<div class="container-fluid py-3">
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {# Selector de año mobile (en desktop va en el header) #}
+    {% if anios_disponibles|length > 1 %}
+    <div class="mb-2 d-flex d-md-none align-items-center gap-2 flex-wrap">
+        <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+            <label class="fw-bold text-secondary mb-0"><i class="fas fa-calendar-alt me-1"></i>Año:</label>
+            <select name="anio" class="form-select form-select-sm" style="width:auto;" onchange="window.location.href='?anio=' + this.value">
+                {% for y in anios_disponibles %}
+                <option value="{{ y }}" {% if y == anio_sel %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+    {% endif %}
+    {% comment %}
+    Tabla de Cronograma.
+    Columnas sticky: Grado (left:0) + Horario (left:80px) ancladas horizontalmente.
+    Z-index: 7=esquinas thead, 6=thead, 5=tbody sticky, para que el scroll funcione sin overlap.
+    Las celdas de datos llevan ondblclick solo para staff — gestores de colegio ven solo lectura.
+    {% endcomment %}
+    {% if sel_col %}
+    <div class="d-flex align-items-center rounded-top bg-dark px-3 py-2" style="border: 1px solid #dee2e6; border-bottom: none;">
+        {% if request.user.is_staff and not usuario_bloqueado %}
+        <div style="width: 120px;"></div>
+        {% endif %}
+        <div class="mx-auto" style="width: 450px;">
+            {% if usuario_bloqueado %}
+            <div class="text-white text-center fw-bold"><i class="fas fa-school me-1"></i> {{ sel_col }}</div>
+            {% else %}
+            <select class="form-select form-select-sm select2-busqueda" onchange="if(this.value) window.location.href='?id_col=' + this.value + '&anio={{ anio_sel }}'">
+                <option value="">Buscar colegio...</option>
+                {% for c in colegios %}
+                <option value="{{ c.id }}" {% if sel_col and sel_col.id == c.id %}selected{% endif %}>{{ c.nombre }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+        </div>
+        {% if request.user.is_staff and not usuario_bloqueado %}
+        <button type="button" class="btn btn-success btn-sm ms-3" onclick="abrirModalCrear()">
+            <i class="fas fa-plus me-1"></i> Crear clase
+        </button>
+        {% endif %}
+    </div>
+    <div id="panel-tabla">
+        {% include 'colegios/_partials/_panel_tabla.html' %}
+    </div>
+    {% comment %}
+    Estadísticas de Avance Curricular.
+    Solo visible para staff y cuando hay clases registradas (stats_vacio=False).
+    El contenido se renderiza completamente en JS (renderLibrosAsignados()) usando
+    STATS_JSON inyectado más abajo — no hay HTML de stats en el servidor.
+    {% endcomment %}
+    {% if not stats_vacio and request.user.is_staff %}
+    <div class="mt-4" id="seccion-stats">
+      <div class="d-flex align-items-center flex-wrap gap-2 rounded-top bg-dark px-3 py-2" style="border:1px solid #dee2e6; border-bottom:none;">
+        <span class="text-white fw-bold me-2" style="font-size:0.9rem;"><i class="fas fa-chart-bar me-1"></i> Estadísticas de avance</span>
+        <div id="stats-tabs" class="d-flex flex-wrap gap-1"></div>
+      </div>
+      <div class="border rounded-bottom bg-white p-3">
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <select id="stats-filtro-materia" class="form-select form-select-sm" style="max-width:230px;">
+            <option value="">Todas las materias</option>
+          </select>
+          <div class="btn-group btn-group-sm">
+            <button id="btn-vista-simple"    class="btn btn-dark"         onclick="setVistaStats('simple')">Simple</button>
+            <button id="btn-vista-detallada" class="btn btn-outline-dark" onclick="setVistaStats('detallada')">Detallada</button>
+          </div>
+        </div>
+        {# Panel de estadísticas unificado #}
+        <div id="stats-libros-contenido"></div>
+        <div class="d-flex flex-wrap gap-3 mt-3" id="stats-leyenda" style="font-size:0.76rem; color:#666;">
+          <span><span class="stats-legend-box" style="background:#d1e7dd;border-color:#a3cfbb;"></span> Dada 1 vez</span>
+          <span><span class="stats-legend-box" style="background:#fff3cd;border-color:#ffc107;"></span> Repetida (≥2)</span>
+          <span><span class="stats-legend-box" style="background:#f8f9fa;border-color:#dee2e6;"></span> Pendiente</span>
+          <span><span class="stats-legend-box" style="background:#f8d7da;border-color:#f5c2c7;"></span> Unidad no válida</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-5 text-muted">
+        {% if not usuario_bloqueado %}
+        <div class="d-inline-block" style="width: 400px;">
+            <p class="mb-2 fw-bold">Selecciona un colegio para ver su cronograma</p>
+            <select class="form-select select2-busqueda" onchange="if(this.value) window.location.href='?id_col=' + this.value + '&anio={{ anio_sel }}'">
+                <option value="">Buscar colegio...</option>
+                {% for c in colegios %}
+                <option value="{{ c.id }}">{{ c.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if alertas_colegio %}
+<div class="card mt-4 mb-4 shadow-sm border-0 border-top border-danger border-3">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0 text-danger fw-bold"><i class="fas fa-exclamation-triangle"></i> Alertas de Auditoría</h5>
+            <small class="text-muted">Errores vigentes para {{ sel_col }}.</small>
+        </div>
+        <a href="{% url 'lista_alertas' %}" class="btn btn-outline-danger btn-sm">
+            <i class="fas fa-shield-alt me-1"></i> Ver todas
+        </a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-3" style="background:#212529;color:#fff;">Tipo</th>
+                    <th style="background:#212529;color:#fff;">Descripción</th>
+                    <th style="background:#212529;color:#fff;">Detectado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alerta in alertas_colegio %}
+                <tr>
+                    <td class="ps-3">
+                        {% if alerta.tipo == 'duplicado' %}
+                        <span class="badge" style="background-color:#fd7e14;">{{ alerta.get_tipo_display }}</span>
+                        {% elif alerta.tipo == 'conflicto' %}
+                        <span class="badge bg-danger">{{ alerta.get_tipo_display }}</span>
+                        {% else %}
+                        <span class="badge" style="background-color:#6f42c1;">{{ alerta.get_tipo_display }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ alerta.mensaje }}</td>
+                    <td class="text-muted small">{{ alerta.detectado|date:"d/m/Y" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% comment %}
+Modal Principal: Programar / Editar / Eliminar Clase.
+Los <input type="hidden"> capturan el estado que el JS arma antes del submit:
+  - material_especial / tipo_especial / libro_especial_id / enlace_personalizado
+Se rellenan en prepararHiddensMaterialEspecial() para que el backend no tenga
+que inferir el tipo de clase desde los campos visibles del form.
+onsubmit intercepta el submit normal y lo reemplaza por guardarClaseAjax().
+{% endcomment %}
+{% if request.user.is_staff %}
+<div class="modal fade" id="modalClase" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <form method="POST" class="modal-content" onsubmit="prepararHiddensMaterialEspecial()">
+            {% csrf_token %}
+            <input type="hidden" name="guardar_clase" value="1">
+            <input type="hidden" name="bloque_id" id="modal_bloque_id">
+            <input type="hidden" name="fecha_clase" id="modal_fecha_clase">
+            <input type="hidden" name="eliminar_clase" id="modal_eliminar" value="0">
+            <input type="hidden" name="material_especial" id="modal_material_especial_val" value="0">
+            <input type="hidden" name="tipo_especial" id="modal_tipo_especial_val" value="">
+            <input type="hidden" name="libro_especial_id" id="modal_libro_especial_id_val" value="">
+            <input type="hidden" name="enlace_personalizado" id="modal_enlace_personalizado_val" value="">
+
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title" id="modalTitle">Programar Clase</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3 text-muted" id="modalSubtitle"></p>
+
+                <div class="d-flex gap-3 mb-3 pb-2 border-bottom">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="es_evento" id="modal_es_evento" onchange="toggleCamposEvento()">
+                        <label class="form-check-label fw-bold text-warning text-darken" for="modal_es_evento"><i class="fas fa-star"></i> Evento Especial</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="cancelada" id="modal_cancelada" onchange="toggleCamposCancelada()">
+                        <label class="form-check-label fw-bold text-danger" for="modal_cancelada"><i class="fas fa-ban"></i> Clase Cancelada</label>
+                    </div>
+                </div>
+
+                <div id="campos_clase">
+                    <div class="mb-2 pt-2">
+                        <div class="d-flex gap-4 flex-wrap">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="modal_material_asignado"
+                                       onchange="toggleMaterialAsignado()">
+                                <label class="form-check-label fw-bold text-primary" for="modal_material_asignado">
+                                    <i class="fas fa-book me-1"></i> Material Asignado
+                                </label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="modal_socializacion"
+                                       onchange="toggleSocializacion()">
+                                <label class="form-check-label fw-bold text-secondary" for="modal_socializacion">
+                                    <i class="fas fa-clipboard-list me-1"></i> Socialización
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 d-none" id="campo_libro_asignado">
+                        <label class="form-label fw-bold">Libro / Material</label>
+                        <select id="modal_libro_asignado" class="form-select" onchange="onLibroAsignadoChange()">
+                            <option value="">Seleccionar libro...</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3" id="campo_materia">
+                        <label class="form-label fw-bold">Materia / Tema</label>
+                        <select name="materia" id="modal_materia" class="form-select" required>
+                            <option value="">Seleccionar materia...</option>
+                        </select>
+                        <div id="aviso_libro_asignado" class="d-none mt-1">
+                            <small class="text-success">
+                                <i class="fas fa-book me-1"></i>
+                                Libro: <span id="texto_libro_asignado" class="fw-bold"></span>
+                            </small>
+                        </div>
+                        <div id="aviso_sin_libro" class="d-none mt-1">
+                            <small class="text-warning fw-bold">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Sin libro asignado para esta fecha.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Profesor</label>
+                        <select name="profesor" id="modal_profesor" class="form-select" required>
+                            <option value="">Seleccionar profesor...</option>
+                            {% for p in profesores %}
+                            <option value="{{ p.id }}">{{ p.nombre_corto }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3" id="campo_unidad_normal">
+                        <label class="form-label fw-bold">Unidad</label>
+                        <select name="unidad" id="modal_unidad" class="form-select" required>
+                            <option value="">Seleccionar unidad...</option>
+                        </select>
+                        <small class="text-muted" id="texto-recomendacion"></small>
+                    </div>
+
+                    <div class="mb-3 d-none" id="campo_enlace_especial">
+                        <label class="form-label fw-bold">Enlace para esta clase <small class="text-muted fw-normal">(opcional)</small></label>
+                        <input type="url" id="modal_enlace_especial" class="form-control" placeholder="https://...">
+                        <small class="text-muted" id="texto_enlace_origen"></small>
+                    </div>
+                </div>
+
+                <div id="campos_evento" class="d-none mb-3">
+                    <label class="form-label fw-bold">Título del Evento</label>
+                    <input type="text" name="titulo_evento" id="modal_titulo_evento" class="form-control" placeholder="Ej: Simulacro ICFES, Izada de Bandera...">
+                </div>
+
+                <div id="campos_comentarios" class="d-none mb-3">
+                    <label class="form-label fw-bold">Comentarios / Notas</label>
+                    <textarea name="comentarios" id="modal_comentarios" class="form-control" rows="2" placeholder="Explica el motivo de cancelación o detalles..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" id="btnEliminar" class="btn btn-danger d-none" onclick="confirmarEliminar()">Eliminar Clase</button>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{# Modal de confirmación de recálculo de secuencia #}
+{% if sel_col and request.user.is_staff %}
+<div class="modal fade" id="modalRecalcular" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title fw-bold"><i class="fas fa-sort-numeric-up me-2"></i>¿Actualizar secuencia?</h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Se detectaron clases que podrían quedar con unidades duplicadas o desordenadas. ¿Deseas renumerar las siguientes clases?</p>
+                <div id="recalc-lista"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cerrarRecalcularYReload()">No, dejar como está</button>
+                <button type="button" class="btn btn-warning fw-bold" onclick="ejecutarRecalculo()">
+                    <i class="fas fa-sync me-1"></i> Sí, actualizar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% comment %}
+Modal Crear Clase (desde botón "Crear clase").
+Permite crear una clase en una fecha/grado/bloque sin hacer doble clic en la tabla
+(útil cuando la fila no está visible en el scroll horizontal).
+Al confirmar, cierra este modal y llama prepararModal() con un setTimeout(300ms)
+para darle tiempo al modal anterior de terminar la animación de cierre.
+{% endcomment %}
+{% if sel_col and request.user.is_staff %}
+<div class="modal fade" id="modalCrearClase" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-plus me-1"></i> Crear clase</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Fecha</label>
+                    <input type="date" id="crear_fecha" class="form-control form-control-sm"
+                           {% if sel_col %}min="{{ sel_col.anio }}-01-01" max="{{ sel_col.anio }}-12-31"{% endif %}>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Grado</label>
+                    <select id="crear_grado" class="form-select form-select-sm">
+                        <option value="">Seleccionar grado...</option>
+                        {% for grado, lista_bloques in bloques_agrupados.items %}
+                        <option value="{{ grado }}">{{ grado }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Bloque horario</label>
+                    <select id="crear_bloque" class="form-select form-select-sm">
+                        <option value="">Selecciona grado primero...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success btn-sm" onclick="confirmarCrearClase()">Continuar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% comment %}
+Datos para JS: inyectados como constantes JSON desde Django.
+  BLOQUES_POR_GRADO: {grado: [{id, hora}]} — para poblar el select de "Crear clase"
+  LIBROS_ESPECIALES: [{id, nombre}] — libros con es_material_asignado=True
+  STATS_JSON: {grado: {materia: {libros, color, detalle_adicional}}} — estadísticas de avance
+{% endcomment %}
+{% if sel_col %}
+<script>
+    const BLOQUES_POR_GRADO = {{ bloques_json|safe }};
+    const LIBROS_ESPECIALES = {{ libros_especiales_json|safe }};
+</script>
+{% if not stats_vacio and request.user.is_staff %}
+<script>let STATS_JSON = {{ stats_json|safe }};</script>
+{% endif %}
+{% endif %}
+<script>
+    // URLs definidas desde Django para no hardcodearlas en el JS
+    const URL_OBTENER_MATERIAS = "{% url 'ajax_obtener_materias' %}";
+    const URL_OBTENER_UNIDADES = "{% url 'ajax_obtener_unidades' %}";
+    {% if sel_col %}
+    const URL_GUARDAR_CLASE     = "{% url 'ajax_guardar_clase' sel_col.id %}";
+    const URL_RECALCULAR        = "{% url 'ajax_recalcular_secuencia' sel_col.id %}";
+    const URL_PANEL_STATS       = "{% url 'ajax_panel_stats' sel_col.id %}";
+    const URL_PANEL_TABLA       = "{% url 'ajax_panel_tabla' sel_col.id %}";
+    {% endif %}
+
+    $(document).ready(function() {
+        $('.select2-busqueda').select2({ theme: "bootstrap-5", width: '100%' });
+
+        // Auto-scroll a hoy
+        const hoy = "{{ hoy }}";
+        if (hoy) {
+            const container = document.querySelector('.table-container');
+            const headers = container ? container.querySelectorAll('thead th') : [];
+            for (let i = 3; i < headers.length; i++) {
+                const texto = headers[i].textContent.trim();
+                // Buscar el th cuya fecha >= hoy usando data-fecha
+                const thFecha = headers[i].getAttribute('data-fecha');
+                if (thFecha && thFecha >= hoy) {
+                    // Scroll para que la columna de hoy quede visible (dejando las columnas fijas)
+                    const offsetLeft = headers[i].offsetLeft - 220; // 220px = ancho sticky cols
+                    container.scrollLeft = Math.max(0, offsetLeft);
+                    break;
+                }
+            }
+        }
+        initStats();
+    });
+
+    async function prepararModal(bloqueId, grado, hora, fechaISO, fechaLegible) {
+        // Resetear campos
+        document.getElementById('modal_bloque_id').value = bloqueId;
+        document.getElementById('modal_fecha_clase').value = fechaISO;
+        document.getElementById('modal_eliminar').value = "0";
+        document.getElementById('modal_profesor').value = "";
+        document.getElementById('texto-recomendacion').innerText = "";
+        document.getElementById('btnEliminar').classList.add('d-none');
+
+        document.getElementById('modalTitle').innerText = "Grado " + grado + " | " + hora;
+        document.getElementById('modalSubtitle').innerText = "Fecha: " + fechaLegible;
+
+        document.getElementById('modal_es_evento').checked = false;
+        document.getElementById('modal_cancelada').checked = false;
+        document.getElementById('modal_titulo_evento').value = "";
+        document.getElementById('modal_comentarios').value = "";
+        document.getElementById('aviso_sin_libro').classList.add('d-none');
+        document.getElementById('aviso_libro_asignado').classList.add('d-none');
+        // Resetear material especial
+        document.getElementById('modal_material_asignado').checked = false;
+        document.getElementById('modal_socializacion').checked = false;
+        document.getElementById('campo_libro_asignado').classList.add('d-none');
+        document.getElementById('campo_materia').classList.remove('d-none');
+        document.getElementById('campo_unidad_normal').classList.remove('d-none');
+        document.getElementById('campo_enlace_especial').classList.add('d-none');
+        document.getElementById('modal_enlace_especial').value = '';
+        document.getElementById('texto_enlace_origen').innerText = '';
+        document.getElementById('modal_unidad').required = true;
+        document.getElementById('modal_materia').required = true;
+        _unidadLinks = {};
+        toggleCamposEvento();
+
+        // Limpiar selects dependientes
+        let selectMat = document.getElementById('modal_materia');
+        let selectUni = document.getElementById('modal_unidad');
+        selectMat.innerHTML = '<option value="">Cargando materias...</option>';
+        selectUni.innerHTML = '<option value="">Seleccionar unidad...</option>';
+
+        // 1. Cargar materias asignadas para esa fecha
+        try {
+            let res = await fetch(`${URL_OBTENER_MATERIAS}?colegio_id={{ sel_col.id }}&grado=${grado}&fecha=${fechaISO}`);
+            let data = await res.json();
+            let materias = data.materias || data; // compatibilidad si fuera array plano
+            let sinLibro = data.sin_libro || false;
+            let libroNombre = data.libro_nombre || null;
+
+            // Mostrar/ocultar aviso de libro asignado
+            let avisoLibroEl = document.getElementById('aviso_libro_asignado');
+            let textoLibroEl = document.getElementById('texto_libro_asignado');
+            if (libroNombre && !sinLibro) {
+                textoLibroEl.textContent = libroNombre;
+                avisoLibroEl.classList.remove('d-none');
+            } else {
+                avisoLibroEl.classList.add('d-none');
+            }
+
+            // Mostrar/ocultar aviso de sin libro
+            let avisoEl = document.getElementById('aviso_sin_libro');
+            if (sinLibro) { avisoEl.classList.remove('d-none'); }
+            else          { avisoEl.classList.add('d-none'); }
+
+            selectMat.innerHTML = '<option value="">Seleccionar materia...</option>';
+            materias.forEach(m => {
+                let opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selectMat.appendChild(opt);
+            });
+
+            // 2. Si ya había una clase guardada, rellenar los datos
+            let infoDiv = document.getElementById('info-clase-' + bloqueId + '-' + fechaISO);
+            if (infoDiv) {
+                document.getElementById('btnEliminar').classList.remove('d-none');
+
+                document.getElementById('modal_es_evento').checked = infoDiv.getAttribute('data-evento') === '1';
+                document.getElementById('modal_cancelada').checked = infoDiv.getAttribute('data-cancelada') === '1';
+                document.getElementById('modal_titulo_evento').value = infoDiv.getAttribute('data-titulo') || '';
+                document.getElementById('modal_comentarios').value = infoDiv.getAttribute('data-comentarios') || '';
+                toggleCamposEvento();
+
+                const esMaterialEspecial = infoDiv.getAttribute('data-material-especial') === '1';
+                const unidadGuardada = infoDiv.getAttribute('data-unidad');
+                const enlacePersonalizado = infoDiv.getAttribute('data-enlace-personalizado') || '';
+
+                if (esMaterialEspecial) {
+                    const libroEspecialId = infoDiv.getAttribute('data-libro-especial-id');
+
+                    if (unidadGuardada === 'S') {
+                        // Restaurar Socialización
+                        document.getElementById('modal_socializacion').checked = true;
+                        await toggleSocializacion();
+                        document.getElementById('modal_materia').value = infoDiv.getAttribute('data-materia');
+                        filtrarProfesoresPorMateria(infoDiv.getAttribute('data-materia'));
+                        document.getElementById('modal_profesor').value = infoDiv.getAttribute('data-profe');
+                        if (enlacePersonalizado) {
+                            document.getElementById('campo_enlace_especial').classList.remove('d-none');
+                            document.getElementById('modal_enlace_especial').value = enlacePersonalizado;
+                        }
+                    } else if (libroEspecialId) {
+                        // Restaurar Material Asignado
+                        document.getElementById('modal_material_asignado').checked = true;
+                        await toggleMaterialAsignado();
+                        document.getElementById('modal_libro_asignado').value = libroEspecialId;
+                        await onLibroAsignadoChange();
+                        // Cargar materia y unidades del libro especial
+                        document.getElementById('modal_materia').value = infoDiv.getAttribute('data-materia');
+                        filtrarProfesoresPorMateria(infoDiv.getAttribute('data-materia'));
+                        document.getElementById('modal_profesor').value = infoDiv.getAttribute('data-profe');
+                        await cargarUnidades(grado, fechaISO, unidadGuardada, libroEspecialId, enlacePersonalizado);
+                    }
+                } else {
+                    // Flujo normal
+                    document.getElementById('modal_materia').value = infoDiv.getAttribute('data-materia');
+                    filtrarProfesoresPorMateria(infoDiv.getAttribute('data-materia'));
+                    document.getElementById('modal_profesor').value = infoDiv.getAttribute('data-profe');
+                    await cargarUnidades(grado, fechaISO, unidadGuardada);
+                }
+            }
+        } catch(e) { console.error('Error cargando materias', e); }
+
+        new bootstrap.Modal(document.getElementById('modalClase')).show();
+    }
+
+    // Función auxiliar para cargar unidades y auto-recomendar
+    async function cargarUnidades(grado, fechaISO, unidadGuardada = null, libroId = null, enlacePersonalizado = '') {
+        const materia = document.getElementById('modal_materia').value;
+        const bloqueId = document.getElementById('modal_bloque_id').value;
+        const selectUni = document.getElementById('modal_unidad');
+        const textoReco = document.getElementById('texto-recomendacion');
+        textoReco.innerText = '';
+        _unidadLinks = {};
+
+        if (!materia) {
+            selectUni.innerHTML = '<option value="">Selecciona materia primero...</option>';
+            return;
+        }
+
+        selectUni.innerHTML = '<option value="">Cargando unidades...</option>';
+
+        let url = libroId
+            ? `${URL_OBTENER_UNIDADES}?colegio_id={{ sel_col.id }}&grado=${encodeURIComponent(grado)}&fecha=${fechaISO}&materia=${encodeURIComponent(materia)}&bloque_id=${bloqueId}&libro_id=${libroId}`
+            : `${URL_OBTENER_UNIDADES}?colegio_id={{ sel_col.id }}&grado=${encodeURIComponent(grado)}&fecha=${fechaISO}&materia=${encodeURIComponent(materia)}&bloque_id=${bloqueId}`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            _unidadLinks = data.links || {};
+
+            selectUni.innerHTML = '<option value="">Seleccionar unidad...</option>';
+            data.unidades.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u;
+                opt.textContent = 'Unidad ' + u;
+                selectUni.appendChild(opt);
+            });
+
+            let seleccionada = '';
+            if (unidadGuardada) {
+                selectUni.value = unidadGuardada;
+                seleccionada = unidadGuardada;
+            } else if (data.recomendada) {
+                selectUni.value = data.recomendada;
+                seleccionada = data.recomendada;
+                textoReco.innerHTML = '<i class="fas fa-magic text-success"></i> <span class="text-success">Unidad recomendada automáticamente.</span>';
+            }
+
+            // Si estamos en modo especial, mostrar/ocultar campo enlace según unidad
+            if (libroId) {
+                document.getElementById('campo_unidad_normal').classList.remove('d-none');
+                document.getElementById('modal_unidad').required = true;
+                _actualizarEnlaceEspecial(seleccionada, enlacePersonalizado);
+            }
+        } catch(e) { console.error('Error cargando unidades', e); }
+    }
+
+    function _actualizarEnlaceEspecial(unidadNum, enlacePersonalizado) {
+        if (!unidadNum) {
+            document.getElementById('campo_enlace_especial').classList.add('d-none');
+            return;
+        }
+        const link = _unidadLinks[unidadNum] || '';
+        _mostrarCampoEnlace(link, enlacePersonalizado);
+    }
+
+    // Escuchar cambios de unidad en modo especial
+    document.getElementById('modal_unidad').addEventListener('change', function() {
+        const esEspecial = document.getElementById('modal_material_asignado').checked;
+        if (esEspecial) {
+            _actualizarEnlaceEspecial(this.value, '');
+        }
+    });
+
+    // Escuchar cambios de materia para actualizar unidades
+    document.getElementById('modal_materia').addEventListener('change', () => {
+        filtrarProfesoresPorMateria(document.getElementById('modal_materia').value);
+        const { grado, fecha } = _getGradoFecha();
+        const esEspecial = document.getElementById('modal_material_asignado').checked;
+        if (esEspecial) {
+            const libroId = document.getElementById('modal_libro_asignado').value;
+            cargarUnidades(grado, fecha, null, libroId);
+        } else {
+            cargarUnidades(grado, fecha);
+        }
+    });
+
+    function toggleCamposEvento() {
+        let esEvento = document.getElementById('modal_es_evento').checked;
+        if (esEvento) {
+            document.getElementById('campos_clase').classList.add('d-none');
+            document.getElementById('campos_evento').classList.remove('d-none');
+            document.getElementById('modal_profesor').required = false;
+            document.getElementById('modal_materia').required = false;
+            document.getElementById('modal_unidad').required = false;
+            document.getElementById('modal_titulo_evento').required = true;
+        } else {
+            document.getElementById('campos_clase').classList.remove('d-none');
+            document.getElementById('campos_evento').classList.add('d-none');
+            document.getElementById('modal_profesor').required = true;
+            document.getElementById('modal_materia').required = true;
+            const esEspecial = document.getElementById('modal_material_asignado').checked || document.getElementById('modal_socializacion').checked;
+            document.getElementById('modal_unidad').required = !esEspecial;
+            document.getElementById('modal_titulo_evento').required = false;
+        }
+        toggleCamposCancelada();
+    }
+
+    // ── Material especial ─────────────────────────────────────
+    // Mapa materia → IDs de profesores para filtrado client-side
+    const profesoresPorMateria = {{ profesores_por_materia_json|safe }};
+
+    function filtrarProfesoresPorMateria(materiaNombre) {
+        const select = document.getElementById('modal_profesor');
+        const idsProfes = profesoresPorMateria[materiaNombre];
+        for (const option of select.options) {
+            if (!option.value) { option.style.display = ''; continue; }
+            if (!materiaNombre || !idsProfes || idsProfes.includes(parseInt(option.value))) {
+                option.style.display = '';
+            } else {
+                option.style.display = 'none';
+            }
+        }
+        // Si el profesor seleccionado ya no está en la lista, deseleccionar
+        if (idsProfes && select.value && !idsProfes.includes(parseInt(select.value))) {
+            select.value = '';
+        }
+    }
+
+    let _unidadLinks = {};   // {numero_str: link_url} para el libro+materia actual en modo especial
+
+    function _getGradoFecha() {
+        return {
+            grado: document.getElementById('modalTitle').innerText.split('|')[0].replace('Grado ', '').trim(),
+            fecha: document.getElementById('modal_fecha_clase').value,
+        };
+    }
+
+    function _mostrarCampoEnlace(link, enlacePersonalizado) {
+        // Si la unidad ya tiene link: no mostramos el campo (el link viene de la unidad)
+        // Si no tiene link: mostramos el campo con el enlace personalizado que hubiera
+        const campo = document.getElementById('campo_enlace_especial');
+        const input = document.getElementById('modal_enlace_especial');
+        const texto = document.getElementById('texto_enlace_origen');
+        if (link) {
+            campo.classList.add('d-none');
+            input.value = '';
+            texto.innerText = '';
+        } else {
+            campo.classList.remove('d-none');
+            input.value = enlacePersonalizado || '';
+            texto.innerHTML = enlacePersonalizado
+                ? '<i class="fas fa-link text-info"></i> Enlace guardado anteriormente.'
+                : '';
+        }
+    }
+
+    function _resetearMaterialEspecial() {
+        const { grado, fecha } = _getGradoFecha();
+        document.getElementById('campo_libro_asignado').classList.add('d-none');
+        document.getElementById('campo_materia').classList.remove('d-none');
+        document.getElementById('campo_unidad_normal').classList.remove('d-none');
+        document.getElementById('campo_enlace_especial').classList.add('d-none');
+        document.getElementById('modal_unidad').required = true;
+        document.getElementById('modal_materia').required = true;
+        document.getElementById('modal_materia').innerHTML = '<option value="">Seleccionar materia...</option>';
+        document.getElementById('modal_unidad').innerHTML = '<option value="">Seleccionar unidad...</option>';
+        document.getElementById('texto-recomendacion').innerText = '';
+        document.getElementById('modal_enlace_especial').value = '';
+        document.getElementById('aviso_sin_libro').classList.add('d-none');
+        _unidadLinks = {};
+        _cargarMateriasNormales(grado, fecha);
+    }
+
+    async function toggleMaterialAsignado() {
+        const activo = document.getElementById('modal_material_asignado').checked;
+        if (activo) {
+            // Desactivar socialización si estaba activa
+            document.getElementById('modal_socializacion').checked = false;
+
+            // Ocultar materia/unidad hasta elegir libro
+            document.getElementById('campo_materia').classList.add('d-none');
+            document.getElementById('campo_unidad_normal').classList.add('d-none');
+            document.getElementById('campo_enlace_especial').classList.add('d-none');
+            document.getElementById('modal_materia').required = false;
+            document.getElementById('modal_unidad').required = false;
+            document.getElementById('aviso_sin_libro').classList.add('d-none');
+            _unidadLinks = {};
+
+            // Llenar selector de libros material asignado
+            const selLibro = document.getElementById('modal_libro_asignado');
+            selLibro.innerHTML = '<option value="">Seleccionar libro...</option>';
+            (LIBROS_ESPECIALES || []).forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.id;
+                opt.textContent = l.nombre;
+                selLibro.appendChild(opt);
+            });
+            document.getElementById('campo_libro_asignado').classList.remove('d-none');
+        } else {
+            _resetearMaterialEspecial();
+        }
+        filtrarProfesoresPorMateria('');  // mostrar todos los profesores
+    }
+
+    async function toggleSocializacion() {
+        const activo = document.getElementById('modal_socializacion').checked;
+        if (activo) {
+            // Desactivar material asignado si estaba activo
+            document.getElementById('modal_material_asignado').checked = false;
+            document.getElementById('campo_libro_asignado').classList.add('d-none');
+
+            // Socialización: materia (todas del sistema) + enlace opcional, sin unidades
+            document.getElementById('campo_unidad_normal').classList.add('d-none');
+            document.getElementById('modal_unidad').required = false;
+            document.getElementById('modal_materia').required = true;
+            document.getElementById('aviso_sin_libro').classList.add('d-none');
+            _unidadLinks = {};
+
+            // Cargar todas las materias del sistema
+            const selectMat = document.getElementById('modal_materia');
+            selectMat.innerHTML = '<option value="">Cargando materias...</option>';
+            try {
+                const res = await fetch(`${URL_OBTENER_MATERIAS}?todas=1`);
+                const data = await res.json();
+                selectMat.innerHTML = '<option value="">Seleccionar materia...</option>';
+                (data.materias || []).forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m; opt.textContent = m;
+                    selectMat.appendChild(opt);
+                });
+            } catch(e) { console.error('Error cargando materias', e); }
+            document.getElementById('campo_materia').classList.remove('d-none');
+
+            // Mostrar campo enlace opcional
+            document.getElementById('campo_enlace_especial').classList.remove('d-none');
+            document.getElementById('texto_enlace_origen').innerHTML =
+                '<i class="fas fa-info-circle text-muted"></i> Opcional: enlace de la socialización.';
+        } else {
+            _resetearMaterialEspecial();
+        }
+        filtrarProfesoresPorMateria('');  // mostrar todos los profesores
+    }
+
+    async function onLibroAsignadoChange() {
+        const libroId = document.getElementById('modal_libro_asignado').value;
+        const selectMat = document.getElementById('modal_materia');
+
+        // Resetear materia y unidad
+        selectMat.innerHTML = '<option value="">Seleccionar materia...</option>';
+        document.getElementById('modal_unidad').innerHTML = '<option value="">Seleccionar unidad...</option>';
+        document.getElementById('texto-recomendacion').innerText = '';
+        document.getElementById('campo_enlace_especial').classList.add('d-none');
+        document.getElementById('modal_enlace_especial').value = '';
+        _unidadLinks = {};
+
+        if (!libroId) {
+            document.getElementById('campo_materia').classList.add('d-none');
+            document.getElementById('campo_unidad_normal').classList.add('d-none');
+            document.getElementById('modal_materia').required = false;
+            document.getElementById('modal_unidad').required = false;
+            return;
+        }
+
+        // Mostrar materia, cargar desde el libro seleccionado
+        document.getElementById('campo_materia').classList.remove('d-none');
+        document.getElementById('campo_unidad_normal').classList.add('d-none');
+        document.getElementById('modal_materia').required = true;
+        document.getElementById('modal_unidad').required = false;
+
+        selectMat.innerHTML = '<option value="">Cargando materias...</option>';
+        try {
+            const res = await fetch(`${URL_OBTENER_MATERIAS}?libro_id=${libroId}`);
+            const data = await res.json();
+            selectMat.innerHTML = '<option value="">Seleccionar materia...</option>';
+            (data.materias || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selectMat.appendChild(opt);
+            });
+        } catch(e) { console.error('Error cargando materias', e); }
+    }
+
+    async function _cargarMateriasNormales(grado, fechaISO) {
+        const selectMat = document.getElementById('modal_materia');
+        selectMat.innerHTML = '<option value="">Cargando materias...</option>';
+        try {
+            const colegio_id = '{{ sel_col.id|default:"" }}';
+            const res = await fetch(`${URL_OBTENER_MATERIAS}?colegio_id=${colegio_id}&grado=${grado}&fecha=${fechaISO}`);
+            const data = await res.json();
+            const materias = data.materias || data;
+            const sinLibro = data.sin_libro || false;
+            document.getElementById('aviso_sin_libro').classList.toggle('d-none', !sinLibro);
+            selectMat.innerHTML = '<option value="">Seleccionar materia...</option>';
+            materias.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selectMat.appendChild(opt);
+            });
+        } catch(e) { console.error('Error cargando materias', e); }
+    }
+
+    function prepararHiddensMaterialEspecial() {
+        const esMaterialAsignado = document.getElementById('modal_material_asignado').checked;
+        const esSocializacion    = document.getElementById('modal_socializacion').checked;
+
+        if (esSocializacion) {
+            document.getElementById('modal_material_especial_val').value = '1';
+            document.getElementById('modal_tipo_especial_val').value = 'socializacion';
+            document.getElementById('modal_libro_especial_id_val').value = '';
+            document.getElementById('modal_enlace_personalizado_val').value =
+                document.getElementById('modal_enlace_especial').value;
+        } else if (esMaterialAsignado) {
+            const libroId = document.getElementById('modal_libro_asignado').value;
+            document.getElementById('modal_material_especial_val').value = '1';
+            document.getElementById('modal_tipo_especial_val').value = 'libro';
+            document.getElementById('modal_libro_especial_id_val').value = libroId;
+            // Solo guardamos enlace personalizado si la unidad seleccionada no tiene link
+            const unidadSel = document.getElementById('modal_unidad').value;
+            const tieneLink = unidadSel && _unidadLinks[unidadSel];
+            document.getElementById('modal_enlace_personalizado_val').value =
+                tieneLink ? '' : document.getElementById('modal_enlace_especial').value;
+        } else {
+            document.getElementById('modal_material_especial_val').value = '0';
+            document.getElementById('modal_tipo_especial_val').value = '';
+            document.getElementById('modal_libro_especial_id_val').value = '';
+            document.getElementById('modal_enlace_personalizado_val').value = '';
+        }
+    }
+
+    function toggleCamposCancelada() {
+        let esEvento = document.getElementById('modal_es_evento').checked;
+        let estaCancelada = document.getElementById('modal_cancelada').checked;
+        
+        if (esEvento || estaCancelada) {
+            document.getElementById('campos_comentarios').classList.remove('d-none');
+        } else {
+            document.getElementById('campos_comentarios').classList.add('d-none');
+        }
+    }
+
+    function confirmarEliminar() {
+        if (confirm("¿Seguro que quieres eliminar esta clase programada?")) {
+            document.getElementById('modal_eliminar').value = "1";
+            guardarClaseAjax();
+        }
+    }
+
+    // ── Guardar clase vía AJAX (para detectar si hay recálculo pendiente) ──
+    {% if sel_col %}
+    let _pendientesRecalcular = [];
+
+    document.querySelector('#modalClase form')?.addEventListener('submit', function(e) {
+        if (typeof URL_GUARDAR_CLASE === 'undefined') return; // fallback: submit normal
+        e.preventDefault();
+        prepararHiddensMaterialEspecial();
+        guardarClaseAjax();
+    });
+
+    async function guardarClaseAjax() {
+        const form = document.querySelector('#modalClase form');
+        const formData = new FormData(form);
+        const btnGuardar = form.querySelector('button[type="submit"]');
+        if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+        try {
+            const res = await fetch(URL_GUARDAR_CLASE, {
+                method: 'POST',
+                body: formData,
+                headers: {'HX-Request': 'true', 'HX-Current-URL': window.location.href},
+            });
+
+            const contentType = res.headers.get('content-type') || '';
+
+            if (contentType.includes('text/html')) {
+                // Modo HTMX: actualizar solo la celda, sin recargar página
+                const html  = await res.text();
+                const bloqueId = document.getElementById('modal_bloque_id').value;
+                const fecha    = document.getElementById('modal_fecha_clase').value;
+
+                const td = document.querySelector(`td[data-bloque="${bloqueId}"][data-fecha="${fecha}"]`);
+                if (td) {
+                    td.innerHTML = html;
+                } else {
+                    // Fecha nueva — columna no existe en DOM. Refresh tabla parcial sin recargar.
+                    bootstrap.Modal.getInstance(document.getElementById('modalClase'))?.hide();
+                    const triggerHeader2 = res.headers.get('HX-Trigger');
+                    if (triggerHeader2) {
+                        try {
+                            const t2 = JSON.parse(triggerHeader2);
+                            if (t2.showToast && typeof showBootstrapToast !== 'undefined') {
+                                showBootstrapToast(t2.showToast.msg, 'success');
+                            }
+                        } catch(e) {}
+                    }
+                    refrescarTabla(fecha);
+                    refrescarStats();
+                    return;
+                }
+
+                bootstrap.Modal.getInstance(document.getElementById('modalClase'))?.hide();
+
+                const triggerHeader = res.headers.get('HX-Trigger');
+                if (triggerHeader) {
+                    const triggers = JSON.parse(triggerHeader);
+                    if (triggers.showToast && typeof showBootstrapToast !== 'undefined') {
+                        showBootstrapToast(triggers.showToast.msg, triggers.showToast.level);
+                    }
+                    if (triggers.recalcular && triggers.recalcular.length > 0) {
+                        _pendientesRecalcular = triggers.recalcular;
+                        mostrarModalRecalcular(triggers.recalcular);
+                    }
+                }
+                // Refrescar stats sin recargar (tabla ya actualizada en celda)
+                refrescarStats();
+                return;
+            }
+
+            // Fallback JSON (response sin HX-Request procesado o error)
+            const data = await res.json();
+            if (!data.ok) {
+                alert('Error al guardar: ' + (data.error || 'desconocido'));
+                return;
+            }
+            bootstrap.Modal.getInstance(document.getElementById('modalClase'))?.hide();
+            if (data.recalcular && data.recalcular.length > 0) {
+                _pendientesRecalcular = data.recalcular;
+                mostrarModalRecalcular(data.recalcular);
+            } else {
+                refrescarTabla();
+                refrescarStats();
+            }
+        } catch (err) {
+            alert('Error de red al guardar la clase.');
+        } finally {
+            if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = 'Guardar'; }
+        }
+    }
+
+    function mostrarModalRecalcular(items) {
+        const lista = document.getElementById('recalc-lista');
+        lista.innerHTML = items.map((item, i) => {
+            const motivo = item.motivo === 'materia_quitada'
+                ? `Esta materia fue quitada de hoy; sus ${item.n_clases} clase(s) futuras iniciarían desde la unidad ${item.unidad_inicio}.`
+                : `Se agregó la unidad ${item.unidad_inicio - 1} hoy; las ${item.n_clases} clase(s) futuras continuarían desde la unidad ${item.unidad_inicio}.`;
+            return `<div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="recalc_${i}" value="${i}" checked>
+                <label class="form-check-label" for="recalc_${i}">
+                    <strong>${_esc(item.materia)}</strong> / Grado ${_esc(item.grado)}<br>
+                    <small class="text-muted">${motivo}</small>
+                </label>
+            </div>`;
+        }).join('');
+        new bootstrap.Modal(document.getElementById('modalRecalcular')).show();
+    }
+
+    async function ejecutarRecalculo() {
+        const seleccionados = _pendientesRecalcular.filter((_, i) => {
+            const cb = document.getElementById('recalc_' + i);
+            return cb && cb.checked;
+        });
+
+        for (const item of seleccionados) {
+            const fd = new FormData();
+            fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            fd.append('grado',          item.grado);
+            fd.append('materia',        item.materia);
+            fd.append('fecha_desde',    item.fecha_desde);
+            fd.append('unidad_inicio',  item.unidad_inicio);
+            if (item.bloque_excluir) fd.append('bloque_excluir', item.bloque_excluir);
+            await fetch(URL_RECALCULAR, { method: 'POST', body: fd });
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('modalRecalcular'))?.hide();
+        refrescarTabla();
+        refrescarStats();
+    }
+
+    function cerrarRecalcularYReload() {
+        bootstrap.Modal.getInstance(document.getElementById('modalRecalcular'))?.hide();
+        refrescarTabla();
+        refrescarStats();
+    }
+    {% endif %}
+
+    // ── Crear clase (botón verde) ──
+    function abrirModalCrear() {
+        document.getElementById('crear_fecha').value = "{{ hoy }}";
+        document.getElementById('crear_grado').value = "";
+        document.getElementById('crear_bloque').innerHTML = '<option value="">Selecciona grado primero...</option>';
+        new bootstrap.Modal(document.getElementById('modalCrearClase')).show();
+    }
+
+    document.getElementById('crear_grado')?.addEventListener('change', function() {
+        const grado = this.value;
+        const selectBloque = document.getElementById('crear_bloque');
+        selectBloque.innerHTML = '<option value="">Seleccionar bloque...</option>';
+        if (grado && typeof BLOQUES_POR_GRADO !== 'undefined' && BLOQUES_POR_GRADO[grado]) {
+            BLOQUES_POR_GRADO[grado].forEach(b => {
+                let opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = b.hora;
+                selectBloque.appendChild(opt);
+            });
+        }
+    });
+
+    function confirmarCrearClase() {
+        const fecha = document.getElementById('crear_fecha').value;
+        const grado = document.getElementById('crear_grado').value;
+        const bloqueId = document.getElementById('crear_bloque').value;
+        const bloqueSelect = document.getElementById('crear_bloque');
+        const hora = bloqueSelect.options[bloqueSelect.selectedIndex]?.textContent || '';
+
+        if (!fecha || !grado || !bloqueId) {
+            alert('Selecciona fecha, grado y bloque horario.');
+            return;
+        }
+
+        // Cerrar el modal de crear
+        bootstrap.Modal.getInstance(document.getElementById('modalCrearClase')).hide();
+
+        // Formatear fecha legible
+        const d = new Date(fecha + 'T12:00:00');
+        const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+        const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        const fechaLegible = dias[d.getDay()] + ' ' + d.getDate() + ' ' + meses[d.getMonth()];
+
+        // Abrir el modal principal de clase
+        setTimeout(() => prepararModal(bloqueId, grado, hora, fecha, fechaLegible), 300);
+    }
+
+    // ── Refresh parcial sin recargar página ───────────────
+    async function refrescarStats() {
+        if (typeof URL_PANEL_STATS === 'undefined') return;
+        try {
+            // Capturar selección previa (grado + filtro de materia) para preservarla tras el refresh
+            // y evitar que la vista vuelva al primer grado al programar/editar una clase.
+            const prevGrado = _statsGrado;
+            const prevFiltroMateria = document.getElementById('stats-filtro-materia')?.value || '';
+            const res = await fetch(URL_PANEL_STATS);
+            if (!res.ok) return;
+            const data = await res.json();
+            STATS_JSON = data.stats || {};
+            const tabsEl = document.getElementById('stats-tabs');
+            if (tabsEl) tabsEl.innerHTML = '';
+            _statsGrado = null;
+            initStats();
+            // Restaurar grado si todavía existe en los datos nuevos.
+            if (prevGrado && Object.prototype.hasOwnProperty.call(STATS_JSON, prevGrado)) {
+                switchGradoTab(prevGrado);
+                // Restaurar filtro de materia si la opción sigue disponible para ese grado.
+                if (prevFiltroMateria) {
+                    const sel = document.getElementById('stats-filtro-materia');
+                    if (sel && Array.from(sel.options).some(o => o.value === prevFiltroMateria)) {
+                        sel.value = prevFiltroMateria;
+                        renderLibrosAsignados();
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    async function refrescarTabla(fechaScroll) {
+        if (typeof URL_PANEL_TABLA === 'undefined') return;
+        try {
+            const res = await fetch(URL_PANEL_TABLA);
+            if (!res.ok) return;
+            const html = await res.text();
+            const panel = document.getElementById('panel-tabla');
+            if (!panel) return;
+            // Capturar scroll horizontal previo: tras innerHTML el contenedor se reemplaza
+            // y scrollLeft vuelve a 0. Solo se restaura cuando no se pidió un destino
+            // explícito (fechaScroll), p. ej. tras el flujo de recálculo de secuencia.
+            const prevScrollLeft = (() => {
+                const c = document.querySelector('.table-container');
+                return c ? c.scrollLeft : 0;
+            })();
+            panel.innerHTML = html;
+            if (fechaScroll) {
+                scrollHastaFecha(fechaScroll);
+            } else {
+                const c = document.querySelector('.table-container');
+                if (c) c.scrollLeft = prevScrollLeft;
+            }
+        } catch (e) {}
+    }
+
+    // Posiciona el scroll horizontal del cronograma sobre la columna de la fecha indicada.
+    // Se usa tras refrescar la tabla cuando se crea una clase en una fecha nueva, para
+    // evitar que el scroll vuelva al inicio y la nueva columna quede fuera de vista.
+    function scrollHastaFecha(fechaISO) {
+        if (!fechaISO) return;
+        const container = document.querySelector('.table-container');
+        if (!container) return;
+        const th = container.querySelector(`thead th[data-fecha="${fechaISO}"]`);
+        if (!th) return;
+        container.scrollLeft = Math.max(0, th.offsetLeft - 220); // 220px = ancho sticky cols
+    }
+
+    // ── Estadísticas ──────────────────────────────────────
+    let _statsGrado = null;
+    let _statsVista = 'simple';
+
+    function initStats() {
+        if (typeof STATS_JSON === 'undefined') return;
+        const grados = Object.keys(STATS_JSON);
+        if (!grados.length) return;
+
+        const tabsEl = document.getElementById('stats-tabs');
+        grados.forEach((g, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'stats-tab-btn' + (i === 0 ? ' activo' : '');
+            btn.textContent = g;
+            btn.onclick = () => switchGradoTab(g);
+            tabsEl.appendChild(btn);
+        });
+        switchGradoTab(grados[0]);
+    }
+
+    function switchGradoTab(grado) {
+        _statsGrado = grado;
+        document.querySelectorAll('.stats-tab-btn').forEach(b => {
+            b.classList.toggle('activo', b.textContent === grado);
+        });
+        const sel = document.getElementById('stats-filtro-materia');
+        const materias = Object.keys(STATS_JSON[grado] || {});
+        sel.innerHTML = '<option value="">Todas las materias</option>';
+        materias.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m; opt.textContent = m;
+            sel.appendChild(opt);
+        });
+        renderLibrosAsignados();
+    }
+
+    function setVistaStats(vista) {
+        _statsVista = vista;
+        document.getElementById('btn-vista-simple').className    = vista === 'simple'    ? 'btn btn-sm btn-dark' : 'btn btn-sm btn-outline-dark';
+        document.getElementById('btn-vista-detallada').className = vista === 'detallada' ? 'btn btn-sm btn-dark' : 'btn btn-sm btn-outline-dark';
+        renderLibrosAsignados();
+    }
+
+    function _badgeStyle(tipo) {
+        const estilos = {
+            dado:      'background:#d1e7dd;color:#0a3622;border:1px solid #a3cfbb;',
+            repetido:  'background:#fff3cd;color:#664d03;border:1px solid #ffc107;',
+            pendiente: 'background:#f8f9fa;color:#adb5bd;border:1px solid #dee2e6;',
+            invalido:  'background:#f8d7da;color:#842029;border:1px solid #f5c2c7;',
+            adicional: 'background:#cfe2ff;color:#084298;border:1px solid #9ec5fe;',
+        };
+        return estilos[tipo] || estilos.pendiente;
+    }
+
+    function _esc(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // ── Renderizador unificado de estadísticas ─────────────────
+    function renderLibrosAsignados() {
+        if (!_statsGrado || typeof STATS_JSON === 'undefined') return;
+        const gradoData   = STATS_JSON[_statsGrado] || {};
+        const contenedor  = document.getElementById('stats-libros-contenido');
+        if (!contenedor) return;
+        const filtroMat   = document.getElementById('stats-filtro-materia')?.value || '';
+        const leyenda     = document.getElementById('stats-leyenda');
+
+        // Construir mapa libro → [{materia, color, libro_obj}]
+        const libroMap = {};
+        Object.keys(gradoData).forEach(materia => {
+            if (filtroMat && materia !== filtroMat) return;
+            const datos = gradoData[materia];
+            (datos.libros || []).forEach(libro => {
+                const key = libro.libro_nombre || '(sin asignación)';
+                if (!libroMap[key]) libroMap[key] = [];
+                libroMap[key].push({ materia, color: datos.color || '#6c757d', libro, datos });
+            });
+        });
+
+        // Materias solo adicionales (sin libro)
+        const soloAdicionales = [];
+        Object.keys(gradoData).forEach(materia => {
+            if (filtroMat && materia !== filtroMat) return;
+            const datos = gradoData[materia];
+            if ((!datos.libros || !datos.libros.length) && (datos.detalle_adicional || []).length) {
+                soloAdicionales.push({ materia, color: datos.color || '#6c757d', datos });
+            }
+        });
+
+        if (!Object.keys(libroMap).length && !soloAdicionales.length) {
+            contenedor.innerHTML = '<p class="text-muted small py-2">Sin datos para mostrar.</p>';
+            if (leyenda) leyenda.style.display = 'none';
+            return;
+        }
+        if (leyenda) leyenda.style.display = '';
+
+        // ── Vista SIMPLE: lista compacta por libro ──
+        if (_statsVista === 'simple') {
+            const librosHtml = Object.keys(libroMap).map(libroNombre => {
+                const items = libroMap[libroNombre];
+                const materiasHtml = items.map(item => {
+                    const badges = item.libro.unidades.map(u => {
+                        const suf = u.tipo === 'repetido' ? `<span style="font-size:0.65rem;"> ×${u.count}</span>` : '';
+                        const tit = u.tipo === 'invalido' ? ' title="No está en el libro"' : '';
+                        return `<span style="padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;${_badgeStyle(u.tipo)}"${tit}>${u.numero}${suf}</span>`;
+                    }).join('');
+                    return `<div class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid #f0f0f0;">
+                        <span style="font-size:0.82rem;font-weight:700;color:${item.color};min-width:110px;flex-shrink:0;">${_esc(item.materia)}</span>
+                        <div class="d-flex flex-wrap gap-1">${badges || '<span class="text-muted small">Sin unidades</span>'}</div>
+                    </div>`;
+                }).join('');
+                const esAsinAsignacion = libroNombre === '(sin asignación)';
+                const headerStyle = esAsinAsignacion ? 'color:#6c757d;font-style:italic;' : 'color:#212529;';
+                return `<div class="border rounded p-2 mb-2" style="min-width:260px;flex:1 1 260px;">
+                    <div class="fw-bold mb-1 pb-1" style="font-size:0.82rem;border-bottom:2px solid #e0e0e0;${headerStyle}">
+                        <i class="fas fa-book me-1 text-secondary"></i>${_esc(libroNombre)}
+                    </div>
+                    ${materiasHtml}
+                </div>`;
+            }).join('');
+
+            contenedor.innerHTML = `<div class="d-flex flex-wrap gap-2 align-items-start">${librosHtml}</div>`;
+
+        // ── Vista DETALLADA: tabla cronológica por libro y materia ──
+        } else {
+            const librosHtml = Object.keys(libroMap).map(libroNombre => {
+                const items = libroMap[libroNombre];
+                const materiasHtml = items.map(item => {
+                    const tipoMap = {};
+                    item.libro.unidades.forEach(u => { tipoMap[u.numero] = u.tipo; });
+
+                    // Historial de clases
+                    const filas = item.libro.detalle.map(d => {
+                        const tipo   = tipoMap[d.unidad] || 'invalido';
+                        const estilo = _badgeStyle(tipo);
+                        return `<div class="d-flex gap-2 align-items-center py-1" style="border-bottom:1px solid #f5f5f5;font-size:0.78rem;">
+                            <span class="text-muted" style="min-width:52px;">${d.fecha_display}</span>
+                            <span style="flex:1;color:#495057;">${_esc(d.profesor)}</span>
+                            <span style="padding:1px 8px;border-radius:4px;font-weight:600;${estilo}">${d.unidad}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Adicionales de esta materia
+                    const adicionales = (item.datos.detalle_adicional || []).map(d => {
+                        const estilo = _badgeStyle('adicional');
+                        return `<div class="d-flex gap-2 align-items-center py-1" style="border-bottom:1px solid #f5f5f5;font-size:0.78rem;">
+                            <span class="text-muted" style="min-width:52px;">${d.fecha_display}</span>
+                            <span style="flex:1;color:#495057;">${_esc(d.profesor)}</span>
+                            <span style="padding:1px 8px;border-radius:4px;font-weight:600;${estilo}">${d.unidad}</span>
+                        </div>`;
+                    }).join('');
+
+                    const progreso = item.libro.unidades.length > 0
+                        ? Math.round(item.libro.unidades.filter(u => u.tipo !== 'pendiente').length / item.libro.unidades.length * 100)
+                        : 0;
+                    const progressBar = item.libro.unidades.length > 0
+                        ? `<div class="progress mt-1 mb-1" style="height:4px;"><div class="progress-bar bg-success" style="width:${progreso}%"></div></div>`
+                        : '';
+
+                    return `<div class="border-start ps-2 mb-2" style="border-color:${item.color} !important;border-left-width:3px !important;">
+                        <div style="font-size:0.82rem;font-weight:700;color:${item.color};">${_esc(item.materia)}</div>
+                        ${progressBar}
+                        ${filas || adicionales
+                            ? (filas + adicionales)
+                            : '<div class="text-muted small py-1">Sin clases registradas.</div>'}
+                    </div>`;
+                }).join('');
+
+                const esAsinAsignacion = libroNombre === '(sin asignación)';
+                return `<div class="border rounded p-2 mb-2" style="min-width:280px;flex:1 1 280px;">
+                    <div class="fw-bold mb-2 pb-1" style="font-size:0.82rem;border-bottom:2px solid #dee2e6;${esAsinAsignacion ? 'color:#6c757d;font-style:italic;' : ''}">
+                        <i class="fas fa-book me-1 text-secondary"></i>${_esc(libroNombre)}
+                    </div>
+                    ${materiasHtml}
+                </div>`;
+            }).join('');
+
+            contenedor.innerHTML = `<div class="d-flex flex-wrap gap-2 align-items-start">${librosHtml}</div>`;
+        }
+    }
+
+    document.getElementById('stats-filtro-materia')?.addEventListener('change', renderLibrosAsignados);
+
+    // ── Doble-tap en móvil (solo staff) ──
+    {% if request.user.is_staff %}
+    (function() {
+        let _lastTap = 0;
+        let _lastTapEl = null;
+
+        document.querySelector('.table-container')?.addEventListener('touchend', function(e) {
+            const td = e.target.closest('td[data-bloque]');
+            if (!td) return;
+
+            const now = Date.now();
+            const isDoubleTap = (_lastTapEl === td && now - _lastTap < 350);
+            _lastTap = now;
+            _lastTapEl = td;
+
+            if (!isDoubleTap) return;
+            e.preventDefault();
+
+            const bloqueId = td.dataset.bloque;
+            const fechaISO = td.dataset.fecha;
+
+            let grado = '';
+            let tr = td.closest('tr');
+            while (tr && !grado) {
+                const gradoTd = tr.querySelector('td.sticky-col:not(.divisor-grado td)');
+                if (gradoTd) { grado = gradoTd.textContent.trim(); break; }
+                tr = tr.previousElementSibling;
+            }
+
+            const horaTd = td.closest('tr')?.querySelector('td.sticky-col-2');
+            const hora = horaTd ? horaTd.textContent.trim() : '';
+
+            const fechaObj = new Date(fechaISO + 'T12:00:00');
+            const diasSem = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+            const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+            const legible = `${diasSem[fechaObj.getDay()]} ${fechaObj.getDate()} ${meses[fechaObj.getMonth()]}`;
+
+            prepararModal(bloqueId, grado, hora, fechaISO, legible);
+        });
+    })();
+    {% endif %}
+</script>
+{% endblock %}

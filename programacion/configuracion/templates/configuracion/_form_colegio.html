@@ -1,0 +1,41 @@
+<div class="row g-3">
+  <div class="col-md-3">
+    <label class="fw-bold small">Código</label>
+    {{ form.codigo }}
+  </div>
+  <div class="col-md-5">
+    <label class="fw-bold small">Nombre <span class="text-danger">*</span></label>
+    {{ form.nombre }}
+  </div>
+  <div class="col-md-4">
+    <label class="fw-bold small">Año inicial <span class="text-danger">*</span></label>
+    <input type="number" name="anio" class="form-control" min="2020" max="2100" value="{{ anio_actual }}" required>
+  </div>
+  <div class="col-md-6">
+    <label class="fw-bold small">Departamento <span class="text-danger">*</span></label>
+    <select name="departamento" class="form-select select2-depto" required>
+      <option value="">-- Seleccionar --</option>
+      {% for val, label in form.fields.departamento.choices %}
+        {% if val %}<option value="{{ val }}">{{ label }}</option>{% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <label class="fw-bold small">Ciudad <span class="text-danger">*</span></label>
+    <select name="ciudad" class="form-select select2-ciudad" required>
+      <option value="">-- Seleccionar departamento --</option>
+    </select>
+  </div>
+  <div class="col-12">
+    <label class="fw-bold small">Dirección</label>
+    {{ form.direccion }}
+  </div>
+  <div class="col-md-8">
+    <label class="fw-bold small">Link de Maps</label>
+    {{ form.mapa_link }}
+  </div>
+  <div class="col-12">
+    <label class="fw-bold small">Observación</label>
+    {{ form.observacion }}
+  </div>
+</div>

@@ -1,0 +1,292 @@
+{% extends 'base.html' %}
+{% block header_title %}Auditoría{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Auditoría</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-auditoria { table-layout: fixed; width: 100%; }
+    .tabla-auditoria th, .tabla-auditoria td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-auditoria thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-auditoria thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-auditoria thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-auditoria tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-auditoria tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .badge-duplicado { background-color: #fd7e14; }
+    .badge-conflicto { background-color: #dc3545; }
+    .badge-secuencia { background-color: #6f42c1; }
+    .tabla-auditoria td.col-desc { white-space: normal; }
+    /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
+    .col-tipo      { width: 12%; }
+    .col-colegio   { width: 18%; }
+    .col-desc      { width: 48%; }
+    .col-detectado { width: 14%; }
+    .col-accion    { width: 8%; text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-auditoria" id="tablaAuditoria">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-tipo">Tipo</th>
+                        <th class="col-colegio">Colegio</th>
+                        <th class="col-desc">Descripción</th>
+                        <th class="col-detectado">Detectado</th>
+                        <th class="col-accion">Acción</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="tipo"></th>
+                        <th><input type="text" data-filtro="colegio"></th>
+                        <th><input type="text" data-filtro="desc"></th>
+                        <th><input type="text" data-filtro="detectado"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaAuditoria">
+                    {% for alerta in alertas %}
+                    {% with colegio_nombre=alerta.colegio.nombre|default:'' %}
+                    <tr id="fila-alerta-{{ alerta.id }}"
+                        data-tipo="{{ alerta.get_tipo_display|lower }}"
+                        data-colegio="{% if alerta.colegio %}{{ alerta.colegio.nombre|lower }}{% else %}{% for c in alerta.colegios_implicados.all %}{{ c.nombre|lower }} {% endfor %}{% endif %}"
+                        data-desc="{{ alerta.mensaje|lower }}"
+                        data-detectado="{{ alerta.detectado|date:'d/m/Y' }}">
+                        <td>
+                            <span class="badge badge-{{ alerta.tipo }}">{{ alerta.get_tipo_display }}</span>
+                        </td>
+                        <td>
+                            {% if alerta.colegio %}
+                                <strong>{{ alerta.colegio.nombre }}</strong>
+                            {% elif alerta.colegios_implicados.all %}
+                                {% for c in alerta.colegios_implicados.all %}
+                                    <span class="badge bg-dark">{{ c.nombre }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-desc">
+                            {% if alerta.profesor %}
+                                <i class="fas fa-user-graduate text-muted me-1"></i>
+                            {% endif %}
+                            {{ alerta.mensaje }}
+                        </td>
+                        <td class="text-muted small">{{ alerta.detectado|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-outline-warning btn-sm py-0 px-2 btn-ignorar"
+                                    data-id="{{ alerta.id }}"
+                                    data-mensaje="{{ alerta.mensaje|truncatechars:120 }}"
+                                    title="Ignorar esta alerta">
+                                <i class="fas fa-ban"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">
+                            <i class="fas fa-check-circle me-1 text-success"></i> No hay alertas vigentes.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisiblesAud">0</span> de {{ alertas|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesAud"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ignorar -->
+<div class="modal fade" id="modalIgnorar" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-ban me-2 text-warning"></i>Ignorar alerta</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-secondary small mb-3" id="ignorar-mensaje-alerta"></div>
+                <label class="form-label fw-bold">Motivo <span class="text-danger">*</span></label>
+                <textarea id="ignorar-motivo" class="form-control" rows="3"
+                          placeholder="Explica por qué este error no se puede corregir..."
+                          minlength="5" required></textarea>
+                <div class="invalid-feedback d-block mt-1" id="ignorar-error" style="display:none!important"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning fw-bold" id="btn-confirmar-ignorar">
+                    <i class="fas fa-ban me-1"></i> Confirmar ignorar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaAuditoria tr[data-tipo]'));
+    var ctrl   = document.getElementById('paginaControlesAud');
+    var cont   = document.getElementById('contadorVisiblesAud');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+
+    render();
+})();
+
+const CSRF = '{{ csrf_token }}';
+let _ignorarId = null;
+let _modalIgnorar = null;
+
+function getModalIgnorar() {
+    if (!_modalIgnorar) {
+        _modalIgnorar = new bootstrap.Modal(document.getElementById('modalIgnorar'));
+    }
+    return _modalIgnorar;
+}
+
+document.querySelectorAll('.btn-ignorar').forEach(btn => {
+    btn.addEventListener('click', () => {
+        _ignorarId = btn.dataset.id;
+        document.getElementById('ignorar-mensaje-alerta').textContent = btn.dataset.mensaje;
+        document.getElementById('ignorar-motivo').value = '';
+        document.getElementById('ignorar-motivo').classList.remove('is-invalid');
+        document.getElementById('ignorar-error').style.display = 'none';
+        getModalIgnorar().show();
+    });
+});
+
+document.getElementById('btn-confirmar-ignorar').addEventListener('click', async () => {
+    const motivo  = document.getElementById('ignorar-motivo').value.trim();
+    const errorEl = document.getElementById('ignorar-error');
+    const textarea = document.getElementById('ignorar-motivo');
+
+    if (motivo.length < 5) {
+        errorEl.textContent = 'El motivo debe tener al menos 5 caracteres.';
+        errorEl.style.display = '';
+        textarea.classList.add('is-invalid');
+        return;
+    }
+    textarea.classList.remove('is-invalid');
+    errorEl.style.display = 'none';
+
+    const btn = document.getElementById('btn-confirmar-ignorar');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
+
+    try {
+        const res = await fetch(`/auditoria/ajax/ignorar/${_ignorarId}/`, {
+            method: 'POST',
+            headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `motivo=${encodeURIComponent(motivo)}`,
+        });
+        const data = await res.json();
+        if (data.ok) {
+            // La alerta dejó de ser vigente: la quitamos de la tabla en lugar de mostrarla "Ignorada",
+            // porque esta vista solo lista vigentes.
+            const fila = document.getElementById('fila-alerta-' + _ignorarId);
+            if (fila) fila.remove();
+            getModalIgnorar().hide();
+            if (typeof showBootstrapToast !== 'undefined') {
+                showBootstrapToast('Alerta marcada como ignorada', 'warning');
+            }
+        } else {
+            errorEl.textContent = data.error || 'Error al ignorar.';
+            errorEl.style.display = '';
+            textarea.classList.add('is-invalid');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-ban me-1"></i> Confirmar ignorar';
+        }
+    } catch {
+        errorEl.textContent = 'Error de red. Intenta de nuevo.';
+        errorEl.style.display = '';
+        textarea.classList.add('is-invalid');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-ban me-1"></i> Confirmar ignorar';
+    }
+});
+</script>
+{% endblock %}

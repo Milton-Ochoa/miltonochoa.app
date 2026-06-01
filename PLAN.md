@@ -334,7 +334,7 @@ captura/numérico de datos cargados).
 
 ## 5. Bitácora de ejecución (la rellena la sesión que ejecuta)
 - [x] Fase 0 — Respaldos OK: `backups/AAMO_export.xlsx` (178 KB) y baselines copiados a la raíz. Baseline: 167 tests OK, 32 tablas. Python 3.13.13, git 2.54.
-- [ ] Fase 1 —
+- [x] Fase 1 — Clon OK (commit a296127). Motor+globales (manage.py, core/, usuarios/, templates/, requirements, README, .gitignore) en raíz. venv recreado e instalado (Django 5.2.11). Creados `.env.dev-api` (SQLite) y `.env.example`. `check` falla con `No module named 'configuracion'` (esperado: apps aún en _tmp). git init para rollback.
 - [ ] Fase 2 —
 - [ ] Fase 3 —
 - [ ] Fase 4 —

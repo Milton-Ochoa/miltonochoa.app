@@ -1,0 +1,58 @@
+{% comment %}
+Partial: tarjeta de tarea para el kanban.
+Variables: tarea (instancia de Tarea), user (request.user)
+{% endcomment %}
+{% with estado_color=tarea.estado %}
+<div class="card kanban-card shadow-sm{% if tarea.estado == 'completado' %} border-0 opacity-75{% endif %}"
+     id="card-tarea-{{ tarea.id }}"
+     style="border-left: 5px solid {% if tarea.estado == 'pendiente' %}#0d6efd{% elif tarea.estado == 'gestion' %}#0dcaf0{% else %}#198754{% endif %};"
+     ondblclick="abrirModalEditar('{{ tarea.id }}', '{{ tarea.titulo|escapejs }}', '{{ tarea.descripcion|escapejs }}')">
+    <div class="card-body p-3">
+        <p class="mb-{% if tarea.estado == 'completado' %}1{% else %}2{% endif %} fw-bold {% if tarea.estado == 'completado' %}text-muted text-decoration-line-through{% else %}text-dark{% endif %}">{{ tarea.titulo }}</p>
+        {% if tarea.estado == 'completado' %}
+        <small class="text-muted d-block mb-2" style="font-size: 0.7rem;">Finalizado: {{ tarea.fecha_completado|date:"d/m H:i" }}</small>
+        {% endif %}
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="badge badge-user">{{ tarea.creado_por.username }}</span>
+            <div class="btn-group">
+                {% if tarea.estado == 'pendiente' %}
+                    <form method="post" action="{% url 'cambiar_estado' tarea.id 'gestion' %}" class="d-inline"
+                          hx-post="{% url 'cambiar_estado' tarea.id 'gestion' %}"
+                          hx-target="#col-gestion"
+                          hx-swap="beforeend"
+                          hx-on::after-request="this.closest('#card-tarea-{{ tarea.id }}').remove()">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-info" title="Empezar"><i class="fas fa-play"></i></button>
+                    </form>
+                {% elif tarea.estado == 'gestion' %}
+                    <form method="post" action="{% url 'cambiar_estado' tarea.id 'pendiente' %}" class="d-inline"
+                          hx-post="{% url 'cambiar_estado' tarea.id 'pendiente' %}"
+                          hx-target="#col-pendientes"
+                          hx-swap="beforeend"
+                          hx-on::after-request="this.closest('#card-tarea-{{ tarea.id }}').remove()">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="fas fa-undo"></i></button>
+                    </form>
+                    <form method="post" action="{% url 'cambiar_estado' tarea.id 'completado' %}" class="d-inline"
+                          hx-post="{% url 'cambiar_estado' tarea.id 'completado' %}"
+                          hx-target="#col-completados"
+                          hx-swap="beforeend"
+                          hx-on::after-request="this.closest('#card-tarea-{{ tarea.id }}').remove()">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i></button>
+                    </form>
+                {% elif tarea.estado == 'completado' %}
+                    <form method="post" action="{% url 'cambiar_estado' tarea.id 'gestion' %}" class="d-inline"
+                          hx-post="{% url 'cambiar_estado' tarea.id 'gestion' %}"
+                          hx-target="#col-gestion"
+                          hx-swap="beforeend"
+                          hx-on::after-request="this.closest('#card-tarea-{{ tarea.id }}').remove()">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-link p-0 text-decoration-none">Reabrir</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endwith %}

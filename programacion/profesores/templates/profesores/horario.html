@@ -1,0 +1,595 @@
+{% extends 'base.html' %}
+{% load materia_tags %}
+{% block header_title %}{% if request.user.perfil_profesor %}{{ request.user.perfil_profesor.profesor.nombre_corto }}{% else %}Profesores{% endif %}{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Profesores</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<style>
+    .wrapper-agenda { display: flex; background: #fff; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px; overflow: hidden; }
+    .wrapper-agenda.sin-header { border-radius: 8px; }
+    .columna-labels { flex: 0 0 150px; background-color: #f8f9fa; border-right: 2px solid #adb5bd; }
+    .contenedor-datos { display: flex; overflow-x: auto; flex-grow: 1; }
+    .card-fecha-grupo { display: flex; flex-direction: column; border-right: 1px solid #dee2e6; }
+    .header-combinado { background-color: #212529; color: #ffffff; font-weight: bold; text-align: center; padding: 0.5rem; border-bottom: 2px solid #000; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1.2; }
+    .celda-corner { background-color: #212529 !important; border-bottom: 2px solid #000 !important; }
+    .clases-container { display: flex; }
+    .celda { height: 50px; display: flex; align-items: center; justify-content: center; padding: 5px; border-bottom: 1px solid #dee2e6; font-size: 0.85rem; }
+    .celda-label { justify-content: flex-start; padding-left: 15px; font-weight: bold; color: #495057; }
+    .link-azul { color: #007bff !important; text-decoration: underline !important; font-weight: 600; }
+    .celda-contenido {width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; padding: 0 5px; }
+    .celda-contenido:hover {white-space: normal; background: #fff; position: relative; z-index: 10; overflow: visible; border: 1px solid #dee2e6; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .columna-clase { min-width: 220px;  max-width: 280px; border-right: 1px solid #eee; text-align: center;}
+</style>
+
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<div class="container-fluid py-3">
+{% if profesor_sel and not usuario_bloqueado %}
+<div class="d-flex align-items-center rounded-top bg-dark px-3 py-2" style="border: 1px solid #dee2e6; border-bottom: none;">
+    {% if request.user.is_staff %}
+    <div style="width: 120px;"></div>
+    {% endif %}
+    <div class="mx-auto" style="width: 450px;">
+        <select class="form-select form-select-sm select2-busqueda" onchange="if(this.value) window.location.href='?profesor_id=' + this.value">
+            <option value="">Buscar profesor...</option>
+            {% for p in profesores %}
+            <option value="{{ p.id }}" {% if profesor_sel == p.id|stringformat:"s" %}selected{% endif %}>{{ p.nombre_corto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if request.user.is_staff %}
+    <button type="button" class="btn btn-warning btn-sm ms-3 text-dark fw-bold border border-warning" onclick="abrirNuevoParticular()">
+        <i class="fas fa-plus-circle me-1"></i> Particular
+    </button>
+    {% endif %}
+</div>
+{% elif not profesor_sel %}
+<div class="text-center py-5 text-muted">
+    {% if not usuario_bloqueado %}
+    <div class="d-inline-block" style="width: 400px;">
+        <p class="mb-2 fw-bold">Selecciona un profesor para ver su cronograma</p>
+        <select class="form-select select2-busqueda" onchange="if(this.value) window.location.href='?profesor_id=' + this.value">
+            <option value="">Buscar profesor...</option>
+            {% for p in profesores %}
+            <option value="{{ p.id }}">{{ p.nombre_corto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% comment %}
+Agenda Transpuesta.
+Layout: columna-labels (fija a la izquierda) + contenedor-datos (scroll horizontal).
+Filas = etiquetas (Colegio, Ciudad, Hora, Grado, Material, Asignatura, Unidad, Informe).
+Columnas = una por clase del día, ordenadas por (fecha, hora_inicio).
+Clases de colegios y clases particulares se mezclan cronológicamente.
+raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-poblar el modal.
+{% endcomment %}
+{% if agrupado %}
+<div class="wrapper-agenda shadow-sm{% if usuario_bloqueado %} sin-header{% endif %}">
+    <div class="columna-labels">
+        <div class="celda celda-corner" style="height: 38px;"></div>
+        <div class="celda celda-label">Colegio</div>
+        <div class="celda celda-label">Ciudad</div>
+        <div class="celda celda-label">Hora</div>
+        <div class="celda celda-label">Grado</div>
+        <div class="celda celda-label">Material</div>
+        <div class="celda celda-label">Asignatura</div>
+        <div class="celda celda-label">Unidad</div>
+        <div class="celda celda-label">Informe</div>
+    </div>
+
+    <div class="contenedor-datos">
+        {% for grupo in agrupado %}
+        <div class="card-fecha-grupo" data-fecha="{{ grupo.fecha|date:'Y-m-d' }}">
+            <div class="header-combinado">
+                <span class="text-capitalize fw-bold">{{ grupo.fecha|date:"D d M" }}</span>
+            </div>
+            <div class="clases-container">
+                {% for item in grupo.clases %}
+                <div class="columna-clase">
+                    <div class="celda position-relative">
+                        <a href="{{ item.maps_link }}" target="_blank" class="link-azul text-truncate" style="max-width: 85%;">{% if item.es_particular %}{{ item.particular_obj.estudiante }} (Part.){% else %}{{ item.clase.colegio.nombre }}{% endif %}</a>
+                        {% if request.user.is_staff and item.es_particular %}
+                        <button class="btn btn-sm text-warning p-0 border-0 position-absolute" style="right: 6px;" title="Editar Clase Particular"
+                            onclick="abrirEditarParticular('{{ item.particular_id }}', '{{ item.raw_data.estudiante|escapejs }}', '{{ item.raw_data.ciudad|escapejs }}', '{{ item.maps_link|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.hora_inicio }}', '{{ item.raw_data.hora_fin }}', '{{ item.raw_data.grado|escapejs }}', '{{ item.raw_data.material|escapejs }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.raw_data.unidad|escapejs }}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                    <div class="celda">{% if item.es_particular %}{{ item.particular_obj.ciudad }}{% else %}{{ item.clase.colegio.ciudad }}{% endif %}</div>
+                    <div class="celda fw-bold text-dark">{% if item.es_particular %}{{ item.particular_obj.hora }}{% else %}{{ item.clase.bloque.hora }}{% endif %}</div>
+                    <div class="celda">{% if item.es_particular %}{{ item.particular_obj.grado }}{% else %}{{ item.clase.bloque.grado }}{% endif %}</div>
+                    <div class="columna-clase">
+                        <div class="celda">
+                            <span class="celda-contenido" title="{{ item.material }}">{{ item.material }}</span>
+                        </div>
+        
+                        <div class="celda">
+                            {% if item.es_particular %}{% materia_badge item.particular_obj.materia %}{% else %}{% materia_badge item.clase.materia %}{% endif %}
+                        </div>
+        
+                        <div class="celda">
+                            <a href="{{ item.unidad_link }}" target="_blank" class="link-azul celda-contenido" title="{{ item.unidad_full }}">
+                                {{ item.unidad_full }}
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Fila Informe -->
+                    <div class="celda justify-content-center">
+                        {% if item.es_particular %}
+                        {% with inf=item.particular_obj.informe %}
+                        <button class="btn btn-sm {% if inf and inf.completado %}btn-success{% else %}btn-outline-secondary{% endif %} py-0 px-2"
+                                title="{% if inf and inf.completado %}Ver / Editar informe{% else %}Crear informe{% endif %}"
+                                onclick="abrirInforme(null, '{{ item.particular_id }}', '{{ item.particular_obj.estudiante|escapejs }}', '{{ item.particular_obj.grado|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.unidad_full|escapejs }}', '{{ item.material|escapejs }}', this)">
+                            <i class="fas fa-{% if inf and inf.completado %}check{% else %}plus{% endif %}"></i>
+                            {% if inf and inf.completado %}Subido{% else %}Pendiente{% endif %}
+                        </button>
+                        {% endwith %}
+                        {% else %}
+                        {% with inf=item.clase.informe %}
+                        <button class="btn btn-sm {% if inf and inf.completado %}btn-success{% else %}btn-outline-secondary{% endif %} py-0 px-2"
+                                title="{% if inf and inf.completado %}Ver / Editar informe{% else %}Crear informe{% endif %}"
+                                onclick="abrirInforme('{{ item.clase.id }}', null, '{{ item.clase.colegio.nombre|escapejs }}', '{{ item.clase.bloque.grado|escapejs }}', '{{ item.clase.fecha|date:'Y-m-d' }}', '{{ item.clase.materia|escapejs }}', '{{ item.unidad_full|escapejs }}', '{{ item.material|escapejs }}', this)">
+                            <i class="fas fa-{% if inf and inf.completado %}check{% else %}plus{% endif %}"></i>
+                            {% if inf and inf.completado %}Subido{% else %}Pendiente{% endif %}
+                        </button>
+                        {% endwith %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        $('.select2-busqueda').select2({ theme: "bootstrap-5", width: '100%' });
+
+        // Auto-scroll a la próxima fecha (igual que en /colegios/)
+        const hoy = "{{ hoy }}";
+        if (hoy) {
+            const contenedor = document.querySelector('.contenedor-datos');
+            const cards = contenedor ? contenedor.querySelectorAll('.card-fecha-grupo') : [];
+            for (let i = 0; i < cards.length; i++) {
+                const fechaCard = cards[i].getAttribute('data-fecha');
+                if (fechaCard && fechaCard >= hoy) {
+                    cards[i].scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'start' });
+                    break;
+                }
+            }
+        }
+    });
+</script>
+
+{% if request.user.is_staff and profesor_sel %}
+<div class="modal fade" id="modalParticular" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down modal-lg">
+        <form method="POST" id="formParticular" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="guardar_particular" id="modal_part_accion" value="1">
+            <input type="hidden" name="particular_id" id="modal_part_id" value="">
+            <input type="hidden" name="profesor_id" value="{{ profesor_sel }}">
+            
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title fw-bold" id="tituloModalPart"><i class="fas fa-chalkboard-teacher"></i> Programar Clase Particular</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Niño / Estudiante</label>
+                        <input type="text" name="estudiante" id="input_estudiante" class="form-control" placeholder="Ej: Juan Pérez" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Ciudad / Dirección</label>
+                        <input type="text" name="ciudad" id="input_ciudad" class="form-control" placeholder="Ej: Bogotá, Calle 45 #12-30...">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Enlace de Maps</label>
+                        <input type="url" name="mapa_link" id="input_mapa" class="form-control" placeholder="https://maps.app.goo.gl/..." required>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Fecha</label>
+                        <input type="date" name="fecha" id="input_fecha" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Hora Inicio</label>
+                        <input type="time" name="hora_inicio" id="input_hora_inicio" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Hora Fin</label>
+                        <input type="time" name="hora_fin" id="input_hora_fin" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Grado</label>
+                        <select name="grado" id="input_grado" class="form-select" required>
+                            <option value="">Seleccionar...</option>
+                            {% for g in todos_grados %}
+                            <option value="{{ g }}">{{ g }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Libro / Material</label>
+                        <select name="material" id="modal_material_part" class="form-select" required>
+                            <option value="">Seleccionar libro...</option>
+                            <option value="S">Socialización de Simulacro</option>
+                            {% for libro in todos_libros %}
+                            <option value="{{ libro }}">{{ libro }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Materia</label>
+                        <select name="materia" id="modal_asignatura_part" class="form-select" required>
+                            <option value="">Seleccionar material primero...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3" id="campo_unidad_part">
+                        <label class="form-label fw-bold">Unidad</label>
+                        <select name="unidad" id="modal_unidad_part" class="form-select" required>
+                            <option value="">Seleccionar materia primero...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" id="btnEliminarPart" class="btn btn-danger d-none" onclick="confirmarEliminarPart()">Eliminar</button>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary fw-bold">Guardar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const URL_ASIGNATURAS     = "{% url 'ajax_asignaturas_particular' %}";
+    const URL_UNIDADES        = "{% url 'ajax_unidades_particular' %}";
+
+    // ── Abrir modal nuevo ──
+    function abrirNuevoParticular() {
+        document.getElementById('modal_part_accion').name = "guardar_particular";
+        document.getElementById('modal_part_id').value    = "";
+        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-chalkboard-teacher"></i> Programar Clase Particular';
+        document.getElementById('btnEliminarPart').classList.add('d-none');
+
+        document.getElementById('formParticular').reset();
+        document.getElementById('modal_asignatura_part').innerHTML = '<option value="">Seleccionar material primero...</option>';
+        document.getElementById('modal_unidad_part').innerHTML     = '<option value="">Seleccionar materia primero...</option>';
+
+        new bootstrap.Modal(document.getElementById('modalParticular')).show();
+    }
+
+    // ── Abrir modal editar ──
+    async function abrirEditarParticular(id, estudiante, ciudad, mapa, fecha, horaInicio, horaFin, grado, material, materia, unidad) {
+        document.getElementById('modal_part_accion').name = "editar_particular";
+        document.getElementById('modal_part_id').value    = id;
+        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-edit"></i> Editar Clase Particular';
+        document.getElementById('btnEliminarPart').classList.remove('d-none');
+
+        document.getElementById('input_estudiante').value   = estudiante;
+        document.getElementById('input_ciudad').value       = ciudad;
+        document.getElementById('input_mapa').value         = mapa;
+        document.getElementById('input_fecha').value        = fecha;
+        document.getElementById('input_hora_inicio').value  = horaInicio;
+        document.getElementById('input_hora_fin').value     = horaFin;
+        document.getElementById('input_grado').value        = grado;
+        document.getElementById('modal_material_part').value = material;
+
+        // Manejar modo socialización al editar
+        const campoUnidad = document.getElementById('campo_unidad_part');
+        const uniSelect   = document.getElementById('modal_unidad_part');
+        if (material === 'S') {
+            campoUnidad.style.display = 'none';
+            uniSelect.required = false;
+            uniSelect.innerHTML = '<option value="S" selected>Socialización de Simulacro</option>';
+        } else {
+            campoUnidad.style.display = '';
+            uniSelect.required = true;
+        }
+
+        // Cargar asignaturas
+        let asigSelect = document.getElementById('modal_asignatura_part');
+        asigSelect.innerHTML = '<option value="">Cargando...</option>';
+        let res1  = await fetch(`${URL_ASIGNATURAS}?material=${encodeURIComponent(material)}`);
+        let data1 = await res1.json();
+        asigSelect.innerHTML = '<option value="">Seleccionar materia...</option>';
+        data1.forEach(m => {
+            let sel = (m === materia) ? 'selected' : '';
+            asigSelect.innerHTML += `<option value="${m}" ${sel}>${m}</option>`;
+        });
+
+        // Cargar unidades
+        if (material !== 'S') {
+            uniSelect.innerHTML = '<option value="">Cargando...</option>';
+            let res2  = await fetch(`${URL_UNIDADES}?material=${encodeURIComponent(material)}&materia=${encodeURIComponent(materia)}`);
+            let data2 = await res2.json();
+            uniSelect.innerHTML = '<option value="">Seleccionar unidad...</option>';
+            data2.forEach(u => {
+                let sel = (u.unidad == unidad) ? 'selected' : '';
+                uniSelect.innerHTML += `<option value="${u.unidad}" ${sel}>Unidad ${u.unidad} - ${u.nombre_unidad}</option>`;
+            });
+        }
+
+        new bootstrap.Modal(document.getElementById('modalParticular')).show();
+    }
+
+    function confirmarEliminarPart() {
+        if (confirm('¿Estás seguro de que deseas eliminar permanentemente esta clase particular?')) {
+            document.getElementById('modal_part_accion').name = "eliminar_particular";
+            document.getElementById('formParticular').submit();
+        }
+    }
+
+    // ── Cascada: material → asignatura ──
+    document.getElementById('modal_material_part').addEventListener('change', async function() {
+        let material   = this.value;
+        let asigSelect = document.getElementById('modal_asignatura_part');
+        let uniSelect  = document.getElementById('modal_unidad_part');
+        const campoUnidad = document.getElementById('campo_unidad_part');
+
+        asigSelect.innerHTML = '<option value="">Cargando...</option>';
+
+        if (!material) {
+            asigSelect.innerHTML = '<option value="">Seleccionar material primero...</option>';
+            uniSelect.innerHTML  = '<option value="">Seleccionar materia primero...</option>';
+            campoUnidad.style.display = '';
+            uniSelect.required = true;
+            return;
+        }
+
+        // Modo socialización: ocultar unidad y fijarla en 'S'
+        if (material === 'S') {
+            campoUnidad.style.display = 'none';
+            uniSelect.required = false;
+            uniSelect.innerHTML = '<option value="S" selected>Socialización de Simulacro</option>';
+        } else {
+            campoUnidad.style.display = '';
+            uniSelect.required = true;
+            uniSelect.innerHTML = '<option value="">Seleccionar materia primero...</option>';
+        }
+
+        let res  = await fetch(`${URL_ASIGNATURAS}?material=${encodeURIComponent(material)}`);
+        let data = await res.json();
+        asigSelect.innerHTML = '<option value="">Seleccionar materia...</option>';
+        data.forEach(m => {
+            asigSelect.innerHTML += `<option value="${m}">${m}</option>`;
+        });
+    });
+
+    // ── Cascada: asignatura → unidad ──
+    document.getElementById('modal_asignatura_part').addEventListener('change', async function() {
+        let material  = document.getElementById('modal_material_part').value;
+        let materia   = this.value;
+        let uniSelect = document.getElementById('modal_unidad_part');
+
+        uniSelect.innerHTML = '<option value="">Cargando...</option>';
+        if (!materia) {
+            uniSelect.innerHTML = '<option value="">Seleccionar materia primero...</option>';
+            return;
+        }
+
+        let res  = await fetch(`${URL_UNIDADES}?material=${encodeURIComponent(material)}&materia=${encodeURIComponent(materia)}`);
+        let data = await res.json();
+        uniSelect.innerHTML = '<option value="">Seleccionar unidad...</option>';
+        data.forEach(u => {
+            uniSelect.innerHTML += `<option value="${u.unidad}">Unidad ${u.unidad} - ${u.nombre_unidad}</option>`;
+        });
+    });
+</script>
+{% endif %}
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- MODAL INFORME DE SESIÓN                               -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="modal fade" id="modalInforme" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <div>
+                    <h5 class="modal-title mb-0"><i class="fas fa-file-alt me-2"></i>Informe de Sesión</h5>
+                    <small id="inf_header_sub" class="opacity-75"></small>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body pb-0">
+                <div class="row g-2 mb-3 p-3 rounded" style="background:#f8f9fa; border:1px solid #dee2e6;">
+                    <div class="col-md-5">
+                        <div class="small text-muted fw-bold">Colegio / Curso</div>
+                        <div id="inf_colegio" class="fw-bold"></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted fw-bold">Fecha</div>
+                        <div id="inf_fecha"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted fw-bold">Materia / Temática</div>
+                        <div id="inf_materia" class="small"></div>
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold">Material Empleado</div>
+                        <div id="inf_material" class="small"></div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-primary">Actividades <span class="text-danger">*</span></label>
+                    <textarea id="inf_actividades" class="form-control" rows="5"
+                              placeholder="Describe las actividades desarrolladas en la sesión..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-primary">Fortalezas</label>
+                    <textarea id="inf_fortalezas" class="form-control" rows="4"
+                              placeholder="Describe las fortalezas observadas..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-primary">Debilidades</label>
+                    <textarea id="inf_debilidades" class="form-control" rows="3"
+                              placeholder="Describe las debilidades observadas..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-primary">Recomendaciones</label>
+                    <textarea id="inf_recomendaciones" class="form-control" rows="3"
+                              placeholder="Escribe tus recomendaciones..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-primary">Bibliografía</label>
+                    <textarea id="inf_bibliografia" class="form-control" rows="2"
+                              placeholder="Referencias bibliográficas utilizadas..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer justify-content-between">
+                <div id="inf_estado_texto" class="text-muted small fst-italic"></div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="button" class="btn btn-primary fw-bold" onclick="guardarInforme()">
+                        <i class="fas fa-save me-1"></i> Guardar Informe
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const URL_OBTENER_INFORME = "{% url 'ajax_obtener_informe' %}";
+    const URL_GUARDAR_INFORME = "{% url 'ajax_guardar_informe' %}";
+
+    let _inf = { clase_id: null, particular_id: null, fecha_iso: null,
+                 colegio_nombre: '', grado: '', materia: '', tematica: '', material: '' };
+    let _inf_btn = null;
+
+    async function abrirInforme(claseId, particularId, colegio, grado, fechaIso, materia, tematica, material, btn) {
+        _inf_btn = btn || null;
+        _inf = { clase_id: claseId, particular_id: particularId, fecha_iso: fechaIso,
+                 colegio_nombre: colegio, grado: grado, materia: materia,
+                 tematica: tematica, material: material };
+
+        document.getElementById('inf_colegio').textContent  = colegio + ' — ' + grado;
+        document.getElementById('inf_materia').textContent  = materia + ' / ' + tematica;
+        document.getElementById('inf_material').textContent = material;
+        document.getElementById('inf_header_sub').textContent = colegio + ' · ' + grado + ' · ' + fechaIso;
+
+        const meses = ['enero','febrero','marzo','abril','mayo','junio',
+                       'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+        const dias  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+        const dt = new Date(fechaIso + 'T12:00:00');
+        const [y, m, d] = fechaIso.split('-');
+        document.getElementById('inf_fecha').textContent =
+            `${dias[dt.getDay()]}, ${parseInt(d)} de ${meses[parseInt(m)-1]} de ${y}`;
+
+        ['actividades','fortalezas','debilidades','recomendaciones','bibliografia'].forEach(f =>
+            document.getElementById('inf_' + f).value = '');
+        document.getElementById('inf_estado_texto').textContent = 'Cargando...';
+
+        new bootstrap.Modal(document.getElementById('modalInforme')).show();
+
+        const params = claseId ? `clase_id=${claseId}` : `particular_id=${particularId}`;
+        try {
+            const res  = await fetch(`${URL_OBTENER_INFORME}?${params}`);
+            const data = await res.json();
+            if (data.existe) {
+                document.getElementById('inf_actividades').value     = data.actividades     || '';
+                document.getElementById('inf_fortalezas').value      = data.fortalezas      || '';
+                document.getElementById('inf_debilidades').value     = data.debilidades     || '';
+                document.getElementById('inf_recomendaciones').value = data.recomendaciones || '';
+                document.getElementById('inf_bibliografia').value    = data.bibliografia    || '';
+                document.getElementById('inf_estado_texto').textContent = '✓ Informe guardado anteriormente';
+            } else {
+                document.getElementById('inf_estado_texto').textContent = 'Informe nuevo — aún no guardado';
+            }
+        } catch(e) {
+            document.getElementById('inf_estado_texto').textContent = 'Error al cargar';
+        }
+    }
+
+    async function guardarInforme() {
+        const actividades = document.getElementById('inf_actividades').value.trim();
+        if (!actividades) {
+            alert('El campo Actividades es obligatorio.');
+            document.getElementById('inf_actividades').focus();
+            return;
+        }
+
+        const btnGuardar = document.querySelector('#modalInforme .btn-primary');
+        btnGuardar.disabled = true;
+        btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Guardando...';
+
+        const body = {
+            clase_id:        _inf.clase_id,
+            particular_id:   _inf.particular_id,
+            profesor_id:     '{{ profesor_sel }}',
+            fecha_iso:       _inf.fecha_iso,
+            colegio_nombre:  _inf.colegio_nombre,
+            grado:           _inf.grado,
+            materia:         _inf.materia,
+            tematica:        _inf.tematica,
+            material:        _inf.material,
+            actividades:     document.getElementById('inf_actividades').value,
+            fortalezas:      document.getElementById('inf_fortalezas').value,
+            debilidades:     document.getElementById('inf_debilidades').value,
+            recomendaciones: document.getElementById('inf_recomendaciones').value,
+            bibliografia:    document.getElementById('inf_bibliografia').value,
+        };
+
+        try {
+            const res  = await fetch(URL_GUARDAR_INFORME, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                document.getElementById('inf_estado_texto').textContent = '✓ Informe guardado correctamente';
+                btnGuardar.innerHTML = '<i class="fas fa-check me-1"></i> Guardado';
+                if (_inf_btn) {
+                    _inf_btn.className = 'btn btn-sm btn-success py-0 px-2';
+                    _inf_btn.innerHTML = '<i class="fas fa-check"></i> Subido';
+                }
+                setTimeout(() => {
+                    btnGuardar.disabled = false;
+                    btnGuardar.innerHTML = '<i class="fas fa-save me-1"></i> Guardar Informe';
+                }, 2000);
+            } else {
+                throw new Error(data.error || 'Error desconocido');
+            }
+        } catch(e) {
+            alert('Error al guardar: ' + e.message);
+            btnGuardar.disabled = false;
+            btnGuardar.innerHTML = '<i class="fas fa-save me-1"></i> Guardar Informe';
+        }
+    }
+</script>
+
+{% endblock %}

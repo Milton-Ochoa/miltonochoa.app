@@ -1,0 +1,801 @@
+{% extends 'base.html' %}
+{% load materia_tags %}
+{% block header_title %}Libros{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Configuración</li>
+    <li class="breadcrumb-item active">Libros</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary btn-sm fw-bold" onclick="abrirMaterias()">
+        <i class="fas fa-tags me-1"></i> Materias
+    </button>
+    <button class="btn btn-primary btn-sm fw-bold" onclick="abrirNuevoLibro()">
+        <i class="fas fa-plus me-1"></i> Nuevo Libro
+    </button>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-libros { table-layout: fixed; width: 100%; }
+    .tabla-libros th, .tabla-libros td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-libros thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-libros thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-libros thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-libros tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-libros tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
+    .col-nombre     { width: 28%; }
+    .col-estado     { width: 10%; text-align: center; }
+    .col-unidades   { width: 10%; text-align: center; }
+    .col-materias   { width: 28%; }
+    .col-material   { width: 12%; text-align: center; }
+    .col-acciones-l { width: 12%; text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-libros" id="tablaLibros">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-nombre">Nombre del Libro</th>
+                        <th class="col-estado">Estado</th>
+                        <th class="col-unidades">Unidades</th>
+                        <th class="col-materias">Materias</th>
+                        <th class="col-material">Material Asig.</th>
+                        <th class="col-acciones-l">Acciones</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="nombre"></th>
+                        <th><input type="text" data-filtro="estado" value="Activo"></th>
+                        <th></th>
+                        <th><input type="text" data-filtro="materias"></th>
+                        <th><input type="text" data-filtro="material"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaLibros">
+                    {% for ctx in libros_ctx %}
+                    <tr data-nombre="{{ ctx.libro.nombre|lower }}"
+                        data-materias="{{ ctx.materias_str|lower }}"
+                        data-estado="{% if ctx.libro.activo %}activo{% else %}inactivo{% endif %}"
+                        data-material="{% if ctx.libro.es_material_asignado %}si{% else %}no{% endif %}">
+                        <td class="fw-bold">{{ ctx.libro.nombre }}</td>
+                        <td class="text-center">
+                            <span class="badge {% if ctx.libro.activo %}bg-success{% else %}bg-secondary{% endif %}">
+                                {% if ctx.libro.activo %}Activo{% else %}Inactivo{% endif %}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border">{{ ctx.num_unidades }}</span>
+                        </td>
+                        <td>{% for m in ctx.materias_objs %}<span class="badge rounded-pill me-1" style="background-color:{{ m.color }}" title="{{ m.nombre }}">{{ m.nombre|iniciales }}</span>{% empty %}—{% endfor %}</td>
+                        <td class="text-center">
+                            {% if ctx.libro.es_material_asignado %}
+                            <span class="badge bg-primary"><i class="fas fa-check"></i></span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                                    title="Gestionar libro"
+                                    onclick="abrirGestionar({{ ctx.libro.id }}, '{{ ctx.libro.nombre|escapejs }}', {{ ctx.libro.activo|lower }}, {{ ctx.libro.es_material_asignado|lower }})">
+                                <i class="fas fa-cogs"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr id="filaVacia">
+                        <td colspan="6" class="text-center py-4 text-muted">
+                            <i class="fas fa-book-open me-1"></i> No hay libros registrados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisible">0</span> de {{ libros_ctx|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesLibros"></ul></nav>
+        </div>
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════ #}
+{# MODAL: Nuevo Libro                                          #}
+{# ════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="modalNuevoLibro" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Nuevo Libro</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-bold">Nombre del libro</label>
+                <input type="text" id="nuevoLibroNombre" class="form-control"
+                       placeholder="Ej: Saberes 11 Oro">
+                <div id="errorNuevoLibro" class="text-danger small mt-1 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary fw-bold" onclick="crearLibro()">
+                    Crear Libro
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════ #}
+{# MODAL: Gestionar Libro                                      #}
+{# ════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="modalGestionar" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white py-2">
+                <div class="d-flex align-items-center gap-3 flex-grow-1 flex-wrap">
+                    <h5 class="modal-title mb-0" id="gestNombreLibro">—</h5>
+                    <span id="gestBadgeActivo" class="badge"></span>
+                    <button class="btn btn-sm btn-outline-light py-0" onclick="editarNombreLibro()"
+                            title="Editar nombre">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm py-0" id="btnToggleActivo" onclick="toggleActivo()">
+                        —
+                    </button>
+                    {% comment %}
+                    btnToggleMaterialAsignado: estado inicial "—" porque el texto/estilo
+                    lo actualiza abrirGestionar() con el valor real de es_material_asignado.
+                    {% endcomment %}
+                    <button class="btn btn-sm py-0 ms-2" id="btnToggleMaterialAsignado" onclick="toggleMaterialAsignado()">
+                        —
+                    </button>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                {# Barra filtros unidades #}
+                <div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+                    <select id="filtroMateriaGest" class="form-select form-select-sm select2-libro" style="max-width:220px">
+                        <option value="">Todas las materias</option>
+                    </select>
+                    <button class="btn btn-sm btn-success ms-auto" onclick="abrirFormUnidad(null)">
+                        <i class="fas fa-plus"></i> Agregar Unidad
+                    </button>
+                </div>
+
+                {# Tabla unidades #}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle" id="tablaUnidades">
+                        <thead class="table-secondary">
+                            <tr>
+                                <th>Materia</th>
+                                <th class="text-center">N°</th>
+                                <th>Nombre de la Unidad</th>
+                                <th>Link</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyUnidades">
+                            <tr><td colspan="5" class="text-center py-3 text-muted">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════ #}
+{# MODAL: Agregar / Editar Unidad                              #}
+{# ════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="modalUnidad" tabindex="-1" style="z-index:1065">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title" id="tituloModalUnidad">Nueva Unidad</h5>
+                <button type="button" class="btn-close btn-close-white"
+                        onclick="cerrarModalUnidad()"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="unidadEditId">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Materia <span class="text-danger">*</span></label>
+                    <select id="unidadMateria" class="form-select select2-unidad">
+                        <option value="">Seleccionar materia...</option>
+                    </select>
+                </div>
+                <div class="row g-3">
+                    <div class="col-3">
+                        <label class="form-label fw-bold">N° <span class="text-danger">*</span></label>
+                        <input type="number" id="unidadNumero" class="form-control" min="1" placeholder="1">
+                    </div>
+                    <div class="col-9">
+                        <label class="form-label fw-bold">Nombre <span class="text-danger">*</span></label>
+                        <input type="text" id="unidadNombre" class="form-control"
+                               placeholder="Ej: Tú eliges cómo persuadir">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label fw-bold">Link</label>
+                    <input type="url" id="unidadLink" class="form-control"
+                           placeholder="https://...">
+                </div>
+                <div id="errorUnidad" class="text-danger small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cerrarModalUnidad()">Cancelar</button>
+                <button type="button" class="btn btn-success fw-bold" onclick="guardarUnidad()">
+                    Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════ #}
+{# MODAL: Gestionar Materias                                   #}
+{# ════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="modalMaterias" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-tags"></i> Gestionar Materias</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="color" id="nuevaMateriaColor" class="form-control form-control-color" value="#6c757d" title="Color">
+                    <input type="text" id="nuevaMateriaNombre" class="form-control"
+                           placeholder="Nueva materia..." onkeypress="if(event.key==='Enter') crearMateria()">
+                    <button class="btn btn-success" onclick="crearMateria()">
+                        <i class="fas fa-plus"></i> Agregar
+                    </button>
+                </div>
+                <div id="errorMateria" class="text-danger small mb-2 d-none"></div>
+                <ul class="list-group" id="listaMaterias">
+                    {% for m in materias %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center"
+                        id="materia-row-{{ m.id }}">
+                        <span class="d-flex align-items-center gap-2 flex-grow-1 me-2">
+                            <input type="color" class="form-control form-control-color p-0 border-0"
+                                   value="{{ m.color }}" style="width:24px;height:24px;"
+                                   id="materia-color-{{ m.id }}"
+                                   onchange="guardarMateria({{ m.id }})">
+                            <input type="text" class="form-control form-control-sm border-0 bg-transparent"
+                                   value="{{ m.nombre }}" id="materia-nombre-{{ m.id }}" readonly
+                                   onblur="guardarMateria({{ m.id }})"
+                                   onkeypress="if(event.key==='Enter'){this.blur();}">
+                        </span>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary py-0"
+                                    onclick="editarMateria({{ m.id }})" title="Editar nombre">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0"
+                                    onclick="eliminarMateria({{ m.id }}, '{{ m.nombre|escapejs }}')" title="Eliminar">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </li>
+                    {% empty %}
+                    <li class="list-group-item text-muted text-center" id="listaMaterias-vacia">
+                        No hay materias registradas.
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════ #}
+{# JAVASCRIPT                                                  #}
+{# ════════════════════════════════════════════════════════════ #}
+<script>
+// ── Escape helper — prevents XSS when inserting into innerHTML ──
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ── URLs ──────────────────────────────────────────────────────
+const URL_CREAR_LIBRO    = "{% url 'ajax_crear_libro' %}";
+const URL_CREAR_UNIDAD   = "{% url 'ajax_crear_unidad' %}";
+const URL_CREAR_MATERIA  = "{% url 'ajax_crear_materia' %}";
+const URL_MATERIAS       = "{% url 'ajax_materias' %}";
+const CSRF               = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+
+// ── Estado global ─────────────────────────────────────────────
+let _libroActual = { id: null, nombre: '', activo: false, esMaterialAsignado: false };
+let _todasMaterias = [];
+let _huboCambios = false;
+
+// ── Utilidades ────────────────────────────────────────────────
+function csrfPost(url, data) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams(data),
+    }).then(r => r.json());
+}
+
+function mostrarError(elementId, msg) {
+    const el = document.getElementById(elementId);
+    el.textContent = msg;
+    el.classList.remove('d-none');
+}
+function ocultarError(elementId) {
+    document.getElementById(elementId).classList.add('d-none');
+}
+
+// ── Filtro tabla principal ─────────────────────────────────────
+const POR_PAGINA_L = 20;
+let paginaLibros = 1;
+
+const filtroInputs = document.querySelectorAll('#tablaLibros .fila-filtros input[data-filtro]');
+const filasLibros  = Array.from(document.querySelectorAll('#cuerpoTablaLibros tr[data-nombre]'));
+
+function filtrarTabla() {
+    paginaLibros = 1;
+    renderPaginaLibros();
+}
+
+function renderPaginaLibros() {
+    const q = {};
+    filtroInputs.forEach(inp => {
+        const val = inp.value.trim().toLowerCase();
+        if (val) q[inp.dataset.filtro] = val;
+    });
+
+    const filtradas = filasLibros.filter(row => {
+        for (const k in q) {
+            // 'estado' usa exact-match porque "activo" es substring de "inactivo"
+            if (k === 'estado') {
+                if ((row.dataset[k] || '') !== q[k]) return false;
+            } else {
+                if ((row.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+        }
+        return true;
+    });
+
+    const total = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA_L));
+    paginaLibros = Math.min(paginaLibros, total);
+    const inicio = (paginaLibros - 1) * POR_PAGINA_L;
+
+    filasLibros.forEach(r => r.style.display = 'none');
+    filtradas.slice(inicio, inicio + POR_PAGINA_L).forEach(r => r.style.display = '');
+
+    document.getElementById('contadorVisible').textContent = filtradas.length;
+
+    renderControlesLibros(total);
+}
+
+function renderControlesLibros(total) {
+    const ul = document.getElementById('paginaControlesLibros');
+    ul.innerHTML = '';
+    if (total <= 1) return;
+
+    const prev = document.createElement('li');
+    prev.className = `page-item ${paginaLibros === 1 ? 'disabled' : ''}`;
+    prev.innerHTML = '<a class="page-link" href="#">&laquo;</a>';
+    prev.addEventListener('click', e => { e.preventDefault(); if (paginaLibros > 1) { paginaLibros--; renderPaginaLibros(); } });
+    ul.appendChild(prev);
+
+    for (let i = 1; i <= total; i++) {
+        if (i === 1 || i === total || Math.abs(i - paginaLibros) <= 2) {
+            const li = document.createElement('li');
+            li.className = `page-item ${i === paginaLibros ? 'active' : ''}`;
+            li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+            li.addEventListener('click', e => { e.preventDefault(); paginaLibros = i; renderPaginaLibros(); });
+            ul.appendChild(li);
+        } else if (Math.abs(i - paginaLibros) === 3) {
+            const li = document.createElement('li');
+            li.className = 'page-item disabled';
+            li.innerHTML = '<span class="page-link">…</span>';
+            ul.appendChild(li);
+        }
+    }
+
+    const next = document.createElement('li');
+    next.className = `page-item ${paginaLibros === total ? 'disabled' : ''}`;
+    next.innerHTML = '<a class="page-link" href="#">&raquo;</a>';
+    next.addEventListener('click', e => { e.preventDefault(); if (paginaLibros < total) { paginaLibros++; renderPaginaLibros(); } });
+    ul.appendChild(next);
+}
+
+// ── Nuevo Libro ───────────────────────────────────────────────
+function abrirNuevoLibro() {
+    document.getElementById('nuevoLibroNombre').value = '';
+    ocultarError('errorNuevoLibro');
+    new bootstrap.Modal(document.getElementById('modalNuevoLibro')).show();
+}
+
+async function crearLibro() {
+    const nombre = document.getElementById('nuevoLibroNombre').value.trim();
+    if (!nombre) { mostrarError('errorNuevoLibro', 'Escribe un nombre'); return; }
+    const data = await csrfPost(URL_CREAR_LIBRO, { nombre });
+    if (!data.ok) { mostrarError('errorNuevoLibro', data.error); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalNuevoLibro')).hide();
+    location.reload();
+}
+
+// ── Gestionar Libro ───────────────────────────────────────────
+async function abrirGestionar(id, nombre, activo, esMaterialAsignado) {
+    _libroActual = { id, nombre, activo, esMaterialAsignado: !!esMaterialAsignado };
+
+    // Cargar materias globales para el select de unidades
+    const mData = await fetch(URL_MATERIAS).then(r => r.json());
+    _todasMaterias = mData.materias || [];
+
+    // Actualizar header
+    document.getElementById('gestNombreLibro').textContent = nombre;
+    actualizarBadgeActivo(activo);
+    actualizarBadgeMaterialAsignado(!!esMaterialAsignado);
+
+    // Llenar filtro SOLO con las materias del libro actual (se obtienen al cargar unidades)
+    const sel = document.getElementById('filtroMateriaGest');
+    if ($.fn.select2 && $(sel).data('select2')) $(sel).select2('destroy');
+    sel.innerHTML = '<option value="">Todas las materias</option>';
+    initSelect2Libro();
+
+    _huboCambios = false;
+    const modalGest = new bootstrap.Modal(document.getElementById('modalGestionar'));
+    document.getElementById('modalGestionar').addEventListener('hidden.bs.modal', () => {
+        if (_huboCambios) location.reload();
+    }, { once: true });
+    modalGest.show();
+    await cargarUnidades();
+}
+
+function actualizarBadgeActivo(activo) {
+    const badge = document.getElementById('gestBadgeActivo');
+    const btn   = document.getElementById('btnToggleActivo');
+    if (activo) {
+        badge.textContent = 'Activo';
+        badge.className   = 'badge bg-success';
+        btn.textContent   = 'Desactivar';
+        btn.className     = 'btn btn-sm btn-outline-warning py-0';
+    } else {
+        badge.textContent = 'Inactivo';
+        badge.className   = 'badge bg-secondary';
+        btn.textContent   = 'Activar';
+        btn.className     = 'btn btn-sm btn-outline-success py-0';
+    }
+}
+
+function actualizarBadgeMaterialAsignado(esMat) {
+    const btn = document.getElementById('btnToggleMaterialAsignado');
+    if (esMat) {
+        btn.textContent = 'Material Asignado';
+        btn.className   = 'btn btn-sm btn-primary py-0 ms-2';
+    } else {
+        btn.textContent = 'Material Asignado';
+        btn.className   = 'btn btn-sm btn-outline-light py-0 ms-2';
+    }
+}
+
+async function toggleMaterialAsignado() {
+    const url  = `/configuracion/ajax/libros/${_libroActual.id}/toggle-material/`;
+    const data = await csrfPost(url, {});
+    if (data.ok) {
+        _libroActual.esMaterialAsignado = data.es_material_asignado;
+        _huboCambios = true;
+        actualizarBadgeMaterialAsignado(data.es_material_asignado);
+    }
+}
+
+async function cargarUnidades() {
+    const materiaId = document.getElementById('filtroMateriaGest').value;
+    const url = `/configuracion/ajax/libros/${_libroActual.id}/unidades/` +
+                (materiaId ? `?materia_id=${materiaId}` : '');
+    const data = await fetch(url).then(r => r.json());
+    renderTablaUnidades(data.unidades || []);
+
+    // Actualizar filtro de materias con solo las del libro actual
+    if (!materiaId) {
+        const vistas = new Map();
+        (data.unidades || []).forEach(u => { if (!vistas.has(u.materia_id)) vistas.set(u.materia_id, u.materia); });
+        const sel = document.getElementById('filtroMateriaGest');
+        const valorActual = sel.value;
+        if ($.fn.select2 && $(sel).data('select2')) $(sel).select2('destroy');
+        sel.innerHTML = '<option value="">Todas las materias</option>';
+        [...vistas.entries()].sort((a,b) => a[1].localeCompare(b[1])).forEach(([id, nombre]) => {
+            sel.innerHTML += `<option value="${id}">${nombre}</option>`;
+        });
+        sel.value = valorActual;
+        initSelect2Libro();
+    }
+}
+
+function renderTablaUnidades(unidades) {
+    const tbody = document.getElementById('tbodyUnidades');
+    if (!unidades.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">Sin unidades.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = unidades.map(u => {
+        const safeLink = (u.link && (u.link.startsWith('https://') || u.link.startsWith('http://'))) ? u.link : '#';
+        return `
+        <tr>
+            <td><span class="badge rounded-pill" style="background-color:${u.materia_color || '#6c757d'}">${esc(u.materia)}</span></td>
+            <td class="text-center fw-bold">${u.numero}</td>
+            <td>${esc(u.nombre)}</td>
+            <td>${u.link
+                ? `<a href="${safeLink}" target="_blank" class="btn btn-sm btn-outline-info py-0">
+                     <i class="fas fa-external-link-alt"></i>
+                   </a>`
+                : '<span class="text-muted">—</span>'
+            }</td>
+            <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-primary py-0 me-1"
+                        onclick="abrirFormUnidad(${JSON.stringify(u).replace(/"/g,'&quot;')})">
+                    <i class="fas fa-edit"></i>
+                </button>
+
+            </td>
+        </tr>
+        `;
+    }).join('');
+}
+
+// ── Toggle activo ─────────────────────────────────────────────
+async function toggleActivo() {
+    const url  = `/configuracion/ajax/libros/${_libroActual.id}/toggle/`;
+    const data = await csrfPost(url, {});
+    if (data.ok) {
+        _libroActual.activo = data.activo;
+        _huboCambios = true;
+        actualizarBadgeActivo(data.activo);
+    }
+}
+
+// ── Editar nombre libro ───────────────────────────────────────
+async function editarNombreLibro() {
+    const nuevoNombre = prompt('Nuevo nombre del libro:', _libroActual.nombre);
+    if (!nuevoNombre || nuevoNombre.trim() === _libroActual.nombre) return;
+    const url  = `/configuracion/ajax/libros/${_libroActual.id}/editar/`;
+    const data = await csrfPost(url, { nombre: nuevoNombre.trim() });
+    if (data.ok) {
+        _libroActual.nombre = data.nombre;
+        _huboCambios = true;
+        document.getElementById('gestNombreLibro').textContent = data.nombre;
+    } else {
+        alert(data.error || 'Error al editar');
+    }
+}
+
+// ── Eliminar libro ────────────────────────────────────────────
+async function confirmarEliminarLibro() {
+    if (!confirm(`¿Seguro que deseas eliminar "${_libroActual.nombre}"?\nSe eliminarán todas sus unidades.`)) return;
+    const url  = `/configuracion/ajax/libros/${_libroActual.id}/eliminar/`;
+    const data = await csrfPost(url, {});
+    if (data.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalGestionar')).hide();
+        location.reload();
+    } else {
+        alert(data.error || 'Error al eliminar');
+    }
+}
+
+// ── Unidades ─────────────────────────────────────────────────
+function abrirFormUnidad(u) {
+    // Llenar select de materias
+    const sel = document.getElementById('unidadMateria');
+    sel.innerHTML = '<option value="">Seleccionar materia...</option>';
+    _todasMaterias.forEach(m => {
+        sel.innerHTML += `<option value="${m.id}" ${u && u.materia_id==m.id ? 'selected' : ''}>${m.nombre}</option>`;
+    });
+
+    if (u) {
+        document.getElementById('tituloModalUnidad').textContent = 'Editar Unidad';
+        document.getElementById('unidadEditId').value  = u.id;
+        document.getElementById('unidadNumero').value  = u.numero;
+        document.getElementById('unidadNombre').value  = u.nombre;
+        document.getElementById('unidadLink').value    = u.link || '';
+    } else {
+        document.getElementById('tituloModalUnidad').textContent = 'Nueva Unidad';
+        document.getElementById('unidadEditId').value  = '';
+        document.getElementById('unidadNumero').value  = '';
+        document.getElementById('unidadNombre').value  = '';
+        document.getElementById('unidadLink').value    = '';
+    }
+    ocultarError('errorUnidad');
+
+    // Inicializar Select2 materia en modal unidad DESPUÉS de llenar opciones
+    if ($.fn.select2 && $('#unidadMateria').data('select2')) $('#unidadMateria').select2('destroy');
+    initSelect2Unidad();
+
+    // Usar Bootstrap modal normal — ajustar z-index del backdrop automático
+    const modalEl = document.getElementById('modalUnidad');
+    const bsModal = new bootstrap.Modal(modalEl, { backdrop: true });
+    bsModal.show();
+
+    // Subir el backdrop automático de Bootstrap para que quede sobre el primer modal
+    modalEl.addEventListener('shown.bs.modal', () => {
+        document.querySelectorAll('.modal-backdrop').forEach((bd, i, arr) => {
+            if (i === arr.length - 1) bd.style.zIndex = '1060';
+        });
+        modalEl.style.zIndex = '1065';
+    }, { once: true });
+}
+
+function cerrarModalUnidad() {
+    const modalEl = document.getElementById('modalUnidad');
+    const instance = bootstrap.Modal.getInstance(modalEl);
+    if (instance) instance.hide();
+}
+
+async function guardarUnidad() {
+    const editId    = document.getElementById('unidadEditId').value;
+    const materiaId = $('#unidadMateria').val();
+    const numero    = document.getElementById('unidadNumero').value;
+    const nombre    = document.getElementById('unidadNombre').value.trim();
+    const link      = document.getElementById('unidadLink').value.trim();
+
+    if (!materiaId || !numero || !nombre) {
+        mostrarError('errorUnidad', 'Materia, número y nombre son obligatorios');
+        return;
+    }
+
+    let url, extraData = {};
+    if (editId) {
+        url = `/configuracion/ajax/unidades/${editId}/editar/`;
+    } else {
+        url = URL_CREAR_UNIDAD;
+        extraData = { libro_id: _libroActual.id };
+    }
+
+    const data = await csrfPost(url, { materia_id: materiaId, numero, nombre, link, ...extraData });
+    if (!data.ok) { mostrarError('errorUnidad', data.error); return; }
+
+    _huboCambios = true;
+    cerrarModalUnidad();
+    await cargarUnidades();
+}
+
+async function eliminarUnidad(id) {
+    if (!confirm('¿Eliminar esta unidad?')) return;
+    const data = await csrfPost(`/configuracion/ajax/unidades/${id}/eliminar/`, {});
+    if (data.ok) { _huboCambios = true; await cargarUnidades(); }
+    else alert(data.error || 'Error al eliminar');
+}
+
+// ── Materias ─────────────────────────────────────────────────
+function abrirMaterias() {
+    document.getElementById('nuevaMateriaNombre').value = '';
+    ocultarError('errorMateria');
+    new bootstrap.Modal(document.getElementById('modalMaterias')).show();
+}
+
+async function crearMateria() {
+    const nombre = document.getElementById('nuevaMateriaNombre').value.trim();
+    const color  = document.getElementById('nuevaMateriaColor').value;
+    if (!nombre) { mostrarError('errorMateria', 'Escribe un nombre'); return; }
+    const data = await csrfPost(URL_CREAR_MATERIA, { nombre, color });
+    if (!data.ok) { mostrarError('errorMateria', data.error); return; }
+
+    ocultarError('errorMateria');
+    document.getElementById('nuevaMateriaNombre').value = '';
+    document.getElementById('nuevaMateriaColor').value = '#6c757d';
+
+    // Agregar a la lista
+    const lista   = document.getElementById('listaMaterias');
+    const vaciaEl = document.getElementById('listaMaterias-vacia');
+    if (vaciaEl) vaciaEl.remove();
+
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+    li.id = `materia-row-${data.id}`;
+    li.innerHTML = `
+        <span class="d-flex align-items-center gap-2 flex-grow-1 me-2">
+            <input type="color" class="form-control form-control-color p-0 border-0"
+                   value="${data.color}" style="width:24px;height:24px;"
+                   id="materia-color-${data.id}"
+                   onchange="guardarMateria(${data.id})">
+            <input type="text" class="form-control form-control-sm border-0 bg-transparent"
+                   value="${esc(data.nombre)}" id="materia-nombre-${data.id}" readonly
+                   onblur="guardarMateria(${data.id})"
+                   onkeypress="if(event.key==='Enter'){this.blur();}">
+        </span>
+        <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-outline-primary py-0"
+                    onclick="editarMateria(${data.id})" title="Editar nombre">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger py-0"
+                    onclick="eliminarMateria(${data.id}, '${data.nombre.replace(/'/g,"\\'")}')">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>`;
+    lista.appendChild(li);
+}
+
+async function guardarMateria(id) {
+    const nombre = document.getElementById(`materia-nombre-${id}`).value.trim();
+    const color  = document.getElementById(`materia-color-${id}`).value;
+    if (!nombre) return;
+    const data = await csrfPost(`/configuracion/ajax/materias/${id}/editar/`, { nombre, color });
+    if (!data.ok) {
+        alert(data.error || 'Error al guardar');
+    }
+}
+
+function editarMateria(id) {
+    const input = document.getElementById(`materia-nombre-${id}`);
+    input.removeAttribute('readonly');
+    input.classList.remove('border-0', 'bg-transparent');
+    input.focus();
+    input.select();
+}
+
+async function eliminarMateria(id, nombre) {
+    if (!confirm(`¿Eliminar la materia "${nombre}"?`)) return;
+    const data = await csrfPost(`/configuracion/ajax/materias/${id}/eliminar/`, {});
+    if (data.ok) {
+        document.getElementById(`materia-row-${id}`)?.remove();
+    } else {
+        alert(data.error || 'Error al eliminar');
+    }
+}
+
+// ── Init ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    filtroInputs.forEach(inp => {
+        inp.addEventListener('input', () => { paginaLibros = 1; renderPaginaLibros(); });
+    });
+    renderPaginaLibros();
+});
+
+// Inicializar Select2 en el modal gestionar (después de llenar las opciones)
+function initSelect2Libro() {
+    $('#filtroMateriaGest').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Todas las materias',
+        allowClear: true,
+        width: '220px',
+        dropdownParent: $('#modalGestionar'),
+    }).on('change', () => cargarUnidades());
+}
+
+// Inicializar Select2 materia en modal unidad
+function initSelect2Unidad() {
+    $('#unidadMateria').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Seleccionar materia...',
+        width: '100%',
+        dropdownParent: $('#modalUnidad'),
+    });
+}
+</script>
+
+{% endblock %}

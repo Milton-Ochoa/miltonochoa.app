@@ -1,0 +1,101 @@
+{% load materia_tags %}
+<div class="table-container shadow-sm rounded-bottom border">
+    <table class="table table-bordered text-center align-middle bg-white mb-0">
+        <thead class="table-dark">
+            <tr>
+                <th class="sticky-col">Grado</th>
+                <th class="sticky-col-2">Horario</th>
+                {% for dia in dias_header %}
+                <th style="min-width: 160px;" data-fecha="{{ dia|date:"Y-m-d" }}">
+                    <span class="text-capitalize fw-bold">{{ dia|date:"D d M" }}</span>
+                </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for grado, lista_bloques in bloques_agrupados.items %}
+                {% for bloque in lista_bloques %}
+                <tr>
+                    {% if forloop.first %}
+                    <td rowspan="{{ lista_bloques|length }}" class="fw-bold sticky-col">{{ grado }}</td>
+                    {% endif %}
+                    <td class="sticky-col-2 hora-plana">{{ bloque.hora }}</td>
+
+                    {% for dia in dias_header %}
+                        {% with dia_str=dia|date:"Y-m-d" dia_legible=dia|date:"D d M" %}
+                            {% if request.user.is_staff %}
+                            <td class="p-0 position-relative cell-hover" style="height: 50px; vertical-align: top; cursor: pointer;"
+                                data-bloque="{{ bloque.id }}" data-fecha="{{ dia_str }}"
+                                ondblclick="prepararModal('{{ bloque.id }}', '{{ grado }}', '{{ bloque.hora }}', '{{ dia_str }}', '{{ dia_legible }}')">
+                            {% else %}
+                            <td class="p-0 position-relative cell-hover" style="height: 50px; vertical-align: top;"
+                                data-bloque="{{ bloque.id }}" data-fecha="{{ dia_str }}">
+                            {% endif %}
+                                {% with fechas_dict=matriz|get_item:bloque.id %}
+                                    {% with clase=fechas_dict|get_item:dia_str %}
+                                        {% if clase %}
+                                            <div id="info-clase-{{ bloque.id }}-{{ dia_str }}"
+                                                 data-materia="{{ clase.materia|default:'' }}"
+                                                 data-profe="{{ clase.profesor.id|default:'' }}"
+                                                 data-unidad="{{ clase.unidad|default:'' }}"
+                                                 data-evento="{% if clase.es_evento %}1{% else %}0{% endif %}"
+                                                 data-titulo="{{ clase.titulo_evento|default:'' }}"
+                                                 data-cancelada="{% if clase.cancelada %}1{% else %}0{% endif %}"
+                                                 data-comentarios="{{ clase.comentarios|default:'' }}"
+                                                 data-material-especial="{% if clase.libro_especial or clase.unidad == 'S' %}1{% else %}0{% endif %}"
+                                                 data-libro-especial-id="{{ clase.libro_especial.id|default:'' }}"
+                                                 data-enlace="{{ clase.enlace_efectivo }}"
+                                                 data-enlace-personalizado="{{ clase.enlace_personalizado|default:'' }}"
+                                                 class="p-1 text-start border-start border-3 h-100 position-relative
+                                                        {% if clase.cancelada %}border-danger bg-danger bg-opacity-10
+                                                        {% elif clase.es_evento %}border-warning bg-warning bg-opacity-10
+                                                        {% endif %}"
+                                                 style="font-size: 0.75rem; line-height: 1;{% if not clase.cancelada and not clase.es_evento %}{% materia_color clase.materia as mc %} border-color:{{ mc }} !important; background-color:{{ mc }}1a;{% endif %}">
+
+                                                {% if clase.cancelada %}
+                                                    <span class="badge bg-danger mb-1" style="font-size: 0.6rem;">Cancelada</span>
+                                                    <div class="text-decoration-line-through" style="line-height: 1.1;">{% materia_badge clase.materia %}</div>
+                                                    <div class="text-muted small text-decoration-line-through">{{ clase.profesor.nombre_corto }}</div>
+                                                {% elif clase.es_evento %}
+                                                    <span class="badge bg-warning text-dark mb-1" style="font-size: 0.6rem;"><i class="fas fa-star"></i> Evento</span>
+                                                    <div class="fw-bold text-dark" style="line-height: 1.1;">{{ clase.titulo_evento }}</div>
+                                                {% else %}
+                                                    <div style="line-height: 1.1;">{% materia_badge clase.materia %}</div>
+                                                    <div class="text-muted small">{{ clase.profesor.nombre_corto }}</div>
+                                                    {% if clase.unidad %}
+                                                        <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+                                                            <span class="badge bg-dark" style="font-size: 0.6rem;">
+                                                                {% if clase.libro_especial %}
+                                                                    {{ clase.libro_especial.nombre }} · U.{{ clase.unidad }}
+                                                                {% elif clase.unidad == 'S' %}Socialización
+                                                                {% else %}Unidad {{ clase.unidad }}
+                                                                {% endif %}
+                                                            </span>
+                                                            {% if clase.enlace_efectivo %}
+                                                                <a href="{{ clase.enlace_efectivo }}" target="_blank" rel="noopener"
+                                                                   class="text-info" style="font-size:0.65rem; line-height:1;"
+                                                                   onclick="event.stopPropagation();" title="Abrir enlace">
+                                                                    <i class="fas fa-external-link-alt"></i>
+                                                                </a>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% endwith %}
+                            </td>
+                        {% endwith %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                <tr class="divisor-grado">
+                    <td class="sticky-col"></td>
+                    <td class="sticky-col-2"></td>
+                    <td colspan="{{ dias_header|length }}"></td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

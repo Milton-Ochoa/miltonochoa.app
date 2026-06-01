@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% load materia_tags %}
+{% block header_title %}Informes de Sesión{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Informes</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-informes { table-layout: fixed; width: 100%; }
+    .tabla-informes th, .tabla-informes td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-informes thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-informes thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-informes thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-informes tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-informes tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .badge-completo  { background-color: #198754; }
+    .badge-pendiente { background-color: #ffc107; color: #212529; }
+    /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
+    .col-fecha    { width: 7%;  }
+    .col-prof     { width: 11%; }
+    .col-colegio  { width: 14%; }
+    .col-grado    { width: 7%;  }
+    .col-materia  { width: 11%; }
+    .col-unidad   { width: 5%; text-align: center; }
+    .col-material { width: 18%; }
+    .col-estado   { width: 8%; text-align: center; }
+    .col-ver      { width: 5%; text-align: center; }
+    .col-borrar   { width: 5%; text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-informes" id="tablaInformes">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-fecha">Fecha</th>
+                        {% if not es_usuario_profesor %}<th class="col-prof">Profesor</th>{% endif %}
+                        <th class="col-colegio">Colegio</th>
+                        <th class="col-grado">Grado</th>
+                        <th class="col-materia">Materia</th>
+                        <th class="col-unidad">Unidad</th>
+                        <th class="col-material">Material</th>
+                        <th class="col-estado">Estado</th>
+                        <th class="col-ver">Ver</th>
+                        {% if request.user.is_superuser %}<th class="col-borrar">Borrar</th>{% endif %}
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="fecha"></th>
+                        {% if not es_usuario_profesor %}<th><input type="text" data-filtro="profesor"></th>{% endif %}
+                        <th><input type="text" data-filtro="colegio"></th>
+                        <th><input type="text" data-filtro="grado"></th>
+                        <th><input type="text" data-filtro="materia"></th>
+                        <th><input type="text" data-filtro="unidad"></th>
+                        <th><input type="text" data-filtro="material"></th>
+                        <th><input type="text" data-filtro="estado"></th>
+                        <th></th>
+                        {% if request.user.is_superuser %}<th></th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaInformes">
+                    {% for f in filas %}
+                    <tr data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+                        data-profesor="{{ f.profesor|lower }}"
+                        data-colegio="{{ f.colegio_nombre|lower }}"
+                        data-grado="{{ f.grado|lower }}"
+                        data-materia="{{ f.materia|lower }}"
+                        data-unidad="{{ f.unidad|lower }}"
+                        data-material="{{ f.material|lower }}"
+                        data-estado="{% if f.completado %}completado{% else %}pendiente{% endif %}">
+                        <td>{{ f.fecha|date:"d/m/Y" }}</td>
+                        {% if not es_usuario_profesor %}<td>{{ f.profesor }}</td>{% endif %}
+                        <td><strong>{{ f.colegio_nombre }}</strong></td>
+                        <td>{{ f.grado }}</td>
+                        <td>{% materia_badge f.materia %}</td>
+                        <td>{{ f.unidad }}</td>
+                        <td class="text-muted small">{{ f.material }}</td>
+                        <td>
+                            {% if f.completado %}
+                            <span class="badge badge-completo">Completado</span>
+                            {% else %}
+                            <span class="badge badge-pendiente">Pendiente</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if f.informe_id %}
+                            <a href="{% url 'detalle_informe' f.informe_id %}" class="btn btn-outline-info btn-sm py-0 px-2">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        {% if request.user.is_superuser %}
+                        <td>
+                            {% if f.informe_id %}
+                            <form method="POST" action="{% url 'eliminar_informe' f.informe_id %}" onsubmit="return confirm('¿Eliminar este informe? Esta acción no se puede deshacer.')">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Eliminar informe">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if request.user.is_superuser %}10{% elif es_usuario_profesor %}8{% else %}9{% endif %}" class="text-center text-muted py-4">
+                            <i class="fas fa-file-alt me-1"></i> No hay informes ni clases pendientes.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisibles2">0</span> de {{ filas|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesInf"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaInformes tr[data-fecha]'));
+    var ctrl   = document.getElementById('paginaControlesInf');
+    var cont2  = document.getElementById('contadorVisibles2');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        cont2.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+
+    render();
+})();
+</script>
+{% endblock %}

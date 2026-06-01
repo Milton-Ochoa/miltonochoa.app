@@ -1,0 +1,127 @@
+{# ── Datos Personales ── #}
+<p class="section-title">Datos Personales</p>
+<div class="row g-2">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Nombre(s) <span class="text-danger">*</span></label>
+    <input type="text" name="nombre" class="form-control form-control-sm" placeholder="Ej: Juan Carlos" required>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Apellido(s)</label>
+    <input type="text" name="apellido" class="form-control form-control-sm" placeholder="Ej: Pérez Gómez">
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Documento</label>
+    <input type="text" name="documento" class="form-control form-control-sm" placeholder="Ej: 1098...">
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Fecha de Nacimiento</label>
+    <input type="date" name="fecha_nacimiento" class="form-control form-control-sm">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label small fw-bold mb-1">Estado Civil</label>
+    <select name="estado_civil" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.estado_civil %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label small fw-bold mb-1">Talla Camisa</label>
+    <input type="text" name="talla_camisa" class="form-control form-control-sm" placeholder="M, L, XL">
+  </div>
+</div>
+
+{# ── Contacto ── #}
+<p class="section-title">Contacto</p>
+<div class="row g-2">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Email</label>
+    <input type="email" name="email" class="form-control form-control-sm" placeholder="juan@email.com">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Celular</label>
+    <input type="text" name="celular" class="form-control form-control-sm" placeholder="300...">
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Departamento</label>
+    <select name="departamento" class="form-select form-select-sm select2-depto">
+      <option value="">-- Seleccionar --</option>
+      {% for d in departamentos %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Ciudad</label>
+    <select name="ciudad" class="form-select form-select-sm select2-ciudad">
+      <option value="">-- Seleccionar departamento --</option>
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Dirección</label>
+    <input type="text" name="direccion" class="form-control form-control-sm" placeholder="Ej: Cra 10 # 20-30">
+  </div>
+</div>
+
+{# ── Información Laboral ── #}
+<p class="section-title">Información Laboral</p>
+<div class="row g-2">
+  <div class="col-md-8">
+    <label class="form-label small fw-bold mb-1">Materias</label>
+    <select name="materias" class="form-select form-select-sm select2-materias" multiple>
+      {% for m in todas_materias %}
+      <option value="{{ m.id }}" data-color="{{ m.color }}">{{ m.nombre }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Disponibilidad</label>
+    <input type="text" name="disponibilidad" class="form-control form-control-sm" placeholder="Ej: Sábados">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">EPS</label>
+    <select name="eps" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.eps %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Fondo de Pensión</label>
+    <select name="fondo_pension" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.fondo_pension %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+{# ── Datos Bancarios ── #}
+<p class="section-title">Datos Bancarios</p>
+<div class="row g-2">
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Banco</label>
+    <select name="banco" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.banco %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Tipo de Cuenta</label>
+    <select name="tipo_cuenta" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.tipo_cuenta %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Número de Cuenta</label>
+    <input type="text" name="cuenta_bancaria" class="form-control form-control-sm" placeholder="123456789">
+  </div>
+</div>

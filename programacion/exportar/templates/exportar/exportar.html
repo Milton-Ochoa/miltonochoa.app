@@ -1,0 +1,323 @@
+{% extends 'base.html' %}
+{% block header_title %}Exportar{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Horarios</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-dark text-white d-flex align-items-center gap-2">
+        <i class="fas fa-file-download fa-lg"></i>
+        <h5 class="mb-0 fw-bold">Exportar Horarios</h5>
+    </div>
+    <div class="card-body">
+        <form method="POST" id="formExportar">
+            {% csrf_token %}
+
+            <!-- ── Tipo de exportación ── -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Tipo de exportación</label>
+                <div class="d-flex gap-4 flex-wrap">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tipo" id="tipo_ambos" value="ambos" checked>
+                        <label class="form-check-label" for="tipo_ambos">
+                            <i class="fas fa-layer-group me-1 text-primary"></i> Profesores + Colegios
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tipo" id="tipo_profesores" value="profesores">
+                        <label class="form-check-label" for="tipo_profesores">
+                            <i class="fas fa-chalkboard-teacher me-1 text-success"></i> Solo Profesores
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tipo" id="tipo_colegios" value="colegios">
+                        <label class="form-check-label" for="tipo_colegios">
+                            <i class="fas fa-school me-1 text-warning"></i> Solo Colegios
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Rango de fechas ── -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Rango de fechas</label>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Desde</label>
+                        <input type="date" name="fecha_inicio" id="fecha_inicio"
+                               class="form-control" value="{{ fecha_inicio }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Hasta</label>
+                        <input type="date" name="fecha_fin" id="fecha_fin"
+                               class="form-control" value="{{ fecha_fin }}" required>
+                    </div>
+                </div>
+                <div class="mt-2 d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRango('mes')">Este mes</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRango('trimestre')">Este trimestre</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRango('semestre')">Este semestre</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRango('anio')">Todo el año</button>
+                </div>
+            </div>
+
+            <!-- ── Profesores específicos ── -->
+            <div class="mb-4" id="seccion_profesores">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <label class="form-label fw-bold mb-0">Profesores</label>
+                    <span class="badge bg-primary rounded-pill d-none" id="badge-prof">0</span>
+                    <span class="text-muted fw-normal small">(vacío = todos)</span>
+                </div>
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" id="buscar-prof" placeholder="Buscar profesor..." autocomplete="off" oninput="filtrarLista('prof')">
+                    <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('buscar-prof').value=''; filtrarLista('prof');" title="Limpiar búsqueda"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="border rounded p-2" style="max-height: 220px; overflow-y: auto;" id="lista-prof">
+                    <div class="mb-2 d-flex gap-1 flex-wrap">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selVisibles('prof')">Seleccionar visibles</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deselTodos('prof')">Limpiar todo</button>
+                    </div>
+                    <div id="items-prof">
+                    {% for p in profesores %}
+                    <div class="form-check item-prof" data-nombre="{{ p.nombre_corto|lower }}">
+                        <input class="form-check-input check-prof" type="checkbox"
+                               name="profesores_ids" value="{{ p.id }}" id="prof_{{ p.id }}">
+                        <label class="form-check-label" for="prof_{{ p.id }}">{{ p.nombre_corto }}</label>
+                    </div>
+                    {% endfor %}
+                    </div>
+                    <div class="text-muted small text-center py-2 d-none" id="sin-resultados-prof">Sin resultados</div>
+                </div>
+            </div>
+
+            <!-- ── Colegios específicos ── -->
+            <div class="mb-4" id="seccion_colegios">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <label class="form-label fw-bold mb-0">Colegios</label>
+                    <span class="badge bg-warning text-dark rounded-pill d-none" id="badge-col">0</span>
+                    <span class="text-muted fw-normal small">(vacío = todos)</span>
+                </div>
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" id="buscar-col" placeholder="Buscar colegio..." autocomplete="off" oninput="filtrarLista('col')">
+                    <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('buscar-col').value=''; filtrarLista('col');" title="Limpiar búsqueda"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="border rounded p-2" style="max-height: 220px; overflow-y: auto;" id="lista-col">
+                    <div class="mb-2 d-flex gap-1 flex-wrap">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selVisibles('col')">Seleccionar visibles</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deselTodos('col')">Limpiar todo</button>
+                    </div>
+                    <div id="items-col">
+                    {% for c in colegios %}
+                    <div class="form-check item-col" data-nombre="{{ c.nombre|lower }}">
+                        <input class="form-check-input check-col" type="checkbox"
+                               name="colegios_ids" value="{{ c.id }}" id="col_{{ c.id }}">
+                        <label class="form-check-label" for="col_{{ c.id }}">{{ c.nombre }}</label>
+                    </div>
+                    {% endfor %}
+                    </div>
+                    <div class="text-muted small text-center py-2 d-none" id="sin-resultados-col">Sin resultados</div>
+                </div>
+            </div>
+
+            <!-- ── Vista previa de volumen ── -->
+            <div id="preview-volumen" class="alert alert-secondary d-none mb-4" role="alert">
+                <div id="preview-loading" class="d-none text-center py-2">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    Calculando...
+                </div>
+                <div id="preview-resultado">
+                    <div class="row text-center g-2">
+                        <div class="col-6 col-md-3" id="prev-bloque-profesores">
+                            <div class="fw-bold fs-4 text-success" id="prev-n-profes">—</div>
+                            <div class="small text-muted">Profesores</div>
+                            <div class="small text-muted">(<span id="prev-cl-colegio">0</span> clases + <span id="prev-cl-part">0</span> part.)</div>
+                        </div>
+                        <div class="col-6 col-md-3" id="prev-bloque-colegios">
+                            <div class="fw-bold fs-4 text-warning" id="prev-n-colegios">—</div>
+                            <div class="small text-muted">Colegios</div>
+                            <div class="small text-muted">(<span id="prev-cl-col">0</span> clases)</div>
+                        </div>
+                        <div class="col-12 col-md-6 d-flex align-items-center justify-content-center">
+                            <div>
+                                <span class="fw-bold fs-3" id="prev-total">—</span>
+                                <span class="text-muted"> registros en total</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Botones ── -->
+            <div class="d-flex gap-3 align-items-center flex-wrap">
+                <button type="button" class="btn btn-outline-primary" onclick="calcularVolumen()">
+                    <i class="fas fa-calculator me-1"></i> Calcular volumen
+                </button>
+                <button type="submit" class="btn btn-success fw-bold px-4">
+                    <i class="fas fa-download me-2"></i> Descargar ZIP
+                </button>
+                <small class="text-muted" id="aviso-descarga" style="display:none;">
+                    <i class="fas fa-spinner fa-spin me-1"></i> Generando archivo, por favor espere...
+                </small>
+            </div>
+        </form>
+    </div>
+</div>
+
+</div>
+</div>
+
+<script>
+const URL_CONTAR = "{% url 'exportar_contar' %}";
+let _timerPreview = null;
+
+// ── Rangos rápidos ────────────────────────────────────────────
+function setRango(tipo) {
+    const hoy = new Date();
+    let fi, ff;
+    if (tipo === 'mes') {
+        fi = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        ff = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    } else if (tipo === 'trimestre') {
+        const q = Math.floor(hoy.getMonth() / 3);
+        fi = new Date(hoy.getFullYear(), q * 3, 1);
+        ff = new Date(hoy.getFullYear(), q * 3 + 3, 0);
+    } else if (tipo === 'semestre') {
+        const s = hoy.getMonth() < 6 ? 0 : 6;
+        fi = new Date(hoy.getFullYear(), s, 1);
+        ff = new Date(hoy.getFullYear(), s + 6, 0);
+    } else {
+        fi = new Date(hoy.getFullYear(), 0, 1);
+        ff = new Date(hoy.getFullYear(), 11, 31);
+    }
+    document.getElementById('fecha_inicio').value = fi.toISOString().slice(0, 10);
+    document.getElementById('fecha_fin').value     = ff.toISOString().slice(0, 10);
+    programarAutoCalculo();
+}
+
+// ── Filtro de búsqueda ────────────────────────────────────────
+function filtrarLista(grupo) {
+    const q = document.getElementById(`buscar-${grupo}`).value.toLowerCase().trim();
+    const items = document.querySelectorAll(`.item-${grupo}`);
+    let visibles = 0;
+    items.forEach(item => {
+        const coincide = !q || item.dataset.nombre.includes(q);
+        item.style.display = coincide ? '' : 'none';
+        if (coincide) visibles++;
+    });
+    const sinRes = document.getElementById(`sin-resultados-${grupo}`);
+    sinRes.classList.toggle('d-none', visibles > 0);
+}
+
+// ── Selección masiva ──────────────────────────────────────────
+function selVisibles(grupo) {
+    document.querySelectorAll(`.item-${grupo}`).forEach(item => {
+        if (item.style.display !== 'none') {
+            item.querySelector('input[type=checkbox]').checked = true;
+        }
+    });
+    actualizarBadge(grupo);
+    programarAutoCalculo();
+}
+function deselTodos(grupo) {
+    document.querySelectorAll(`.check-${grupo}`).forEach(cb => cb.checked = false);
+    actualizarBadge(grupo);
+    programarAutoCalculo();
+}
+
+// ── Badge contador ────────────────────────────────────────────
+function actualizarBadge(grupo) {
+    const n = document.querySelectorAll(`.check-${grupo}:checked`).length;
+    const badge = document.getElementById(`badge-${grupo}`);
+    badge.textContent = n;
+    badge.classList.toggle('d-none', n === 0);
+}
+
+// ── Mostrar/ocultar secciones según tipo ──────────────────────
+function actualizarSecciones() {
+    const tipo = document.querySelector('input[name="tipo"]:checked').value;
+    document.getElementById('seccion_profesores').style.display =
+        tipo === 'colegios' ? 'none' : '';
+    document.getElementById('seccion_colegios').style.display =
+        tipo === 'profesores' ? 'none' : '';
+    document.getElementById('prev-bloque-profesores').style.display =
+        tipo === 'colegios' ? 'none' : '';
+    document.getElementById('prev-bloque-colegios').style.display =
+        tipo === 'profesores' ? 'none' : '';
+    programarAutoCalculo();
+}
+document.querySelectorAll('input[name="tipo"]').forEach(r => r.addEventListener('change', actualizarSecciones));
+actualizarSecciones();
+
+// ── Debounce para no disparar AJAX en cada keystroke ─────────
+function programarAutoCalculo() {
+    clearTimeout(_timerPreview);
+    _timerPreview = setTimeout(calcularVolumen, 600);
+}
+['fecha_inicio', 'fecha_fin'].forEach(id => {
+    document.getElementById(id).addEventListener('change', programarAutoCalculo);
+});
+document.querySelectorAll('.check-prof').forEach(cb => {
+    cb.addEventListener('change', () => { actualizarBadge('prof'); programarAutoCalculo(); });
+});
+document.querySelectorAll('.check-col').forEach(cb => {
+    cb.addEventListener('change', () => { actualizarBadge('col'); programarAutoCalculo(); });
+});
+
+// ── Contador AJAX ─────────────────────────────────────────────
+async function calcularVolumen() {
+    const tipo = document.querySelector('input[name="tipo"]:checked').value;
+    const fi   = document.getElementById('fecha_inicio').value;
+    const ff   = document.getElementById('fecha_fin').value;
+    if (!fi || !ff) return;
+
+    const profIds = [...document.querySelectorAll('.check-prof:checked')].map(cb => cb.value);
+    const colIds  = [...document.querySelectorAll('.check-col:checked')].map(cb => cb.value);
+
+    const params = new URLSearchParams({ tipo, fecha_inicio: fi, fecha_fin: ff });
+    profIds.forEach(id => params.append('profesores_ids', id));
+    colIds.forEach(id  => params.append('colegios_ids',   id));
+
+    const volDiv = document.getElementById('preview-volumen');
+    volDiv.classList.remove('d-none');
+    document.getElementById('preview-loading').classList.remove('d-none');
+    document.getElementById('preview-resultado').style.visibility = 'hidden';
+
+    try {
+        const res  = await fetch(`${URL_CONTAR}?${params}`);
+        const data = await res.json();
+
+        document.getElementById('prev-n-profes').textContent   = data.n_profesores;
+        document.getElementById('prev-cl-colegio').textContent = data.clases_colegio;
+        document.getElementById('prev-cl-part').textContent    = data.clases_particular;
+        document.getElementById('prev-n-colegios').textContent = data.n_colegios;
+        document.getElementById('prev-cl-col').textContent     = data.clases_colegios;
+        document.getElementById('prev-total').textContent      = data.total;
+
+        volDiv.className = 'alert mb-4 ' + (
+            data.total > 500 ? 'alert-warning' :
+            data.total > 0   ? 'alert-success' : 'alert-secondary'
+        );
+    } catch(e) {
+        document.getElementById('prev-total').textContent = 'Error al consultar';
+    } finally {
+        document.getElementById('preview-loading').classList.add('d-none');
+        document.getElementById('preview-resultado').style.visibility = 'visible';
+    }
+}
+
+// ── Aviso durante la descarga ─────────────────────────────────
+document.getElementById('formExportar').addEventListener('submit', function() {
+    document.getElementById('aviso-descarga').style.display = '';
+    setTimeout(() => { document.getElementById('aviso-descarga').style.display = 'none'; }, 30000);
+});
+</script>
+{% endblock %}

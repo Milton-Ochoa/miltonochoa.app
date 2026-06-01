@@ -1,0 +1,559 @@
+{% extends 'base.html' %}
+{% block header_title %}Crear y Configurar Colegios{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Configuración</li>
+    <li class="breadcrumb-item active">Colegios</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<button class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevoColegio">
+    <i class="fas fa-plus me-1"></i> Nuevo Colegio
+</button>
+{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-colegios { table-layout: fixed; width: 100%; }
+    .tabla-colegios th, .tabla-colegios td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-colegios thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-colegios thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-colegios thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-colegios tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-colegios tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .badge-activo   { background-color: #198754; }
+    .badge-inactivo { background-color: #6c757d; }
+    /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
+    .col-codigo    { width: 8%;  }
+    .col-nombre    { width: 22%; }
+    .col-depto     { width: 13%; }
+    .col-ciudad    { width: 13%; }
+    .col-anios     { width: 15%; }
+    .col-estado    { width: 8%; text-align: center; }
+    .col-acciones  { width: 21%; text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-colegios" id="tablaColegios">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-codigo">Código</th>
+                        <th class="col-nombre">Nombre</th>
+                        <th class="col-depto">Departamento</th>
+                        <th class="col-ciudad">Ciudad</th>
+                        <th class="col-anios">Años</th>
+                        <th class="col-estado">Estado</th>
+                        <th class="col-acciones">Acciones</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="codigo"></th>
+                        <th><input type="text" data-filtro="nombre"></th>
+                        <th><input type="text" data-filtro="departamento"></th>
+                        <th><input type="text" data-filtro="ciudad"></th>
+                        <th><input type="text" data-filtro="anios"></th>
+                        <th><input type="text" data-filtro="estado" value="Activo"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaColegios">
+                    {% for c in colegios %}
+                    <tr data-codigo="{{ c.codigo|default:''|lower }}"
+                        data-nombre="{{ c.nombre|lower }}"
+                        data-departamento="{{ c.departamento|lower }}"
+                        data-ciudad="{{ c.ciudad|lower }}"
+                        data-anios="{% for ca in c.todos_anios %}{{ ca.anio }} {% endfor %}"
+                        data-estado="{% if c.anios_activos %}activo{% else %}inactivo{% endif %}">
+                        <td><span class="badge bg-secondary">{{ c.codigo|default:"—" }}</span></td>
+                        <td>
+                            <strong>{{ c.nombre }}</strong>
+                            {% if c.observacion %}
+                                <i class="fas fa-info-circle text-muted ms-1" title="{{ c.observacion }}"></i>
+                            {% endif %}
+                        </td>
+                        <td>{{ c.departamento }}</td>
+                        <td>
+                            {{ c.ciudad }}
+                            {% if c.mapa_link %}
+                                <a href="{{ c.mapa_link }}" target="_blank" class="ms-1 text-muted" title="Ver en Maps">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                </a>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% for ca in c.todos_anios %}
+                                {% if ca.activo %}
+                                    <span class="badge bg-success">{{ ca.anio }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ ca.anio }}</span>
+                                {% endif %}
+                            {% empty %}
+                                <span class="text-muted small">—</span>
+                            {% endfor %}
+                        </td>
+                        <td class="text-center">
+                            {% if c.anios_activos %}
+                                <span class="badge badge-activo">Activo</span>
+                            {% else %}
+                                <span class="badge badge-inactivo">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">
+                            {% if c.ultimo_anio_activo %}
+                            <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                                    title="Configurar bloques y libros ({{ c.ultimo_anio_activo.anio }})"
+                                    onclick="abrirConfiguracion({{ c.ultimo_anio_activo.id }}, '{{ c.nombre|escapejs }} ({{ c.ultimo_anio_activo.anio }})')">
+                                <i class="fas fa-cogs"></i>
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-success py-0 px-2"
+                                    title="Gestionar años"
+                                    data-colegio-id="{{ c.id }}"
+                                    data-colegio-nombre="{{ c.nombre }}"
+                                    data-anios='{{ c.anios_json }}'
+                                    onclick="abrirGestionAnios(this)">
+                                <i class="fas fa-calendar-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning py-0 px-2"
+                                    title="Editar datos"
+                                    onclick="abrirEditar(
+                                      {{ c.id }},
+                                      '{{ c.nombre|escapejs }}',
+                                      '{{ c.codigo|default:''|escapejs }}',
+                                      '{{ c.departamento|escapejs }}',
+                                      '{{ c.ciudad|escapejs }}',
+                                      '{{ c.direccion|default:''|escapejs }}',
+                                      '{{ c.observacion|default:''|escapejs }}',
+                                      '{{ c.mapa_link|default:''|escapejs }}'
+                                    )">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-school me-1"></i> No hay colegios registrados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisibles">0</span> de {{ colegios|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesCol"></ul></nav>
+        </div>
+    </div>
+</div>
+
+{{ departamentos_json|json_script:"deptos-data" }}
+
+{# ──────────────────── MODAL: Nuevo Colegio ──────────────────── #}
+<div class="modal fade" id="modalNuevoColegio" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-centered">
+    <form method="post" class="modal-content">
+      {% csrf_token %}
+      <input type="hidden" name="accion" value="add">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-plus me-2"></i>Nuevo Colegio</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        {% include 'configuracion/_form_colegio.html' with form=form prefix="add" %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-success fw-bold">Guardar Colegio</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ──────────────────── MODAL: Editar Colegio ──────────────────── #}
+<div class="modal fade" id="modalEditarColegio" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-centered">
+    <form method="post" class="modal-content">
+      {% csrf_token %}
+      <input type="hidden" name="accion" value="edit">
+      <input type="hidden" name="colegio_id" id="edit_id">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Editar Colegio</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="fw-bold small">Código</label>
+            <input type="text" name="codigo" id="edit_codigo" class="form-control">
+          </div>
+          <div class="col-md-8">
+            <label class="fw-bold small">Nombre <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" id="edit_nombre" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="fw-bold small">Departamento <span class="text-danger">*</span></label>
+            <select name="departamento" id="edit_departamento" class="form-select select2-depto" required>
+              <option value="">-- Seleccionar --</option>
+              {% for depto in form.fields.departamento.choices %}
+                {% if depto.0 %}<option value="{{ depto.0 }}">{{ depto.1 }}</option>{% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="fw-bold small">Ciudad <span class="text-danger">*</span></label>
+            <select name="ciudad" id="edit_ciudad" class="form-select select2-ciudad" required>
+              <option value="">-- Seleccionar departamento --</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="fw-bold small">Dirección</label>
+            <input type="text" name="direccion" id="edit_direccion" class="form-control">
+          </div>
+          <div class="col-md-8">
+            <label class="fw-bold small">Link de Maps</label>
+            <input type="url" name="mapa_link" id="edit_mapa" class="form-control" placeholder="https://maps.google...">
+          </div>
+          <div class="col-12">
+            <label class="fw-bold small">Observación</label>
+            <textarea name="observacion" id="edit_observacion" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-warning fw-bold">Guardar Cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+
+{# ──────────────────── MODAL: Configurar Colegio ──────────────────── #}
+{% comment %}
+Usa <iframe> en vez de cargar el HTML inline para aislar el formulario de
+configurar_colegio.html (que tiene sus propios JS/Select2) del DOM principal.
+La vista configurar_colegio lleva @xframe_options_sameorigin para permitirlo.
+El src del iframe se inyecta por JS (configColegio()) con el id del ColegioAnio.
+{% endcomment %}
+<div class="modal fade" id="modalConfigColegio" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-xl modal-dialog-centered">
+    <div class="modal-content" style="height: 80vh;">
+      <div class="modal-header bg-dark text-white py-2">
+        <h5 class="modal-title fs-6">
+          <i class="fas fa-cogs me-2"></i>Panel de Configuración:
+          <span id="nombreColegioModal" class="fw-bold"></span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <iframe id="iframeConfig" src="" style="width:100%; height:100%; border:none;"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ──────────────────── MODAL: Gestionar Años ──────────────────── #}
+<div class="modal fade" id="modalGestionAnios" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-calendar-alt me-2"></i>Años — <span id="gestion_nombre"></span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="gestion_anios_lista" class="mb-3"></div>
+        <hr>
+        <p class="fw-bold small mb-2"><i class="fas fa-plus me-1"></i>Agregar nuevo año</p>
+        <form method="post" class="d-flex align-items-end gap-2">
+          {% csrf_token %}
+          <input type="hidden" name="accion" value="nuevo_anio">
+          <input type="hidden" name="colegio_id" id="gestion_colegio_id">
+          <div class="flex-grow-1">
+            <input type="number" name="nuevo_anio" id="gestion_nuevo_anio"
+                   class="form-control form-control-sm" min="2024" max="2100" required>
+          </div>
+          <button type="submit" class="btn btn-success btn-sm fw-bold">
+            <i class="fas fa-check me-1"></i> Crear
+          </button>
+        </form>
+        <p class="text-muted small mt-1 mb-0">
+          Se creará el año <strong>sin bloques ni asignaciones</strong>. Usa "Clonar" para copiar la configuración de otro año.
+        </p>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Filtrado + paginación inline (mismo patrón que informes/auditoría) ──
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaColegios tr[data-nombre]'));
+    var ctrl   = document.getElementById('paginaControlesCol');
+    var cont   = document.getElementById('contadorVisibles');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                // 'estado' usa exact-match porque "activo" es substring de "inactivo"
+                if (k === 'estado') {
+                    if ((tr.dataset[k] || '') !== q[k]) return false;
+                } else {
+                    if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+
+    render();
+})();
+
+// ── Modales ──────────────────────────────────────────────────
+function abrirConfiguracion(id, nombre) {
+  document.getElementById('nombreColegioModal').textContent = nombre;
+  document.getElementById('iframeConfig').src = `/colegios/configurar-colegio/${id}/`;
+  new bootstrap.Modal(document.getElementById('modalConfigColegio')).show();
+}
+
+function abrirEditar(id, nombre, codigo, departamento, ciudad, direccion, observacion, mapa) {
+  document.getElementById('edit_id').value          = id;
+  document.getElementById('edit_nombre').value      = nombre;
+  document.getElementById('edit_codigo').value      = codigo;
+  document.getElementById('edit_direccion').value   = direccion;
+  document.getElementById('edit_observacion').value = observacion;
+  document.getElementById('edit_mapa').value        = mapa;
+
+  cargarCiudadesColegio('#edit_departamento', '#edit_ciudad', departamento, ciudad);
+  new bootstrap.Modal(document.getElementById('modalEditarColegio')).show();
+}
+
+
+
+// ── Gestionar Años ──────────────────────────────────────────
+function abrirGestionAnios(btn) {
+  const colegioId = btn.dataset.colegioId;
+  const nombre = btn.dataset.colegioNombre;
+  const anios = JSON.parse(btn.dataset.anios);
+  document.getElementById('gestion_nombre').textContent = nombre;
+  document.getElementById('gestion_colegio_id').value = colegioId;
+  document.getElementById('gestion_nuevo_anio').value = new Date().getFullYear() + 1;
+
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  const lista = document.getElementById('gestion_anios_lista');
+  lista.innerHTML = '';
+
+  if (!anios.length) {
+    lista.innerHTML = '<p class="text-muted text-center">No hay años registrados.</p>';
+  } else {
+    anios.forEach(ca => {
+      const row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-center py-2 border-bottom';
+
+      const badge = ca.activo
+        ? `<span class="badge bg-success fs-6">${ca.anio}</span> <span class="text-success small ms-1">Activo</span>`
+        : `<span class="badge bg-secondary fs-6">${ca.anio}</span> <span class="text-muted small ms-1">Inactivo</span>`;
+
+      const toggleBtn = ca.activo ? 'Desactivar' : 'Activar';
+      const toggleCls = ca.activo ? 'btn-outline-danger' : 'btn-outline-success';
+
+      row.innerHTML = `
+        <div>${badge}</div>
+        <div class="d-flex gap-1">
+          <form method="post" class="d-inline">
+            <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+            <input type="hidden" name="accion" value="toggle_activo">
+            <input type="hidden" name="colegio_anio_id" value="${ca.id}">
+            <button type="submit" class="btn btn-sm ${toggleCls}">${toggleBtn}</button>
+          </form>
+          <button class="btn btn-sm btn-outline-warning js-clonar" title="Clonar para ${ca.anio + 1}"
+                  data-id="${ca.id}" data-anio="${ca.anio}">
+            <i class="fas fa-copy"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-primary js-configurar" title="Configurar ${ca.anio}"
+                  data-id="${ca.id}" data-anio="${ca.anio}">
+            <i class="fas fa-cogs"></i>
+          </button>
+        </div>
+      `;
+
+      // Use event listeners instead of inline onclick to safely pass nombre without string-escaping
+      row.querySelector('.js-clonar').addEventListener('click', () => {
+        clonarColegioDesdeGestion(ca.id, nombre, ca.anio);
+      });
+      row.querySelector('.js-configurar').addEventListener('click', () => {
+        bootstrap.Modal.getInstance(document.getElementById('modalGestionAnios')).hide();
+        abrirConfiguracion(ca.id, `${nombre} (${ca.anio})`);
+      });
+
+      lista.appendChild(row);
+    });
+  }
+  new bootstrap.Modal(document.getElementById('modalGestionAnios')).show();
+}
+
+// ── Clonar desde modal Gestionar Años ───────────────────────
+function clonarColegioDesdeGestion(id, nombre, anio) {
+  if (!confirm(`¿Crear copia de "${nombre}" para el año ${anio + 1}?\nSe copiarán todos los bloques y asignaciones.`)) return;
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  fetch(`/colegios/ajax/clonar/${id}/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken}
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      alert(`✓ ${nombre} ${data.anio} creado exitosamente (inactivo).`);
+      window.location.reload();
+    } else {
+      alert('Error: ' + data.error);
+    }
+  });
+}
+
+// ── Geo local: mismo patrón que profesores ───────────────────
+const DEPTOS = JSON.parse(document.getElementById('deptos-data').textContent);
+
+const S2_OPTS_COL = { theme: 'bootstrap-5', width: '100%', allowClear: true };
+
+function initSelect2Colegio(modal) {
+  const $m = $(modal);
+  $m.find('.select2-depto').select2({
+    ...S2_OPTS_COL,
+    placeholder: 'Buscar departamento...',
+    dropdownParent: $m,
+  });
+  $m.find('.select2-ciudad').select2({
+    ...S2_OPTS_COL,
+    placeholder: 'Buscar ciudad...',
+    dropdownParent: $m,
+  });
+}
+
+function bindDeptoCiudadCol(deptoSel, ciudadSel) {
+  $(deptoSel).on('change', function() {
+    const depto = $(this).val();
+    const $ciudad = $(ciudadSel);
+    $ciudad.empty().append('<option value="">-- Seleccionar --</option>');
+    if (depto && DEPTOS[depto]) {
+      DEPTOS[depto].sort().forEach(c => {
+        $ciudad.append(new Option(c, c));
+      });
+    }
+    $ciudad.trigger('change.select2');
+  });
+}
+
+function cargarCiudadesColegio(deptoSel, ciudadSel, deptoVal, ciudadVal) {
+  const $depto = $(deptoSel), $ciudad = $(ciudadSel);
+  $depto.val(deptoVal).trigger('change.select2');
+  $ciudad.empty().append('<option value="">-- Seleccionar --</option>');
+  if (deptoVal && DEPTOS[deptoVal]) {
+    DEPTOS[deptoVal].sort().forEach(c => {
+      $ciudad.append(new Option(c, c, c === ciudadVal, c === ciudadVal));
+    });
+  }
+  $ciudad.trigger('change.select2');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Modal Nuevo Colegio: init Select2 solo la primera vez
+  const modalNuevo = document.getElementById('modalNuevoColegio');
+  modalNuevo.addEventListener('shown.bs.modal', function() {
+    initSelect2Colegio(this);
+    bindDeptoCiudadCol('#modalNuevoColegio .select2-depto', '#modalNuevoColegio .select2-ciudad');
+  }, { once: true });
+
+  // Modal Editar Colegio: init Select2 solo la primera vez
+  // (cargarCiudadesColegio popula opciones antes del show; Select2 las lee al inicializarse)
+  const modalEditar = document.getElementById('modalEditarColegio');
+  modalEditar.addEventListener('shown.bs.modal', function() {
+    initSelect2Colegio(this);
+    bindDeptoCiudadCol('#edit_departamento', '#edit_ciudad');
+  }, { once: true });
+});
+</script>
+{% endblock %}

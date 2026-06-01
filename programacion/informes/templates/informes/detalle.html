@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load materia_tags %}
+{% block header_title %}Informe de Sesión{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'lista_informes' %}">Informes</a></li>
+    <li class="breadcrumb-item active">Detalle</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<style>
+    .informe-wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .informe-header {
+        padding: 20px 28px 16px;
+        border-bottom: 2px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .informe-header h2 { font-weight: 900; font-size: 1.7rem; margin: 0; }
+    .informe-header .curso { font-weight: 700; font-size: 1.05rem; margin-top: 4px; }
+    .informe-tabla { width: 100%; border-collapse: collapse; }
+    .informe-tabla td, .informe-tabla th { border: 1px solid #dee2e6; padding: 10px 14px; vertical-align: top; }
+    .informe-tabla .label-cell {
+        background-color: #f8f9fa;
+        font-weight: 700;
+        color: #0d6efd;
+        width: 160px;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .informe-tabla .header-row td {
+        background-color: #f0f0f0;
+        font-weight: 700;
+        text-align: center;
+        font-size: 1rem;
+    }
+    .contenido-campo { white-space: pre-wrap; line-height: 1.6; min-height: 40px; }
+    .badge-completo  { background-color: #198754; }
+    .badge-pendiente { background-color: #ffc107; color: #212529; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <a href="{% url 'lista_informes' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Volver a la lista
+    </a>
+    <div class="d-flex gap-2">
+        {% if informe.completado %}
+        <span class="badge badge-completo px-3 py-2">Completado</span>
+        {% else %}
+        <span class="badge badge-pendiente px-3 py-2">Pendiente</span>
+        {% endif %}
+        <button class="btn btn-primary btn-sm" onclick="window.print()">
+            <i class="fas fa-print me-1"></i> Imprimir
+        </button>
+    </div>
+</div>
+
+<div class="informe-wrap" id="informe-imprimible">
+    <!-- Encabezado -->
+    <div class="informe-header">
+        <div>
+            <h2>INFORME CURSO</h2>
+            <div class="curso">Curso: {{ informe.colegio_nombre }} — {{ informe.grado }}</div>
+        </div>
+        <img src="{% static 'img/logo_color.png' %}" alt="Logo" style="max-height: 60px; border-radius: 6px;">
+    </div>
+
+    <!-- Tabla del informe -->
+    <table class="informe-tabla">
+        <!-- Título sección -->
+        <tr>
+            <td colspan="4" class="header-row" style="background-color: #e9ecef;">
+                <strong>INFORME DE SESIÓN</strong>
+            </td>
+        </tr>
+
+        <!-- Sesión + Fecha -->
+        <tr>
+            <td class="label-cell">Sesión</td>
+            <td colspan="2">
+                <strong>Área: {% materia_badge informe.materia %}</strong><br>
+                <strong>Temática {{ informe.tematica }}</strong>
+            </td>
+            <td style="width:200px;">
+                <strong>Fecha</strong><br>
+                {{ informe.fecha|date:"l, j \d\e F \d\e Y" }}
+            </td>
+        </tr>
+
+        <!-- Material empleado -->
+        <tr>
+            <td class="label-cell">Material Empleado</td>
+            <td colspan="3">{{ informe.material }}</td>
+        </tr>
+
+        <!-- Actividades -->
+        <tr>
+            <td class="label-cell">Actividades</td>
+            <td colspan="3">
+                <div class="contenido-campo">{% if informe.actividades %}{{ informe.actividades }}{% else %}<span class="text-muted fst-italic">Sin completar</span>{% endif %}</div>
+            </td>
+        </tr>
+
+        <!-- Fortalezas -->
+        <tr>
+            <td class="label-cell">Fortalezas</td>
+            <td colspan="3">
+                <div class="contenido-campo">{% if informe.fortalezas %}{{ informe.fortalezas }}{% else %}<span class="text-muted fst-italic">Sin completar</span>{% endif %}</div>
+            </td>
+        </tr>
+
+        <!-- Debilidades -->
+        <tr>
+            <td class="label-cell">Debilidades</td>
+            <td colspan="3">
+                <div class="contenido-campo">{% if informe.debilidades %}{{ informe.debilidades }}{% else %}<span class="text-muted fst-italic">Sin completar</span>{% endif %}</div>
+            </td>
+        </tr>
+
+        <!-- Recomendaciones -->
+        <tr>
+            <td class="label-cell">Recomendaciones</td>
+            <td colspan="3">
+                <div class="contenido-campo">{% if informe.recomendaciones %}{{ informe.recomendaciones }}{% else %}<span class="text-muted fst-italic">Sin completar</span>{% endif %}</div>
+            </td>
+        </tr>
+
+        <!-- Bibliografía -->
+        <tr>
+            <td class="label-cell">Bibliografía</td>
+            <td colspan="3">
+                <div class="contenido-campo">{% if informe.bibliografia %}{{ informe.bibliografia }}{% else %}<span class="text-muted fst-italic">Sin completar</span>{% endif %}</div>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<style>
+@media print {
+    .sidebar, .top-header, .btn, .badge { display: none !important; }
+    .main-wrapper { overflow: visible !important; }
+    .informe-wrap { box-shadow: none; border: 1px solid #000; }
+    body { background: #fff !important; }
+}
+</style>
+{% endblock %}
