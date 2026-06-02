@@ -1,17 +1,17 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/AAMO-Programaci%C3%B3n-212529?style=for-the-badge&labelColor=0d6efd" alt="AAMO Programación"/>
+<img src="https://img.shields.io/badge/AAMO-Plataforma-212529?style=for-the-badge&labelColor=0d6efd" alt="AAMO"/>
 
-# 📚 Programación AAMO
+# 🏛️ AAMO
 
-### Sistema integral de gestión académica para colegios — Milton Ochoa / AAMO
+### Plataforma web multi-área para la organización educativa **Milton Ochoa / AAMO**
 
-*Calendario, programación, auditoría automática, informes pedagógicos, liquidación de pagos y API REST en una sola plataforma.*
+*Un solo proyecto Django, un solo login. Cada **área** del negocio vive en su propio **subdominio**, sobre una única base de datos.*
 
 <br/>
 
 [![Django](https://img.shields.io/badge/Django-5.2.11-092E20?style=flat&logo=django&logoColor=white)](https://www.djangoproject.com/)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat&logo=postgresql&logoColor=white)](https://supabase.com/)
 [![DRF](https://img.shields.io/badge/DRF-3.15-A30000?style=flat&logo=django&logoColor=white)](https://www.django-rest-framework.org/)
 [![HTMX](https://img.shields.io/badge/HTMX-1.9-3D72D7?style=flat&logo=htmx&logoColor=white)](https://htmx.org/)
@@ -27,16 +27,18 @@
 ## 📖 Tabla de contenidos
 
 - [✨ Visión general](#-visión-general)
-- [🚀 Características principales](#-características-principales)
+- [🧭 Áreas de la plataforma](#-áreas-de-la-plataforma)
+- [🏗️ Arquitectura multi-área](#️-arquitectura-multi-área)
+- [📚 Área Programación](#-área-programación)
 - [🛠️ Stack tecnológico](#️-stack-tecnológico)
-- [🏗️ Arquitectura](#️-arquitectura)
+- [🗂️ Estructura del proyecto](#️-estructura-del-proyecto)
+- [🔐 Roles y control de acceso](#-roles-y-control-de-acceso)
 - [📦 Instalación local](#-instalación-local)
 - [⚙️ Variables de entorno](#️-variables-de-entorno)
-- [🧭 Estructura del proyecto](#-estructura-del-proyecto)
-- [🔐 Roles y control de acceso](#-roles-y-control-de-acceso)
 - [📡 API REST](#-api-rest)
 - [🧪 Tests y calidad](#-tests-y-calidad)
 - [☁️ Despliegue en producción](#️-despliegue-en-producción)
+- [➕ Añadir una nueva área](#-añadir-una-nueva-área)
 - [🩹 Mantenimiento](#-mantenimiento)
 - [🤝 Contribuir](#-contribuir)
 - [📜 Licencia](#-licencia)
@@ -45,51 +47,140 @@
 
 ## ✨ Visión general
 
-**Programación AAMO** es una aplicación web desarrollada en Django para que la organización educativa **Milton Ochoa / AAMO** gestione su programación académica de extremo a extremo:
+**AAMO** es la plataforma web interna de la organización educativa **Milton Ochoa / AAMO**.
+Está construida como **un único proyecto Django** organizado por **áreas** de negocio
+(programación académica, logística, financiera…), donde:
 
-- 📅 Programar **clases por colegio, grado, bloque, profesor, materia, libro y unidad** con detección automática de inconsistencias.
-- 🎯 Registrar **clases particulares** fuera del horario regular.
-- 🚨 Detectar errores de programación en tiempo real (**duplicados, choques de profesor, saltos de secuencia**) con un motor de auditoría dedicado.
-- 📝 Generar **informes pedagógicos** vinculados a cada sesión de clase.
-- 💵 Liquidar **pagos semanales a profesores** con tarifas por colegio/año y registro inmutable.
-- 📊 Exportar **archivos Excel** de horarios y pagos generados completamente en memoria.
-- 🔌 Exponer una **API REST documentada** (Swagger / ReDoc) para integraciones externas (sistema financiero).
-- 📱 Funcionar como **PWA**: instalable en móvil con manifest, service worker y diseño responsive.
+- 🏛️ **Un solo edificio, varias áreas.** Todo vive en el mismo proyecto y comparte
+  una **única base de datos** y un **único sistema de usuarios**.
+- 🌐 **Cada área es un subdominio.** El **apex** (`miltonochoa.app`) es el login único
+  y el selector de área; cada área se sirve en su propio host
+  (`programacion.miltonochoa.app`, y en el futuro `logistica.`, `financiera.`).
+- 🔑 **Un solo login (SSO).** El usuario se autentica una vez en el apex y, según sus
+  permisos, es redirigido al subdominio de su área. La sesión se comparte entre todos
+  los subdominios.
+- 🧩 **Crece por áreas.** Añadir un área nueva es registrar su `urlconf` y su subdominio;
+  el motor de enrutado del `core/` hace el resto (ver [Añadir una nueva área](#-añadir-una-nueva-área)).
 
 > **Idioma:** Español (Colombia) · **Zona horaria:** America/Bogota · **Moneda:** COP
+> **Dominio:** `miltonochoa.app` (dev: `lvh.me`)
 
 ---
 
-## 🚀 Características principales
+## 🧭 Áreas de la plataforma
+
+| Área | Subdominio | Estado | Qué hace |
+|------|------------|:------:|----------|
+| 🏛️ **Apex** | `miltonochoa.app` | ✅ Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
+| 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos y API REST. |
+| 🚚 **Logística** | `logistica.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
+| 💰 **Financiera** | `financiera.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
+
+Hoy la **única área implementada** es [Programación](#-área-programación). `logistica/` y
+`financiera/` son paquetes Python vacíos listos para crecer con el mismo patrón.
+
+---
+
+## 🏗️ Arquitectura multi-área
+
+El corazón de AAMO es el **enrutado por subdominio**: el mismo proyecto Django responde en
+todos los hosts, y un middleware elige qué `urlconf` montar según el subdominio de la petición.
+
+```
+                         🌐 Cliente (navegador / PWA)
+                                     │  HTTP(S)
+        ┌────────────────────────────┼────────────────────────────┐
+        │                            │                            │
+        ▼                            ▼                            ▼
+ miltonochoa.app          programacion.miltonochoa.app    logistica.· financiera.·
+   (APEX)                      (ÁREA programacion)            (futuras áreas)
+        │                            │                            │
+        └────────────────────────────┴────────────────────────────┘
+                                     │
+            ┌────────────────────────▼─────────────────────────┐
+            │  🛡️  core.middleware.EnrutadoPorAreaMiddleware    │
+            │  Mira el host → fija request.urlconf y request.area│
+            │   · apex            → core.urls                    │
+            │   · <area>.dominio  → urlconf del área (core.areas)│
+            │   · subdominio sin área registrada → 404           │
+            └────────────────────────┬─────────────────────────┘
+                                     │
+            ┌────────────────────────▼─────────────────────────┐
+            │  👥 usuarios.middleware.ControlAcceso              │
+            │  Solo dentro de un área: login + scope por rol     │
+            │  + inyecta el perfil en request                    │
+            └────────────────────────┬─────────────────────────┘
+                                     │
+   ┌──────────────────┬──────────────┼───────────────────┬──────────────────┐
+   ▼                  ▼              ▼                   ▼                  ▼
+📄 Vistas HTMX   🔌 API REST   ⚙️ Comandos manage   🔑 Login/SSO      📲 PWA (manifest+sw)
+   │                  │              │                   │                  │
+   └──────────────────┴──────────────┴───────────────────┴──────────────────┘
+                                     │
+            ┌────────────────────────▼─────────────────────────┐
+            │   💾 ORM Django · Signals · Caché (locmem/Redis)   │
+            └────────────────────────┬─────────────────────────┘
+                                     │
+   🐘 PostgreSQL (Supabase, producción)        🗃️ SQLite (local / tests)
+```
+
+**Piezas clave (todas en `core/`):**
+
+| Pieza | Rol |
+|-------|-----|
+| [`core/middleware.py`](core/middleware.py) | `EnrutadoPorAreaMiddleware`: elige `urlconf` y fija `request.area` según el host. Host ajeno (localhost/IP/healthcheck) → apex. |
+| [`core/areas.py`](core/areas.py) | Registro único `AREAS` (slug → urlconf + landing) y helpers de URL **entre hosts** (`url_en_area`, `url_apex`, `areas_del_usuario`). |
+| [`core/urls.py`](core/urls.py) | **Apex**: `/` → selector de área, `/panel/` → panel del superusuario, `/usuarios/` → login, `/admin/`, PWA. **No** monta áreas. |
+| [`core/urls_programacion.py`](core/urls_programacion.py) | **Área programación**: monta `programacion.urls` en la raíz `/` de su subdominio + login local + PWA. |
+
+> **SSO entre subdominios:** la sesión y el CSRF se comparten vía
+> `SESSION_COOKIE_DOMAIN=.BASE_DOMAIN`. Un único login vale para todos los subdominios.
+
+> **Patrón híbrido HTMX + DRF:** las pantallas internas son HTML server-rendered con HTMX
+> para interactividad parcial; la API DRF expone los datos a sistemas externos con JWT.
+
+---
+
+## 📚 Área Programación
+
+El área **Programación** (`programacion.miltonochoa.app`) gestiona la programación académica
+de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **8 sub-apps**.
 
 ### 🗓️ Programación visual
 
-- **Vista general**: calendario unificado de todos los colegios activos, agrupado por colegio → grado → bloque, con caché HTML por mes (10 min).
-- **Dashboard por colegio**: matriz `grado × fecha` editable inline con HTMX. Incluye recálculo automático de secuencia cuando se mueven clases.
-- **Recomendación inteligente** de la siguiente unidad al programar una clase, considerando libro asignado, fecha y socializaciones.
+- **Vista general**: calendario unificado de todos los colegios activos, agrupado por
+  colegio → grado → bloque, con caché HTML por mes (10 min).
+- **Dashboard por colegio**: matriz `grado × fecha` editable inline con HTMX, con recálculo
+  automático de secuencia al mover clases.
+- **Recomendación inteligente** de la siguiente unidad al programar, considerando libro
+  asignado, fecha y socializaciones.
+- **Clases particulares** fuera del horario regular.
 
-### 🎯 Catálogo modular
+### 🗂️ Catálogo modular
 
-- **Colegio ↔ Colegio-Año**: separación entre datos invariantes (nombre, ciudad…) y datos anuales (tarifa por hora, activo/inactivo) que permite mantener historial sin duplicar registros.
+- **Colegio ↔ Colegio-Año**: separa datos invariantes (nombre, ciudad…) de los anuales
+  (tarifa por hora, activo/inactivo) → historial sin duplicar registros.
 - **Libros normales vs. material asignado**: dos categorías con flujos distintos.
-- **Asignaciones por rango de fechas**: un grado puede cambiar de libro a mitad de año sin perder consistencia.
+- **Asignaciones por rango de fechas**: un grado puede cambiar de libro a mitad de año sin
+  perder consistencia.
 
 ### 🚨 Auditoría automática
 
 | Tipo de alerta | Detecta |
 |----------------|---------|
-| 🔁 **Duplicado** | Misma unidad de la misma materia programada >1 vez en el mismo `(colegio, grado, libro)` |
+| 🔁 **Duplicado** | Misma unidad de la misma materia programada >1 vez en `(colegio, grado, libro)` |
 | ⚔️ **Conflicto** | Un profesor con clases en >1 colegio el mismo día |
 | 📉 **Secuencia** | Salto en la numeración de unidades (ej. pasó de 2 a 4) |
 
 - Deduplicación por **hash MD5** → no se crean alertas repetidas.
-- Reactivación automática si un error reaparece (salvo que el admin la haya ignorado manualmente).
+- Reactivación automática si un error reaparece (salvo que se haya ignorado manualmente).
 - Throttle de 5 minutos para evitar barridos concurrentes a la BD.
 - Comando de cron: `python manage.py ejecutar_auditoria`.
 
 ### 📝 Informes pedagógicos
 
-- Un `Informe` está vinculado a **exactamente una** clase regular o particular (garantizado por `CheckConstraint` a nivel BD).
+- Un `Informe` está vinculado a **exactamente una** clase regular o particular (garantizado
+  por `CheckConstraint` a nivel BD).
 - Datos de cabecera **desnormalizados** para sobrevivir aunque se elimine la clase original.
 - Estados: borrador → completado (al rellenar `actividades`).
 
@@ -101,27 +192,22 @@
 
 ### 📊 Exportación Excel
 
-- Generación 100 % en memoria con **openpyxl** (sin tocar disco — ideal para Render).
+- Generación 100 % en memoria con **openpyxl** (sin tocar disco — ideal para el filesystem
+  efímero de Railway).
 - ZIPs masivos (un Excel por profesor o por colegio).
-- Filtro de URLs `_safe_url()` contra hipervínculos maliciosos en celdas.
+- Filtro `_safe_url()` contra hipervínculos maliciosos en celdas.
 - Días/meses **siempre en español**, independiente del locale del SO.
 
-### 📱 Tablero Kanban (home)
+### 📋 Tablero Kanban (home del área)
 
-Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Completado), totalmente operable con HTMX y arrastrable entre estados.
+Pendientes con tres columnas (Pendiente · En gestión · Completado), operable con HTMX y
+arrastrable entre estados.
 
-### 🔌 API REST
+### 🔌 API REST + 📲 PWA
 
-- JWT con tokens de **8 h (access)** y **7 d (refresh)**.
-- Filtros declarativos (`django-filter`), búsqueda full-text en campos clave, paginación configurable (200/página, máx 1000).
-- Throttle global `1000/hora/usuario`.
-- **Documentación OpenAPI** lista en [`/api/v1/docs/`](http://programacion.lvh.me:8000/api/v1/docs/) (Swagger) y [`/api/v1/redoc/`](http://programacion.lvh.me:8000/api/v1/redoc/), bajo el subdominio del área (`programacion.miltonochoa.app`).
-
-### 📲 PWA
-
-- `manifest.json` y `sw.js` servidos desde la raíz de cada subdominio (scope `/` por origen → cada área es una PWA instalable independiente).
-- Instalable como app standalone en móvil.
-- Theme color y safe-area-inset para edge-to-edge en iOS/Android.
+- **API REST** documentada (Swagger/ReDoc) con JWT — ver [API REST](#-api-rest).
+- **PWA** instalable: `manifest.json` y `sw.js` servidos desde la raíz del subdominio (scope
+  `/` por origen → cada área es una PWA independiente), con theme color y safe-area-inset.
 
 ---
 
@@ -130,7 +216,8 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 <table>
 <tr><th>Capa</th><th>Tecnología</th><th>Versión</th></tr>
 <tr><td>🐍 Backend</td><td>Django</td><td>5.2.11</td></tr>
-<tr><td>⚡ Interactividad</td><td>HTMX</td><td>1.9.12</td></tr>
+<tr><td>🐍 Runtime</td><td>Python (pin en <code>.python-version</code>)</td><td>3.13</td></tr>
+<tr><td>⚡ Interactividad</td><td>HTMX + django-htmx</td><td>1.9.12 / 1.19.0</td></tr>
 <tr><td>🎨 UI</td><td>Bootstrap + Font Awesome</td><td>5.3 / 6.0</td></tr>
 <tr><td>🗄️ BD producción</td><td>PostgreSQL (Supabase pooler)</td><td>—</td></tr>
 <tr><td>🧪 BD tests</td><td>SQLite</td><td>auto</td></tr>
@@ -148,39 +235,100 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 
 ---
 
-## 🏗️ Arquitectura
+## 🗂️ Estructura del proyecto
+
+**AAMO** es un solo proyecto Django. El **motor** (`core/`) y los **usuarios** (`usuarios/`)
+son globales; cada **área** es un paquete de primer nivel servido en su subdominio.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                      🌐 Cliente (navegador / PWA)                 │
-│   Bootstrap 5 · HTMX · Vanilla JS · Service Worker · Manifest    │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │ HTTP(S)  ·  <area>.miltonochoa.app
-┌──────────────────────────▼───────────────────────────────────────┐
-│   🛡️  WhiteNoise · EnrutadoPorArea (subdominio→urlconf) ·         │
-│        ControlAcceso (login, scope por rol, perfil inyectado)     │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────────────┐
-        │                  │                          │
-┌───────▼───────┐ ┌────────▼──────────┐ ┌─────────────▼──────────┐
-│  📄 Vistas     │ │  🔌 API REST       │ │  ⚙️  Comandos manage   │
-│  (HTMX/HTML)  │ │  (DRF + JWT)      │ │  (auditoría, etc.)     │
-└───────┬───────┘ └────────┬──────────┘ └─────────────┬──────────┘
-        │                  │                          │
-        └──────────────────┼──────────────────────────┘
-                           │
-┌──────────────────────────▼───────────────────────────────────────┐
-│              💾  ORM Django · Signals · Caché (locmem/Redis)      │
-│           (invalidación auto: vista_general, auditoría)           │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-┌──────────────────────────▼───────────────────────────────────────┐
-│   🐘 PostgreSQL (Supabase)            🗃️  SQLite (local/tests)    │
-└──────────────────────────────────────────────────────────────────┘
+AAMO/
+│
+├── 🧩 core/                  # MOTOR de la plataforma
+│   ├── settings.py           #   configuración (BASE_DOMAIN, SSO, caché, DRF, JWT…)
+│   ├── middleware.py         #   EnrutadoPorAreaMiddleware (subdominio → urlconf + area)
+│   ├── areas.py              #   registro AREAS + helpers de URL entre subdominios
+│   ├── urls.py               #   APEX: login, selector de área, /panel/, /admin/, PWA
+│   ├── urls_programacion.py  #   urlconf del subdominio del área programación
+│   └── views.py              #   seleccion_area, panel_admin, vista_general, búsqueda
+│
+├── 👥 usuarios/              # GLOBAL: login único, perfiles, middleware de acceso, rate-limit
+│
+├── 📚 programacion/          # ÁREA programación (servida en programacion.miltonochoa.app)
+│   ├── urls.py               #   router del área (agrupa las 8 sub-apps en la raíz /)
+│   ├── 🗂️  configuracion/     #   Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
+│   │      └── management/commands/importar_backup.py   # importador del Excel de respaldo
+│   ├── 🏫 colegios/          #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
+│   ├── 👨‍🏫 profesores/         #   Vista de horario propio del profesor
+│   ├── 🚨 auditoria/         #   Motor de detección de errores + AlertaAuditoria + cron command
+│   ├── 📝 informes/          #   Informes pedagógicos por sesión
+│   ├── 📊 exportar/          #   Generación de Excel + modelo PagoRealizado
+│   ├── 📋 pendientes/        #   Tablero Kanban (home del área)
+│   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
+│
+├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
+├── 💰 financiera/            # PLACEHOLDER de área futura (solo __init__.py + README)
+│
+├── 🎨 templates/             # Globales: base.html (área), base_apex.html (apex/lobby),
+│                             #   home, 404, 500, login, seleccion_area, panel_admin, sw.js
+├── 📜 logs/                  # Rotating file handler (5MB × 5 backups, gitignored)
+├── 💾 backups/               # AAMO_export.xlsx (respaldo de BD)
+│
+├── 🚀 manage.py              # Entry point Django (apunta a core.settings)
+├── 📦 requirements.txt       # Dependencias de producción
+├── 🛠️  requirements-dev.txt  # Adicionales de desarrollo y testing
+├── 🔒 .env / .env.dev-api    # Variables locales (gitignored; .env.dev-api → SQLite local)
+├── 🚂 railway.json           # Build/deploy en Railway (Nixpacks: migrate → collectstatic → gunicorn)
+├── 📄 README.md              # Este archivo
+└── 🤖 CLAUDE.md              # Guía interna para sesiones de Claude Code
 ```
 
-**Patrón híbrido HTMX + DRF**: las pantallas internas usan HTML server-rendered con HTMX para interactividad parcial. La API DRF expone los datos al sistema financiero externo con JWT.
+> **Convención crítica — ruta de import ≠ `app_label`.** Las sub-apps viven dentro de
+> `programacion/` pero conservan su label original (`configuracion`, `colegios`, …) definido
+> en cada `apps.py` (`name='programacion.colegios'`, `label='colegios'`). Por eso las tablas,
+> migraciones y FKs por string (`'configuracion.Colegio'`) **no cambiaron** al unificar el
+> proyecto. Imports Python: siempre `from programacion.<app>...`; FKs por string e
+> `include()` usan el label sin el prefijo.
+
+---
+
+## 🔐 Roles y control de acceso
+
+**Login único + selección de área por subdominio.** Todos entran por el **apex**
+(`miltonochoa.app/usuarios/login/`). Tras autenticarse, `core.views.seleccion_area` /
+`usuarios.views.login_redirect` resuelven las áreas del usuario (vía el grupo
+`area:programacion` o un perfil de colegio/profesor; el superusuario tiene todas) y redirigen
+al **subdominio** del área. Si tiene varias, muestra un selector; si no tiene ninguna, un
+mensaje claro. Entrar directo a un subdominio sin sesión envía al login del apex. La sesión se
+comparte en `.miltonochoa.app` (**SSO**).
+
+**Panel del superusuario.** El superusuario no entra al área directamente, sino al **panel**
+(`miltonochoa.app/panel/`, `core.views.panel_admin`): acceso a todas las áreas y gestión de
+los **usuarios de etiqueta** (alta/reset/baja). Los usuarios de colegio/profesor se gestionan
+dentro del área (`/usuarios/colegios/`, `/usuarios/profesores/`), enlazados desde el panel.
+
+El middleware de host [`core/middleware.py`](core/middleware.py) elige el `urlconf` según el
+subdominio; el de acceso [`usuarios/middleware.py`](usuarios/middleware.py) impone scope por
+rol **dentro del subdominio del área** (en el apex deja pasar — sus vistas usan decoradores):
+
+| Rol | Vinculación | Rutas permitidas (en `programacion.miltonochoa.app`) | Atributos en `request` |
+|-----|-------------|------------------------------------------------------|------------------------|
+| 👑 **Superusuario** | `User.is_superuser=True` | Todo | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
+| 🛠️ **Staff de área** | Grupo `area:programacion` | Todo el área (como superusuario), incluida la gestión de usuarios de colegio/profesor; **salvo** el panel del apex, los usuarios de etiqueta, `/admin/` y otras áreas | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
+| 🏫 **Gestor colegio** | `UsuarioColegio` (OneToOne) | `/colegios/`, `/informes/` | `perfil_colegio`, `colegio_anio_activo` |
+| 👨‍🏫 **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` | `perfil_profesor` |
+
+> El **staff de área** es la "etiqueta" `area:programacion`: usuarios genéricos del área sin
+> perfil de colegio/profesor, creados desde el panel. El predicado de acceso de página es
+> `core.areas.es_personal_programacion` (superusuario **o** miembro del grupo); no son
+> `is_staff` (no entran a `/admin/`).
+
+> ⚠️ Un usuario autenticado **sin perfil/área vinculada** se desloguea automáticamente. El
+> login (`/usuarios/`) y las rutas PWA (`/manifest.json`, `/sw.js`) quedan fuera del scope de
+> área; la API REST usa JWT propio.
+
+**Ratelimit** (decorador `@rate_limit(max_calls, periodo)` en `usuarios/ratelimit.py`):
+- 🔐 Login: **10 intentos / 60 s** por IP.
+- 📚 AJAX de unidades/materias: **200 / 60 s**.
 
 ---
 
@@ -188,7 +336,7 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 
 ### Requisitos previos
 
-- **Python 3.11+**
+- **Python 3.13** (versión fijada en `.python-version`; compatible con 3.11+)
 - **PostgreSQL** (o usar la BD remota de Supabase con la URL del `.env`)
 - **Git**
 
@@ -211,15 +359,15 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 ### 2 · Configurar variables de entorno
 
-Para **desarrollo local con SQLite** (sin tocar la BD de producción), crea
-`.env.dev-api` en la raíz — se carga **antes** que `.env`. Hay una plantilla en
-[`.env.example`](.env.example):
+Para **desarrollo local con SQLite** (sin tocar la BD de producción), crea `.env.dev-api` en
+la raíz — se carga **antes** que `.env`. Hay una plantilla en [`.env.example`](.env.example):
 
 ```dotenv
 DEBUG=True
 DATABASE_URL=sqlite:///db.sqlite3
 SECRET_KEY=<genera-una-con-get_random_secret_key>
 PASSWORD_ENCRYPT_KEY=<clave-fernet>
+BASE_DOMAIN=lvh.me
 ALLOWED_HOSTS=localhost,127.0.0.1
 SECURE_SSL_REDIRECT=False
 CACHE_BACKEND=locmem
@@ -231,9 +379,6 @@ Para generar una `SECRET_KEY`:
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-(Para producción se usa `.env` con `DATABASE_URL` de PostgreSQL — ver
-[Variables de entorno](#️-variables-de-entorno).)
-
 ### 3 · Migrar y crear superusuario
 
 ```bash
@@ -243,17 +388,16 @@ python manage.py createsuperuser
 
 ### 4 · (Opcional) Cargar el backup de datos
 
-El proyecto incluye un importador del Excel de respaldo (`backups/AAMO_export.xlsx`,
-17 hojas con toda la BD). Sobre una BD ya migrada:
+El proyecto incluye un importador del Excel de respaldo (`backups/AAMO_export.xlsx`, 17 hojas
+con toda la BD). Sobre una BD ya migrada:
 
 ```bash
 python manage.py importar_backup backups/AAMO_export.xlsx
 ```
 
-Preserva los ids originales, es idempotente (`update_or_create`) y conserva las
-marcas de tiempo del backup. **Nota:** las contraseñas no vienen en el Excel; los
-usuarios importados quedan con contraseña inutilizable — entra con el superusuario
-creado en el paso 3 o resetéalas.
+Preserva los ids originales, es idempotente (`update_or_create`) y conserva las marcas de
+tiempo del backup. **Nota:** las contraseñas no vienen en el Excel; los usuarios importados
+quedan con contraseña inutilizable — entra con el superusuario creado en el paso 3.
 
 ### 5 · Levantar el servidor
 
@@ -261,137 +405,47 @@ creado en el paso 3 o resetéalas.
 python manage.py runserver
 ```
 
-**Enrutado por subdominios.** Cada área se sirve en su propio subdominio. En dev
-usamos `lvh.me` (y `*.lvh.me`), que resuelven a `127.0.0.1` sin tocar el archivo
-`hosts` — basta con `BASE_DOMAIN=lvh.me` en `.env.dev-api`:
+**Enrutado por subdominios.** En dev usamos `lvh.me` (y `*.lvh.me`), que resuelven a
+`127.0.0.1` sin tocar el archivo `hosts` — basta con `BASE_DOMAIN=lvh.me` en `.env.dev-api`:
 
-| Host (dev)                          | Sirve                                   |
-|-------------------------------------|-----------------------------------------|
-| `http://lvh.me:8000/`               | **Apex**: login único + selector de área |
-| `http://programacion.lvh.me:8000/`  | **Área programacion** (Kanban, colegios, API…) |
+| Host (dev) | Sirve |
+|------------|-------|
+| `http://lvh.me:8000/` | **Apex**: login único + selector de área + panel del superusuario |
+| `http://programacion.lvh.me:8000/` | **Área Programación** (Kanban, colegios, API…) |
 
-🌐 Abrir [http://lvh.me:8000](http://lvh.me:8000) → login en `/usuarios/login/` →
-tras entrar, el sistema redirige al **subdominio** del área del usuario
-(`http://programacion.lvh.me:8000/` para el superusuario). La sesión se comparte
-en `.lvh.me`, así un solo login vale para todos los subdominios (SSO).
+🌐 Abre [http://lvh.me:8000](http://lvh.me:8000) → login en `/usuarios/login/` → tras entrar,
+el sistema redirige al **subdominio** del área del usuario (o al `/panel/` si es superusuario).
+La sesión se comparte en `.lvh.me`, así un solo login vale para todos los subdominios (SSO).
 
 ---
 
 ## ⚙️ Variables de entorno
 
-| Variable                | Obligatoria | Default              | Descripción                                                              |
-|-------------------------|:-----------:|----------------------|--------------------------------------------------------------------------|
-| `SECRET_KEY`            | ✅          | —                    | Clave secreta de Django. Sin ella la app no arranca.                     |
-| `DEBUG`                 | ❌          | `False`              | `True` para desarrollo local.                                            |
-| `ALLOWED_HOSTS`         | ❌          | `localhost,127.0.0.1`| Hosts extra (CSV). El apex y `.BASE_DOMAIN` se añaden solos.             |
-| `BASE_DOMAIN`           | ❌          | `miltonochoa.app`    | Dominio base del enrutado por subdominios (dev: `lvh.me`).               |
-| `PASSWORD_ENCRYPT_KEY`  | ✅          | —                    | Clave Fernet para datos sensibles.                                       |
-| `DATABASE_URL`          | ✅          | —                    | URL completa de PostgreSQL (Supabase, Render…).                          |
-| `SECURE_SSL_REDIRECT`   | ❌          | `False`              | `True` en producción si el dominio sirve HTTPS.                          |
-| `CACHE_BACKEND`         | ❌          | `locmem`             | `locmem` o `redis`.                                                      |
-| `REDIS_URL`             | ⚠️          | `redis://127.0.0.1:6379/1` | Solo si `CACHE_BACKEND=redis`.                                  |
-| `BACKUP_DIR`            | ❌          | `backups/` (en la raíz) | Directorio para backups (`BASE_DIR/backups`).                         |
+| Variable | Obligatoria | Default | Descripción |
+|----------|:-----------:|---------|-------------|
+| `SECRET_KEY` | ✅ | — | Clave secreta de Django. Sin ella la app no arranca. |
+| `DEBUG` | ❌ | `False` | `True` para desarrollo local. |
+| `ALLOWED_HOSTS` | ❌ | `localhost,127.0.0.1` | Hosts extra (CSV). El apex y `.BASE_DOMAIN` se añaden solos. |
+| `BASE_DOMAIN` | ❌ | `miltonochoa.app` | Dominio base del enrutado por subdominios (dev: `lvh.me`; tests: `testserver`). |
+| `PASSWORD_ENCRYPT_KEY` | ✅ | — | Clave Fernet para datos sensibles. |
+| `DATABASE_URL` | ✅ | — | URL completa de PostgreSQL (Supabase) o `sqlite:///db.sqlite3` en local. |
+| `SECURE_SSL_REDIRECT` | ❌ | `False` | `True` en producción si el dominio sirve HTTPS. |
+| `CACHE_BACKEND` | ❌ | `locmem` | `locmem` o `redis`. |
+| `REDIS_URL` | ⚠️ | `redis://127.0.0.1:6379/1` | Solo si `CACHE_BACKEND=redis`. |
+| `BACKUP_DIR` | ❌ | `backups/` | Directorio para backups (`BASE_DIR/backups`). |
 
-> 💡 Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin tocar la config de producción.
-
----
-
-## 🧭 Estructura del proyecto
-
-**AAMO** es un solo proyecto Django organizado por **áreas** (subcarpetas). Hoy
-solo `programacion/` está implementada; `logistica/` y `financiera/` son
-placeholders listos para crecer. El login es único y, según permisos, redirige
-al área del usuario.
-
-```
-AAMO/
-│
-├── 🧩 core/                  # Motor: settings, URLs raíz (router de áreas), seleccion_area
-├── 👥 usuarios/              # GLOBAL: login único, perfiles, middleware de acceso, rate-limit
-│
-├── 📚 programacion/          # ÁREA programacion (paquete Python) — servida en programacion.miltonochoa.app
-│   ├── urls.py               #   router del área (agrupa las sub-apps)
-│   ├── 🗂️  configuracion/     #   Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
-│   │      └── management/commands/importar_backup.py   # importador del Excel de respaldo
-│   ├── 🏫 colegios/          #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
-│   ├── 👨‍🏫 profesores/         #   Vista de horario propio del profesor
-│   ├── 🚨 auditoria/         #   Motor de detección de errores + AlertaAuditoria + cron command
-│   ├── 📝 informes/          #   Informes pedagógicos por sesión
-│   ├── 📊 exportar/          #   Generación de Excel + modelo PagoRealizado
-│   ├── 📋 pendientes/        #   Tablero Kanban (home del área)
-│   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
-│
-├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
-├── 💰 financiera/            # PLACEHOLDER de área futura (solo __init__.py + README)
-│
-├── 🎨 templates/             # Globales: base.html, home, 404, 500, login, seleccion_area, sw.js
-├── 📜 logs/                  # Rotating file handler (5MB × 5 backups, gitignored)
-├── 💾 backups/               # AAMO_export.xlsx (respaldo de BD; gitignored salvo este)
-│
-├── 🚀 manage.py              # Entry point Django (apunta a core.settings)
-├── 📦 requirements.txt       # Dependencias de producción
-├── 🛠️  requirements-dev.txt  # Adicionales de desarrollo y testing
-├── 🔒 .env / .env.dev-api    # Variables locales (gitignored; .env.dev-api → SQLite local)
-├── 📄 README.md              # Este archivo
-└── 🤖 CLAUDE.md              # Guía para sesiones de Claude Code
-```
-
-> **Etiquetas (`app_label`) conservadas:** aunque las apps viven dentro de
-> `programacion/`, sus labels siguen siendo `configuracion`, `colegios`, etc.
-> (definidas en cada `apps.py`). Por eso las migraciones, tablas y FKs por
-> string (`'configuracion.Colegio'`) no cambiaron al unificar el proyecto.
-
----
-
-## 🔐 Roles y control de acceso
-
-**Login único + selección de área por subdominio:** todos entran por el **apex**
-(`miltonochoa.app/usuarios/login/`). Tras autenticarse, `core.views.seleccion_area`
-/ `usuarios.views.login_redirect` miran las áreas del usuario (vía el grupo
-`area:programacion` o un perfil de colegio/profesor; el superusuario tiene todas)
-y redirigen al **subdominio** del área (`programacion.miltonochoa.app`); si tiene
-varias, muestra un selector; si no tiene ninguna, un mensaje claro. Si alguien
-entra directo a un subdominio sin sesión, se le envía al login del apex y de ahí,
-según permisos, a su área. La sesión se comparte en `.miltonochoa.app` (SSO).
-
-**Panel del superusuario:** el superusuario no entra al área directamente, sino al
-**panel** (`miltonochoa.app/panel/`, vista `core.views.panel_admin`), con acceso a
-todas las áreas y la gestión de los **usuarios de etiqueta** (alta/reset/baja). Los
-usuarios de colegio/profesor se siguen gestionando dentro del área (`/usuarios/colegios/`,
-`/usuarios/profesores/`), enlazados desde el panel.
-
-El middleware de host [`core/middleware.py`](core/middleware.py) elige el `urlconf`
-según el subdominio (`request.area`); el de acceso
-[`usuarios/middleware.py`](usuarios/middleware.py) impone scope por rol **dentro
-del subdominio del área** (en el apex deja pasar — sus vistas usan decoradores):
-
-| Rol                    | Vinculación                  | Rutas permitidas (en `programacion.miltonochoa.app`) | Atributos inyectados en `request`              |
-|------------------------|------------------------------|------------------------------------------------------|------------------------------------------------|
-| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                                 | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
-| 🛠️ **Staff de área**   | Grupo `area:programacion`    | Todo el área (como superusuario), incluida la gestión de usuarios de colegio/profesor; **salvo** el panel del apex, los usuarios de etiqueta, `/admin/` y otras áreas | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
-| 🏫 **Gestor colegio**  | `UsuarioColegio` (OneToOne)  | `/colegios/`, `/informes/`                           | `perfil_colegio`, `colegio_anio_activo`        |
-| 👨‍🏫 **Profesor**         | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/`                         | `perfil_profesor`                              |
-
-> El rol **staff de área** es la "etiqueta" `area:programacion`: usuarios genéricos del
-> área sin perfil de colegio/profesor, creados desde el panel. El predicado de acceso de
-> página es `core.areas.es_personal_programacion` (superusuario **o** miembro del grupo) y
-> `request.es_personal_programacion` controla qué ve el menú en `base.html`. No son
-> `is_staff` (no entran a `/admin/`).
-
-> ⚠️ Un usuario autenticado **sin perfil/área vinculada** se desloguea automáticamente. El login (`/usuarios/`) y las rutas PWA (`/manifest.json`, `/sw.js`) quedan fuera del scope de área; la API REST usa JWT propio.
-
-**Ratelimit**: el decorador `@rate_limit(max_calls, periodo)` (en `usuarios/ratelimit.py`) protege endpoints sensibles:
-- 🔐 Login: **10 intentos / 60 s** por IP.
-- 📚 AJAX de unidades/materias: **200 / 60 s**.
+> 💡 Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin
+> tocar la config de producción.
 
 ---
 
 ## 📡 API REST
 
-**Base:** `https://programacion.miltonochoa.app/api/v1/` (la API vive en el
-subdominio del área; en dev, `http://programacion.lvh.me:8000/api/v1/`).
+La API vive en el **subdominio del área**:
+`https://programacion.miltonochoa.app/api/v1/` (dev: `http://programacion.lvh.me:8000/api/v1/`).
+Se usa para integraciones externas (p. ej. el sistema financiero).
 
-### 🔑 Autenticación
+### 🔑 Autenticación (JWT)
 
 ```bash
 # Obtener token
@@ -406,31 +460,31 @@ curl -X POST http://programacion.lvh.me:8000/api/v1/auth/token/refresh/ \
   -d '{"refresh": "eyJ..."}'
 ```
 
-| Token   | Vigencia |
-|---------|----------|
-| Access  | 8 horas  |
-| Refresh | 7 días   |
+| Token | Vigencia |
+|-------|----------|
+| Access | 8 horas |
+| Refresh | 7 días |
 
 ### 📚 Documentación interactiva
 
-| Recurso          | URL                                                                                  |
-|------------------|--------------------------------------------------------------------------------------|
-| 🧪 Swagger UI     | [`/api/v1/docs/`](http://programacion.lvh.me:8000/api/v1/docs/)                                |
-| 📖 ReDoc          | [`/api/v1/redoc/`](http://programacion.lvh.me:8000/api/v1/redoc/)                              |
-| 📄 OpenAPI schema | [`/api/v1/schema/`](http://programacion.lvh.me:8000/api/v1/schema/)                            |
+| Recurso | URL |
+|---------|-----|
+| 🧪 Swagger UI | [`/api/v1/docs/`](http://programacion.lvh.me:8000/api/v1/docs/) |
+| 📖 ReDoc | [`/api/v1/redoc/`](http://programacion.lvh.me:8000/api/v1/redoc/) |
+| 📄 OpenAPI schema | [`/api/v1/schema/`](http://programacion.lvh.me:8000/api/v1/schema/) |
 
 ### 🛣️ Endpoints disponibles
 
-| Recurso                          | Métodos | Descripción                                                  |
-|----------------------------------|---------|--------------------------------------------------------------|
-| `/api/v1/profesores/`            | `GET`   | Listado de profesores con filtros y búsqueda                 |
-| `/api/v1/colegios/`              | `GET`   | Catálogo base de colegios                                    |
-| `/api/v1/colegios-anio/`         | `GET`   | Instancias anuales con `valor_hora`                          |
-| `/api/v1/clases/`                | `GET`   | Clases programadas (filtros: desde/hasta, profesor, colegio) |
-| `/api/v1/clases-particulares/`   | `GET`   | Clases particulares                                           |
-| `/api/v1/pagos/`                 | `GET`, `POST` | Pagos realizados — crear marca `marcado_por=request.user` |
+| Recurso | Métodos | Descripción |
+|---------|---------|-------------|
+| `/api/v1/profesores/` | `GET` | Listado de profesores con filtros y búsqueda |
+| `/api/v1/colegios/` | `GET` | Catálogo base de colegios |
+| `/api/v1/colegios-anio/` | `GET` | Instancias anuales con `valor_hora` |
+| `/api/v1/clases/` | `GET` | Clases programadas (filtros: desde/hasta, profesor, colegio) |
+| `/api/v1/clases-particulares/` | `GET` | Clases particulares |
+| `/api/v1/pagos/` | `GET`, `POST` | Pagos realizados — crear marca `marcado_por=request.user` |
 
-**Paginación**: 200/página por defecto, `?page_size=N` (max 1000).
+**Paginación**: 200/página por defecto, `?page_size=N` (máx 1000).
 **Throttle**: `1000/hora/usuario`.
 
 ---
@@ -438,13 +492,13 @@ curl -X POST http://programacion.lvh.me:8000/api/v1/auth/token/refresh/ \
 ## 🧪 Tests y calidad
 
 ```bash
-# Ejecutar toda la suite (usa SQLite en test_db.sqlite3)
+# Ejecutar toda la suite (usa SQLite, BASE_DOMAIN=testserver forzado)
 python manage.py test
 
 # Tests de una app específica
 python manage.py test api
 python manage.py test colegios
-python manage.py test auditoria
+python manage.py test usuarios
 
 # Cobertura (requiere coverage)
 coverage run --source='.' manage.py test
@@ -453,9 +507,11 @@ coverage html  # → htmlcov/index.html
 ```
 
 **Convenciones**:
-- Tests con `unittest`/`Django TestCase` (no pytest todavía, aunque está disponible).
-- BD de tests siempre SQLite — forzado en `core/settings.py` cuando `'test' in sys.argv`.
-- Cobertura objetivo: **80 %** en `api/`, `auditoria/`, `colegios/`, `usuarios/`.
+- Tests con `unittest`/`Django TestCase` (pytest está disponible para migración futura).
+- BD de tests siempre SQLite y `BASE_DOMAIN=testserver` — forzados en `core/settings.py`
+  cuando `'test' in sys.argv`.
+- Los tests **de área** usan `Client(HTTP_HOST='programacion.testserver')`; los del **apex**
+  (login, PWA) el host por defecto `testserver`.
 
 **Herramientas dev disponibles** (ver `requirements-dev.txt`):
 
@@ -468,24 +524,23 @@ coverage html  # → htmlcov/index.html
 
 ## ☁️ Despliegue en producción
 
-Despliegue continuo: **push a `main` en GitHub → deploy automático en Railway**.
-Base de datos gestionada en **Supabase** (PostgreSQL). El dominio definitivo es
-`miltonochoa.app`, con cada área en su subdominio.
+Despliegue continuo: **push a `main` en GitHub → deploy automático en Railway**. Base de datos
+gestionada en **Supabase** (PostgreSQL). El dominio definitivo es `miltonochoa.app`, con cada
+área en su subdominio.
 
 ### 1 · Base de datos (Supabase)
 
 1. Crea un proyecto en Supabase.
-2. Copia la cadena de conexión del **Session pooler** (puerto `5432`):
+2. Copia la cadena del **Session pooler** (puerto `5432`):
    `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`.
    (Settings ya fuerza SSL en producción vía `dj_database_url(ssl_require=not DEBUG)`.)
 
 ### 2 · App (Railway)
 
-1. **New Project → Deploy from GitHub repo** y selecciona este repositorio.
-   Railway construye con **Nixpacks** y respeta [`railway.json`](railway.json):
-   en cada deploy ejecuta `migrate` → `collectstatic` → `gunicorn`.
+1. **New Project → Deploy from GitHub repo** y selecciona este repositorio. Railway construye
+   con **Nixpacks** y respeta [`railway.json`](railway.json): en cada deploy ejecuta
+   `migrate` → `collectstatic` → `gunicorn` (3 workers).
 2. **Auto-deploy:** en *Settings → Service*, deja el branch de despliegue en `main`.
-   Cada commit a `main` dispara un nuevo deploy.
 3. **Variables** (*Variables*):
 
    | Variable | Valor |
@@ -501,8 +556,8 @@ Base de datos gestionada en **Supabase** (PostgreSQL). El dominio definitivo es
 
 ### 3 · Dominio y subdominios (DNS + TLS)
 
-En *Settings → Networking → Custom Domain* de Railway añade el apex y cada área,
-y crea los registros DNS que Railway indique (normalmente `CNAME`):
+En *Settings → Networking → Custom Domain* de Railway añade el apex y **cada área**, y crea los
+registros DNS que Railway indique (normalmente `CNAME`):
 
 | Dominio | Apunta a |
 |---------|----------|
@@ -511,23 +566,38 @@ y crea los registros DNS que Railway indique (normalmente `CNAME`):
 | `programacion.miltonochoa.app` | destino de Railway |
 | *(futuro)* `logistica.` / `financiera.` | destino de Railway |
 
-Railway emite el certificado TLS por dominio automáticamente. Todos los hosts
-llegan a la **misma** app; `core.middleware.EnrutadoPorAreaMiddleware` decide el
-área por el subdominio. Para añadir un área nueva: regístrala en
-[`core/areas.py`](core/areas.py), crea su `urlconf` y añade su subdominio aquí.
+Railway emite el certificado TLS por dominio automáticamente. Todos los hosts llegan a la
+**misma** app; `EnrutadoPorAreaMiddleware` decide el área por el subdominio.
 
-**Auditoría programada:** crea en Railway un *Cron Service* (o usa el scheduler)
-con `python manage.py ejecutar_auditoria` (sugerido cada 30 min).
+**Auditoría programada:** crea en Railway un *Cron Service* con
+`python manage.py ejecutar_auditoria` (sugerido cada 30 min).
 
-> ⚠️ Filesystem efímero en Railway — todos los Excel/ZIP se generan en `BytesIO`
-> y se devuelven directamente en la respuesta.
+> ⚠️ Filesystem efímero en Railway — todos los Excel/ZIP se generan en `BytesIO` y se
+> devuelven directamente en la respuesta.
 
-**Cabeceras de seguridad activadas con `DEBUG=False`**:
-- 🔒 `SECURE_SSL_REDIRECT` (configurable)
-- 🍪 `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`
-- 🛡️ `SECURE_CONTENT_TYPE_NOSNIFF`
-- ⏳ HSTS 1 año con `includeSubDomains` y `preload`
-- 🪟 `XFrameOptions` (clickjacking)
+**Cabeceras de seguridad activadas con `DEBUG=False`:** `SECURE_SSL_REDIRECT` (configurable),
+`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`,
+`SECURE_CONTENT_TYPE_NOSNIFF`, HSTS 1 año (`includeSubDomains` + `preload`) y `XFrameOptions`.
+
+---
+
+## ➕ Añadir una nueva área
+
+AAMO está diseñado para crecer por áreas. Para activar `logistica` (o cualquier otra):
+
+1. **Crea las sub-apps** dentro del paquete del área (`logistica/`), igual que en
+   `programacion/` (cada `apps.py` con `name='logistica.<app>'` y su `label`).
+2. **Crea su `urlconf`** (p. ej. `core/urls_logistica.py`) que monte sus rutas en la raíz `/`.
+3. **Regístrala** en [`core/areas.py`](core/areas.py) añadiendo una entrada a `AREAS`
+   (`slug`, `nombre`, `urlconf`, `landing`) y, en `areas_del_usuario`, su condición de acceso.
+4. **Crea el grupo de permisos** `area:logistica` (la "etiqueta" de staff del área).
+5. **Añade su subdominio** `logistica.miltonochoa.app` en Railway (DNS + TLS).
+
+El middleware de enrutado y el SSO funcionan sin más cambios: el nuevo subdominio empieza a
+servir su área automáticamente.
+
+> Los `README.md` dentro de `logistica/` y `financiera/` documentan este mismo proceso a nivel
+> de paquete.
 
 ---
 
@@ -540,6 +610,10 @@ con `python manage.py ejecutar_auditoria` (sugerido cada 30 min).
 python manage.py makemigrations
 python manage.py migrate
 
+# Verificación rápida (debe quedar limpio)
+python manage.py check
+python manage.py makemigrations --check --dry-run
+
 # Auditoría manual (ignora throttle de 5 min)
 python manage.py ejecutar_auditoria
 
@@ -548,39 +622,38 @@ python manage.py collectstatic --noinput
 
 # Shell con autoload de modelos (django-extensions)
 python manage.py shell_plus
-
-# Ver SQL de una migración sin aplicarla
-python manage.py sqlmigrate <app> <numero>
 ```
 
 ### Logs
 
 - Rotating file handler: `logs/app.log` (5 MB × 5 backups).
-- Logger principal: `aamo` (DEBUG en dev, INFO en prod).
-- En `DEBUG=True` también va a consola.
+- Logger principal: `aamo` (DEBUG en dev, INFO en prod). En `DEBUG=True` también va a consola.
 
 ### Caché
 
-Si trabajas en `vista_general` o `auditoria/engine.py`, recuerda invalidar la caché (los signals de `colegios/signals.py` lo hacen al modificar `Clase`/`Asignacion`).
+Si trabajas en `vista_general` o `auditoria/engine.py`, recuerda invalidar la caché (los
+signals de `colegios/signals.py` lo hacen al modificar `Clase`/`Asignacion`).
 
 ---
 
 ## 🤝 Contribuir
 
 1. Crea una rama desde `main`: `git checkout -b feat/mi-feature`.
-2. Sigue las convenciones de comentarios del repo: explica el **porqué** de decisiones no obvias, no el **qué**.
-3. Añade/actualiza tests en la app correspondiente (`apps/<nombre>/tests.py` o `api/tests/`).
-4. Ejecuta `python manage.py test` y verifica que pase todo.
+2. Sigue las convenciones del repo: comenta el **porqué** de decisiones no obvias, no el **qué**.
+3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
+4. Añade/actualiza tests en la app correspondiente y ejecuta `python manage.py test`.
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Abre un PR contra `main` con una descripción clara del cambio y su motivación.
 
-> 📖 Si modificas algo estructural (rutas, modelos, signals, caché), **actualiza también [`CLAUDE.md`](CLAUDE.md)** para mantener la guía interna sincronizada.
+> 📖 Si modificas algo estructural (rutas, modelos, signals, áreas), **actualiza también
+> [`CLAUDE.md`](CLAUDE.md)** para mantener la guía interna sincronizada.
 
 ---
 
 ## 📜 Licencia
 
-Este proyecto es **de uso interno** de la organización **Milton Ochoa / AAMO**. No está licenciado para distribución pública.
+Este proyecto es **de uso interno** de la organización **Milton Ochoa / AAMO**. No está
+licenciado para distribución pública.
 
 ---
 
@@ -588,6 +661,6 @@ Este proyecto es **de uso interno** de la organización **Milton Ochoa / AAMO**.
 
 **Hecho con ❤️ por el equipo AAMO**
 
-<sub>© 2026 Programación AAMO · Versión Web</sub>
+<sub>© 2026 AAMO · Plataforma multi-área</sub>
 
 </div>
