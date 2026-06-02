@@ -1077,10 +1077,15 @@ def dashboard_colegios(request):
         from programacion.auditoria.engine import sincronizar
 
         def _sync_safe():
+            from django.db import connection
             try:
                 sincronizar()
             except Exception:
                 logger.exception('Error en sincronizar auditoria (hilo bg dashboard)')
+            finally:
+                # El hilo abre su propia conexión thread-local y no recibe la señal
+                # request_finished, así que la cerramos a mano para evitar fugas.
+                connection.close()
 
         # Lanzar sincronización en hilo separado para no bloquear la respuesta
         if not getattr(settings, 'TESTING', False):

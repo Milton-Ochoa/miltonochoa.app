@@ -30,7 +30,6 @@ if not SECRET_KEY:
     )
 
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-PASSWORD_ENCRYPT_KEY = os.environ.get('PASSWORD_ENCRYPT_KEY')
 
 # ── Enrutado por subdominios (áreas) ──
 # Cada área se sirve en su propio subdominio: programacion.<BASE_DOMAIN>, etc.
@@ -269,9 +268,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 200,
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'user': '1000/hour',
+        # El endpoint de obtención de token JWT (auth/token/) es anónimo por
+        # naturaleza; sin esto no tendría throttle de DRF. Límite conservador.
+        'anon': '30/hour',
     },
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',

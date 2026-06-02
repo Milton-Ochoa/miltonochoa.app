@@ -366,7 +366,6 @@ la raíz — se carga **antes** que `.env`. Hay una plantilla en [`.env.example`
 DEBUG=True
 DATABASE_URL=sqlite:///db.sqlite3
 SECRET_KEY=<genera-una-con-get_random_secret_key>
-PASSWORD_ENCRYPT_KEY=<clave-fernet>
 BASE_DOMAIN=lvh.me
 ALLOWED_HOSTS=localhost,127.0.0.1
 SECURE_SSL_REDIRECT=False
@@ -427,7 +426,6 @@ La sesión se comparte en `.lvh.me`, así un solo login vale para todos los subd
 | `DEBUG` | ❌ | `False` | `True` para desarrollo local. |
 | `ALLOWED_HOSTS` | ❌ | `localhost,127.0.0.1` | Hosts extra (CSV). El apex y `.BASE_DOMAIN` se añaden solos. |
 | `BASE_DOMAIN` | ❌ | `miltonochoa.app` | Dominio base del enrutado por subdominios (dev: `lvh.me`; tests: `testserver`). |
-| `PASSWORD_ENCRYPT_KEY` | ✅ | — | Clave Fernet para datos sensibles. |
 | `DATABASE_URL` | ✅ | — | URL completa de PostgreSQL (Supabase) o `sqlite:///db.sqlite3` en local. |
 | `SECURE_SSL_REDIRECT` | ❌ | `False` | `True` en producción si el dominio sirve HTTPS. |
 | `CACHE_BACKEND` | ❌ | `locmem` | `locmem` o `redis`. |
@@ -539,7 +537,7 @@ gestionada en **Supabase** (PostgreSQL). El dominio definitivo es `miltonochoa.a
 
 1. **New Project → Deploy from GitHub repo** y selecciona este repositorio. Railway construye
    con **Nixpacks** y respeta [`railway.json`](railway.json): en cada deploy ejecuta
-   `migrate` → `collectstatic` → `gunicorn` (3 workers).
+   `migrate` → `collectstatic` → `gunicorn` (1 worker + 3 hilos `gthread`; ver nota de caché abajo).
 2. **Auto-deploy:** en *Settings → Service*, deja el branch de despliegue en `main`.
 3. **Variables** (*Variables*):
 
@@ -550,7 +548,6 @@ gestionada en **Supabase** (PostgreSQL). El dominio definitivo es `miltonochoa.a
    | `BASE_DOMAIN` | `miltonochoa.app` |
    | `ALLOWED_HOSTS` | `<tu-app>.up.railway.app` *(el apex y `.miltonochoa.app` se añaden solos)* |
    | `DATABASE_URL` | cadena del Session pooler de Supabase |
-   | `PASSWORD_ENCRYPT_KEY` | clave Fernet |
    | `SECURE_SSL_REDIRECT` | `True` |
    | `CACHE_BACKEND` | `redis` + `REDIS_URL` *(opcional)* |
 

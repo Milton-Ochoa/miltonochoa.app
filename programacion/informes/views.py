@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
@@ -75,14 +76,14 @@ def _resolver_perfil(request):
     if perfil_profesor is None:
         try:
             perfil_profesor = request.user.perfil_profesor
-        except Exception:
+        except ObjectDoesNotExist:
             perfil_profesor = None
 
     perfil_colegio = getattr(request, 'perfil_colegio', None)
     if perfil_colegio is None:
         try:
             perfil_colegio = request.user.perfil_colegio
-        except Exception:
+        except ObjectDoesNotExist:
             perfil_colegio = None
 
     return perfil_profesor, perfil_colegio
