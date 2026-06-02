@@ -18,7 +18,7 @@
 | 2 | Gunicorn 1 worker + hilos | ✅ hecho | sin commit aún |
 | 3 | connection.close() en hilos _sync_safe | ✅ hecho | sin commit aún |
 | 4 | Eliminar PASSWORD_ENCRYPT_KEY | ✅ hecho | sin commit aún |
-| 5 | json_script en dashboard | ⏳ en curso | — |
+| 5 | json_script en dashboard | ✅ hecho | sin commit aún |
 | 6 | AnonRateThrottle en DRF | ✅ hecho | sin commit aún |
 | 7 | Acotar except Exception en informes | ✅ hecho | sin commit aún |
 
@@ -33,4 +33,16 @@ Leyenda: ⬜ pendiente · ⏳ en curso · ✅ hecho
 - Tarea 4: borrada lectura en `core/settings.py`; quitada de `.env.example` y de README (3 referencias). grep sin resultados fuera de docs.
 - Tarea 6: añadido `AnonRateThrottle` + `'anon': '30/hour'` en `core/settings.py`.
 - Tarea 7: `except ObjectDoesNotExist` (con import) en `informes/views.py` (2 bloques).
-- PENDIENTE Tarea 5 (json_script) — requiere editar view + template + JS y **probar dashboard en navegador**.
+- Tarea 5: `colegios/views.py` pasa objetos (no `json.dumps`) en `profesores_por_materia`,
+  `bloques_data`, `stats_data`, `libros_especiales_data`. `dashboard.html` usa `{{ x|json_script:"id" }}`
+  + `JSON.parse(getElementById(...).textContent)`. Se preservaron los guards `{% if sel_col %}` y
+  `{% if not stats_vacio and request.user.is_staff %}` (STATS_JSON sigue siendo `let` y se reasigna
+  en el refresh HTMX desde `data.stats`). **Verificación:** render del dashboard real (colegio Altair,
+  superusuario) vía test client a través de todo el stack → status 200, los 4 `json_script` con JSON
+  válido, IDs del JS coinciden, sin `|safe` residual, contenido escapado. Pendiente solo el chequeo
+  visual de consola del navegador por el dueño (riesgo bajo; el patrón JSON.parse es estándar).
+
+### Gate final (todas las tareas)
+- `python manage.py check` → 0 issues.
+- `python manage.py makemigrations --check --dry-run` → No changes detected.
+- `python manage.py test` → **202 OK**.

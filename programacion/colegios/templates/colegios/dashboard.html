@@ -415,14 +415,20 @@ Datos para JS: inyectados como constantes JSON desde Django.
   STATS_JSON: {grado: {materia: {libros, color, detalle_adicional}}} — estadísticas de avance
 {% endcomment %}
 {% if sel_col %}
+{# json_script serializa + escapa de forma segura (<, >, &, </script>) — evita XSS. #}
+{{ bloques_data|json_script:"bloques-data" }}
+{{ libros_especiales_data|json_script:"libros-especiales-data" }}
 <script>
-    const BLOQUES_POR_GRADO = {{ bloques_json|safe }};
-    const LIBROS_ESPECIALES = {{ libros_especiales_json|safe }};
+    const BLOQUES_POR_GRADO = JSON.parse(document.getElementById('bloques-data').textContent);
+    const LIBROS_ESPECIALES = JSON.parse(document.getElementById('libros-especiales-data').textContent);
 </script>
 {% if not stats_vacio and request.user.is_staff %}
-<script>let STATS_JSON = {{ stats_json|safe }};</script>
+{{ stats_data|json_script:"stats-data" }}
+<script>let STATS_JSON = JSON.parse(document.getElementById('stats-data').textContent);</script>
 {% endif %}
 {% endif %}
+{# Mapa materia → IDs de profesores (default {} si no hay colegio). json_script lo escapa. #}
+{{ profesores_por_materia|json_script:"profesores-materia-data" }}
 <script>
     // URLs definidas desde Django para no hardcodearlas en el JS
     const URL_OBTENER_MATERIAS = "{% url 'ajax_obtener_materias' %}";
@@ -684,7 +690,7 @@ Datos para JS: inyectados como constantes JSON desde Django.
 
     // ── Material especial ─────────────────────────────────────
     // Mapa materia → IDs de profesores para filtrado client-side
-    const profesoresPorMateria = {{ profesores_por_materia_json|safe }};
+    const profesoresPorMateria = JSON.parse(document.getElementById('profesores-materia-data').textContent);
 
     function filtrarProfesoresPorMateria(materiaNombre) {
         const select = document.getElementById('modal_profesor');
