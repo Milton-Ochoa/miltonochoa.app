@@ -45,4 +45,5 @@ class Tarea(models.Model):
         super().save(*args, **kwargs)
 
     class Meta:
+        db_table = 'prog_tareas'
         ordering = ['-fecha_creacion']

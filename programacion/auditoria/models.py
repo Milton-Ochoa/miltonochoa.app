@@ -69,6 +69,7 @@ class AlertaAuditoria(models.Model):
     )
 
     class Meta:
+        db_table = 'prog_alertas_auditoria'
         ordering = ['-detectado']
         verbose_name = 'Alerta de Auditoría'
         verbose_name_plural = 'Alertas de Auditoría'

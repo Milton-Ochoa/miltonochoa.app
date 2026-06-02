@@ -42,6 +42,7 @@ class Materia(models.Model):
     )
 
     class Meta:
+        db_table            = 'prog_materias'
         ordering            = ['nombre']
         verbose_name        = "Materia"
         verbose_name_plural = "Materias"
@@ -65,6 +66,7 @@ class NombreLibro(models.Model):
     es_material_asignado = models.BooleanField(default=False, verbose_name="Es Material Asignado")
 
     class Meta:
+        db_table            = 'prog_libros'
         ordering            = ['nombre']
         verbose_name        = "Libro"
         verbose_name_plural = "Libros"
@@ -95,6 +97,7 @@ class Unidad(models.Model):
     link    = models.URLField(max_length=500, blank=True, null=True, verbose_name="Link")
 
     class Meta:
+        db_table        = 'prog_unidades'
         ordering        = ['libro__nombre', 'materia__nombre', 'numero']
         unique_together = ('libro', 'materia', 'numero')
         verbose_name        = "Unidad"
@@ -122,6 +125,7 @@ class Colegio(models.Model):
     mapa_link    = models.URLField(blank=True, null=True, verbose_name="Link de Maps")
 
     class Meta:
+        db_table            = 'prog_colegios'
         ordering            = ['nombre']
         verbose_name        = "Colegio"
         verbose_name_plural = "Colegios"
@@ -156,6 +160,7 @@ class ColegioAnio(models.Model):
     )
 
     class Meta:
+        db_table            = 'prog_colegio_anios'
         unique_together     = ('colegio', 'anio')
         ordering            = ['colegio__nombre', '-anio']
         verbose_name        = "Colegio-Año"
@@ -296,6 +301,9 @@ class Profesor(models.Model):
     cuenta_bancaria  = models.CharField(max_length=50, blank=True, null=True,
                                         verbose_name="Cuenta Bancaria")
     activo           = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        db_table = 'prog_profesores'
 
     @property
     def nombre_corto(self):
