@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block header_title %}Viáticos{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Viáticos</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 text-secondary fw-bold"><i class="fas fa-plane-departure me-1"></i> Solicitudes de viáticos</h5>
+        <a href="{% url 'viaticos_crear' %}" class="btn btn-success btn-sm">
+            <i class="fas fa-plus me-1"></i> Nueva solicitud
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Docente</th>
+                        <th>Colegio</th>
+                        <th>Viaje</th>
+                        <th>Regreso</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Ver</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in solicitudes %}
+                    <tr>
+                        <td>{{ s.pk }}</td>
+                        <td><strong>{{ s.docente_nombre }}</strong></td>
+                        <td>{{ s.colegio_nombre }}</td>
+                        <td>{{ s.fecha_viaje|date:"d/m/Y" }}</td>
+                        <td>{{ s.fecha_regreso|date:"d/m/Y" }}</td>
+                        <td class="text-end">${{ s.total|floatformat:"0" }}</td>
+                        <td class="text-center">
+                            {% if s.estado == 'ENVIADA' %}<span class="badge bg-info text-dark">Enviada</span>
+                            {% elif s.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark">Devuelta</span>
+                            {% elif s.estado == 'APROBADA' %}<span class="badge bg-primary">Aprobada</span>
+                            {% elif s.estado == 'PAGADA' %}<span class="badge bg-success">Pagada</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'viaticos_detalle' s.pk %}" class="btn btn-outline-info btn-sm py-0 px-2">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            <i class="fas fa-plane-slash me-1"></i> No hay solicitudes de viáticos todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

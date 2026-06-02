@@ -459,6 +459,11 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
+        {# ── Viáticos ── #}
+        <a href="{% url 'viaticos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
+            <i class="fas fa-plane-departure icon-main text-warning"></i> Viáticos
+        </a>
+
         {# ── OPERACIONES (colapsable) ── #}
         {% with op_active=request.resolver_match.url_name|slugify %}
         {% endwith %}
