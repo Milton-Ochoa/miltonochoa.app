@@ -354,6 +354,12 @@ varias, muestra un selector; si no tiene ninguna, un mensaje claro. Si alguien
 entra directo a un subdominio sin sesión, se le envía al login del apex y de ahí,
 según permisos, a su área. La sesión se comparte en `.miltonochoa.app` (SSO).
 
+**Panel del superusuario:** el superusuario no entra al área directamente, sino al
+**panel** (`miltonochoa.app/panel/`, vista `core.views.panel_admin`), con acceso a
+todas las áreas y la gestión de los **usuarios de etiqueta** (alta/reset/baja). Los
+usuarios de colegio/profesor se siguen gestionando dentro del área (`/usuarios/colegios/`,
+`/usuarios/profesores/`), enlazados desde el panel.
+
 El middleware de host [`core/middleware.py`](core/middleware.py) elige el `urlconf`
 según el subdominio (`request.area`); el de acceso
 [`usuarios/middleware.py`](usuarios/middleware.py) impone scope por rol **dentro
@@ -361,9 +367,16 @@ del subdominio del área** (en el apex deja pasar — sus vistas usan decoradore
 
 | Rol                    | Vinculación                  | Rutas permitidas (en `programacion.miltonochoa.app`) | Atributos inyectados en `request`              |
 |------------------------|------------------------------|------------------------------------------------------|------------------------------------------------|
-| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                                 | `perfil_colegio=None`, `perfil_profesor=None`  |
+| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                                 | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
+| 🛠️ **Staff de área**   | Grupo `area:programacion`    | Todo el área (como superusuario), incluida la gestión de usuarios de colegio/profesor; **salvo** el panel del apex, los usuarios de etiqueta, `/admin/` y otras áreas | `perfil_colegio=None`, `perfil_profesor=None`, `es_personal_programacion=True` |
 | 🏫 **Gestor colegio**  | `UsuarioColegio` (OneToOne)  | `/colegios/`, `/informes/`                           | `perfil_colegio`, `colegio_anio_activo`        |
 | 👨‍🏫 **Profesor**         | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/`                         | `perfil_profesor`                              |
+
+> El rol **staff de área** es la "etiqueta" `area:programacion`: usuarios genéricos del
+> área sin perfil de colegio/profesor, creados desde el panel. El predicado de acceso de
+> página es `core.areas.es_personal_programacion` (superusuario **o** miembro del grupo) y
+> `request.es_personal_programacion` controla qué ve el menú en `base.html`. No son
+> `is_staff` (no entran a `/admin/`).
 
 > ⚠️ Un usuario autenticado **sin perfil/área vinculada** se desloguea automáticamente. El login (`/usuarios/`) y las rutas PWA (`/manifest.json`, `/sw.js`) quedan fuera del scope de área; la API REST usa JWT propio.
 

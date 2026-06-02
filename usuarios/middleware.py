@@ -5,7 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
-from core.areas import url_apex
+from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION
 
 RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/admin/']
 
@@ -68,6 +68,16 @@ class ControlAccesoMiddleware:
         if request.user.is_superuser:
             request.perfil_colegio  = None
             request.perfil_profesor = None
+            request.es_personal_programacion = True
+            return self.get_response(request)
+
+        # Staff del área (grupo 'area:programacion'): acceso pleno al área, igual que un
+        # superusuario, pero sin ser admin. Va antes de los perfiles colegio/profesor para
+        # que un usuario "solo etiqueta" (sin perfil) no caiga en el logout final.
+        if request.user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists():
+            request.perfil_colegio  = None
+            request.perfil_profesor = None
+            request.es_personal_programacion = True
             return self.get_response(request)
 
         try:
@@ -75,6 +85,7 @@ class ControlAccesoMiddleware:
             perfil = request.user.perfil_colegio
             request.perfil_colegio  = perfil
             request.perfil_profesor = None
+            request.es_personal_programacion = False
 
             colegio_anio = (
                 perfil.colegio.anios
@@ -98,6 +109,7 @@ class ControlAccesoMiddleware:
             perfil = request.user.perfil_profesor
             request.perfil_colegio  = None
             request.perfil_profesor = perfil
+            request.es_personal_programacion = False
 
             if not any(path.startswith(r) for r in _PERMITIDAS_PROFESOR):
                 destino = reverse("ver_horario", urlconf=request.urlconf)

@@ -6,7 +6,7 @@ Las áreas viven en sus propios subdominios (ver `core.urls_programacion` y
 """
 from django.contrib import admin
 from django.urls import path, include
-from .views import seleccion_area, manifest_view, sw_view
+from .views import seleccion_area, panel_admin, manifest_view, sw_view
 
 # Handlers de error personalizados
 handler404 = 'core.views.error_404'
@@ -15,6 +15,7 @@ handler500 = 'core.views.error_500'
 urlpatterns = [
     # Punto de entrada AAMO: decide a qué área (subdominio) enviar al usuario.
     path('', seleccion_area, name='seleccion_area'),
+    path('panel/', panel_admin, name='panel_admin'),
     path('admin/', admin.site.urls),
 
     # Login único / gestión de usuarios — GLOBAL, compartido por todas las áreas.

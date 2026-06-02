@@ -453,7 +453,7 @@
 
     <div class="sidebar-menu">
 
-        {% if request.user.is_superuser %}
+        {% if request.es_personal_programacion %}
         {# ── Inicio ── #}
         <a href="{% url 'home' %}" class="nav-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">
             <i class="fas fa-home icon-main"></i> Inicio
@@ -528,7 +528,7 @@
                     <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Libros
                 </a>
 
-                {# ── Submenu anidado: Usuarios → Colegios / Profesores ── #}
+                {# ── Submenu anidado: Usuarios → Colegios / Profesores (superusuario y staff del área) ── #}
                 <a href="#collapseUsuarios" data-bs-toggle="collapse"
                    class="d-flex justify-content-between align-items-center sidebar-section-toggle"
                    data-section-key="usuarios"
@@ -628,7 +628,7 @@
         </div>
 
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
-            {% if request.user.is_superuser %}
+            {% if request.es_personal_programacion %}
             <button id="btnBuscarGlobal" class="btn btn-outline-secondary border-0 text-muted btn-sm"
                     data-bs-toggle="modal" data-bs-target="#modalBusqueda"
                     title="Búsqueda global (Ctrl+Shift+F)">
@@ -663,7 +663,7 @@
 <!-- ══════════════════════════════════════════════════
      MODAL BÚSQUEDA GLOBAL
 ══════════════════════════════════════════════════ -->
-{% if request.user.is_superuser %}
+{% if request.es_personal_programacion %}
 <div class="modal fade" id="modalBusqueda" tabindex="-1" aria-label="Búsqueda global" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable" style="max-width: 540px;">
         <div class="modal-content">
@@ -869,7 +869,7 @@
     })();
 </script>
 
-{% if request.user.is_superuser %}
+{% if request.es_personal_programacion %}
 <script>
     // ── Búsqueda: limpiar resultados al cerrar el modal ──
     const modalBusquedaEl = document.getElementById('modalBusqueda');

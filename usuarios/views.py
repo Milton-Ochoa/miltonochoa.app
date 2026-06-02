@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.contrib.auth.decorators import user_passes_test, login_required
 from django.contrib import messages
 from django.db import transaction
@@ -14,11 +14,16 @@ import logging
 from .models import UsuarioColegio, UsuarioProfesor
 from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
-from core.areas import AREAS, url_apex, url_en_area, host_apex, host_de_area
+from core.areas import AREAS, url_apex, url_en_area, host_apex, host_de_area, GRUPO_STAFF_PROGRAMACION, es_personal_programacion
 
 logger = logging.getLogger('aamo')
 
 def solo_admin(user):
+    """Solo superusuario: gestión de usuarios de etiqueta y panel del apex.
+
+    La gestión de usuarios de colegio/profesor usa `es_personal_programacion`
+    (superusuario o staff del área), no este predicado.
+    """
     return user.is_superuser
 
 def _hosts_permitidos(request):
@@ -59,7 +64,7 @@ def login_redirect(request):
     if not request.user.is_authenticated:
         return redirect('login')
     if request.user.is_superuser:
-        return redirect(url_apex('seleccion_area', request))
+        return redirect(url_apex('panel_admin', request))
     try:
         perfil = request.user.perfil_colegio
         from programacion.configuracion.models import ColegioAnio
@@ -107,7 +112,7 @@ def vista_logout(request):
     logout(request)
     return redirect('login')
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def gestionar_colegios(request):
     """Gestión de usuarios de colegios (solo superusuario). Acciones AJAX."""
     usuarios = (UsuarioColegio.objects
@@ -120,7 +125,7 @@ def gestionar_colegios(request):
         'colegios': colegios,
     })
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def gestionar_profesores(request):
     """Gestión de usuarios de profesores (solo superusuario). Acciones AJAX."""
     usuarios = (UsuarioProfesor.objects
@@ -133,7 +138,7 @@ def gestionar_profesores(request):
         'profesores': profesores,
     })
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
 def ajax_crear_usuario(request):
     """
@@ -179,7 +184,7 @@ def ajax_crear_usuario(request):
         'password_inicial': password,
     })
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
 def ajax_editar_usuario(request):
     """Actualiza username y/o colegio/profesor vinculado de un perfil existente."""
@@ -211,7 +216,7 @@ def ajax_editar_usuario(request):
 
     return JsonResponse({'ok': True})
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
 def ajax_eliminar_usuario(request):
     """Elimina el perfil y el User asociado. Acción irreversible — registrada en el log."""
@@ -230,7 +235,7 @@ def ajax_eliminar_usuario(request):
     logger.info('Usuario eliminado: %s (por %s)', nombre, request.user.username)
     return JsonResponse({'ok': True, 'username': nombre})
 
-@user_passes_test(solo_admin, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
 def ajax_resetear_password(request):
     """
@@ -256,3 +261,77 @@ def ajax_resetear_password(request):
         request.user.username, request.META.get('REMOTE_ADDR'),
     )
     return JsonResponse({'ok': True, 'nueva_password': nueva, 'username': perfil.user.username})
+
+
+# ── Usuarios de etiqueta (grupo 'area:programacion') ─────────────────────────
+# A diferencia de colegio/profesor, no tienen perfil: son usuarios genéricos del área
+# (acceso completo de staff, ver core.areas.es_personal_programacion). Se gestionan
+# desde el panel del superusuario en el apex.
+
+def _get_usuario_etiqueta(user_id):
+    """User del grupo etiqueta y NO superusuario; None si no aplica (evita tocar admins)."""
+    if not user_id:
+        return None
+    return (User.objects
+            .filter(id=user_id, groups__name=GRUPO_STAFF_PROGRAMACION, is_superuser=False)
+            .first())
+
+@user_passes_test(solo_admin, login_url='login')
+@require_POST
+def ajax_crear_usuario_area(request):
+    """
+    Crea un usuario de etiqueta 'programacion' y devuelve su contraseña temporal una vez.
+
+    El usuario no es is_staff (no entra a /admin/) ni superusuario; pertenecer al grupo
+    'area:programacion' basta para que el login lo lleve al subdominio del área y el
+    middleware le conceda acceso completo dentro de ella.
+    """
+    username = request.POST.get('username', '').strip()
+    if not username:
+        return JsonResponse({'ok': False, 'error': 'El nombre de usuario es obligatorio.'}, status=400)
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({'ok': False, 'error': f'El usuario "{username}" ya existe.'}, status=400)
+
+    password = _generar_password()
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username, password=password,
+                is_staff=False, is_superuser=False,
+            )
+            grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+            user.groups.add(grupo)
+    except Exception:
+        logger.exception('Error al crear usuario de etiqueta')
+        return JsonResponse({'ok': False, 'error': 'Error interno. Intenta de nuevo.'}, status=500)
+
+    logger.info('Usuario de etiqueta programacion creado: %s (por %s)', username, request.user.username)
+    return JsonResponse({'ok': True, 'username': username, 'password_inicial': password})
+
+@user_passes_test(solo_admin, login_url='login')
+@require_POST
+def ajax_eliminar_usuario_area(request):
+    """Elimina un usuario de etiqueta. Acción irreversible — registrada en el log."""
+    user = _get_usuario_etiqueta(request.POST.get('user_id'))
+    if not user:
+        return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
+    nombre = user.username
+    user.delete()
+    logger.info('Usuario de etiqueta eliminado: %s (por %s)', nombre, request.user.username)
+    return JsonResponse({'ok': True, 'username': nombre})
+
+@user_passes_test(solo_admin, login_url='login')
+@require_POST
+def ajax_resetear_password_area(request):
+    """Genera y asigna una nueva contraseña temporal a un usuario de etiqueta (una vez)."""
+    user = _get_usuario_etiqueta(request.POST.get('user_id'))
+    if not user:
+        return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
+    nueva = _generar_password()
+    user.set_password(nueva)
+    user.save()
+    logger.info(
+        'Contraseña reseteada (etiqueta): usuario=%s (por %s desde %s)',
+        user.username, request.user.username, request.META.get('REMOTE_ADDR'),
+    )
+    return JsonResponse({'ok': True, 'nueva_password': nueva, 'username': user.username})
