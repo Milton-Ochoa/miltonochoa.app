@@ -1000,7 +1000,8 @@ def dashboard_colegios(request):
         'profesores':                  [],
         'anios_disponibles':           anios_disponibles,
         'anio_sel':                    anio_sel,
-        'profesores_por_materia_json': '{}',
+        # Objeto (no cadena): el template lo serializa con json_script (escapa seguro).
+        'profesores_por_materia':      {},
     }
 
     if id_col:
@@ -1023,8 +1024,10 @@ def dashboard_colegios(request):
         for _p in _profes_activos:
             for _m in _p.materias.all():
                 _prof_mat_map[_m.nombre].append(_p.id)
-        ctx['profesores']                  = _profes_activos
-        ctx['profesores_por_materia_json'] = json.dumps(dict(_prof_mat_map))
+        ctx['profesores']             = _profes_activos
+        # Se pasan objetos Python al contexto; el template los serializa con
+        # json_script, que escapa <, >, & y </script> (evita XSS por nombres editables).
+        ctx['profesores_por_materia'] = dict(_prof_mat_map)
 
         # Construir tabla: solo fechas que tienen clases
         inicio = date(sel_col.anio, 1, 1)
@@ -1051,14 +1054,15 @@ def dashboard_colegios(request):
             bloques_json[grado_nombre] = [
                 {'id': b.id, 'hora': b.hora} for b in lista_b
             ]
-        ctx['bloques_json'] = json.dumps(bloques_json)
+        ctx['bloques_data'] = bloques_json
 
         _ck_stats = _stats_cache_key(sel_col.id, anio_sel)
         stats = cache.get(_ck_stats)
         if stats is None:
             stats = _construir_stats(sel_col)
             cache.set(_ck_stats, stats, _STATS_CACHE_TTL)
-        ctx['stats_json']  = json.dumps(stats, default=str)
+        # json_script usa DjangoJSONEncoder (fechas ya van como isoformat en stats).
+        ctx['stats_data']  = stats
         ctx['stats_vacio'] = not bool(stats)
 
         # Libros disponibles para material especial (solo los marcados como Material Asignado)
@@ -1067,7 +1071,7 @@ def dashboard_colegios(request):
             .order_by('nombre')
             .values('id', 'nombre')
         )
-        ctx['libros_especiales_json'] = json.dumps(libros_especiales)
+        ctx['libros_especiales_data'] = libros_especiales
 
     ctx['usuario_bloqueado'] = bool(perfil_col)
 
@@ -1077,10 +1081,15 @@ def dashboard_colegios(request):
         from programacion.auditoria.engine import sincronizar
 
         def _sync_safe():
+            from django.db import connection
             try:
                 sincronizar()
             except Exception:
                 logger.exception('Error en sincronizar auditoria (hilo bg dashboard)')
+            finally:
+                # El hilo abre su propia conexión thread-local y no recibe la señal
+                # request_finished, así que la cerramos a mano para evitar fugas.
+                connection.close()
 
         # Lanzar sincronización en hilo separado para no bloquear la respuesta
         if not getattr(settings, 'TESTING', False):

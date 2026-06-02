@@ -34,10 +34,15 @@ def lista_alertas(request):
     def _sync_safe():
         # Wrapper con manejo de excepciones: los hilos daemon no propagan errores
         # al hilo principal, por lo que sin este try/except los fallos serían silenciosos.
+        from django.db import connection
         try:
             sincronizar()
         except Exception:
             logger.exception('Error en sincronizar auditoria (hilo bg)')
+        finally:
+            # El hilo abre su propia conexión thread-local y no recibe la señal
+            # request_finished, así que la cerramos a mano para evitar fugas.
+            connection.close()
     if not getattr(settings, 'TESTING', False):
         threading.Thread(target=_sync_safe, daemon=True).start()
 
