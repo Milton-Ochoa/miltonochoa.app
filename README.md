@@ -17,7 +17,7 @@
 [![HTMX](https://img.shields.io/badge/HTMX-1.9-3D72D7?style=flat&logo=htmx&logoColor=white)](https://htmx.org/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-7952B3?style=flat&logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![PWA](https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
-[![Render](https://img.shields.io/badge/Deploy-Render-46E3B7?style=flat&logo=render&logoColor=white)](https://render.com/)
+[![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=flat&logo=railway&logoColor=white)](https://railway.app/)
 [![License](https://img.shields.io/badge/Uso-Interno-lightgrey?style=flat)](#-licencia)
 
 </div>
@@ -115,11 +115,11 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 - JWT con tokens de **8 h (access)** y **7 d (refresh)**.
 - Filtros declarativos (`django-filter`), búsqueda full-text en campos clave, paginación configurable (200/página, máx 1000).
 - Throttle global `1000/hora/usuario`.
-- **Documentación OpenAPI** lista en [`/programacion/api/v1/docs/`](http://localhost:8000/programacion/api/v1/docs/) (Swagger) y [`/programacion/api/v1/redoc/`](http://localhost:8000/programacion/api/v1/redoc/).
+- **Documentación OpenAPI** lista en [`/api/v1/docs/`](http://programacion.lvh.me:8000/api/v1/docs/) (Swagger) y [`/api/v1/redoc/`](http://programacion.lvh.me:8000/api/v1/redoc/), bajo el subdominio del área (`programacion.miltonochoa.app`).
 
 ### 📲 PWA
 
-- `manifest.json` y `sw.js` servidos desde la raíz para scope `/`.
+- `manifest.json` y `sw.js` servidos desde la raíz de cada subdominio (scope `/` por origen → cada área es una PWA instalable independiente).
 - Instalable como app standalone en móvil.
 - Theme color y safe-area-inset para edge-to-edge en iOS/Android.
 
@@ -142,7 +142,8 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 <tr><td>📦 Estáticos</td><td>WhiteNoise (gzip + manifest)</td><td>6.12.0</td></tr>
 <tr><td>📊 Excel</td><td>openpyxl</td><td>3.1.5</td></tr>
 <tr><td>🚀 WSGI prod</td><td>gunicorn</td><td>25.3.0</td></tr>
-<tr><td>🌐 PaaS</td><td>Render</td><td>—</td></tr>
+<tr><td>🌐 PaaS</td><td>Railway (deploy desde <code>main</code>)</td><td>—</td></tr>
+<tr><td>🐘 BD gestionada</td><td>Supabase (PostgreSQL)</td><td>—</td></tr>
 </table>
 
 ---
@@ -154,10 +155,10 @@ Sistema sencillo de pendientes con tres columnas (Pendiente · En gestión · Co
 │                      🌐 Cliente (navegador / PWA)                 │
 │   Bootstrap 5 · HTMX · Vanilla JS · Service Worker · Manifest    │
 └──────────────────────────┬───────────────────────────────────────┘
-                           │ HTTP(S)
+                           │ HTTP(S)  ·  <area>.miltonochoa.app
 ┌──────────────────────────▼───────────────────────────────────────┐
-│              🛡️  WhiteNoise · ControlAccesoMiddleware             │
-│              (login, scope por rol, perfil inyectado)             │
+│   🛡️  WhiteNoise · EnrutadoPorArea (subdominio→urlconf) ·         │
+│        ControlAcceso (login, scope por rol, perfil inyectado)     │
 └──────────────────────────┬───────────────────────────────────────┘
                            │
         ┌──────────────────┼──────────────────────────┐
@@ -260,9 +261,19 @@ creado en el paso 3 o resetéalas.
 python manage.py runserver
 ```
 
-🌐 Abrir [http://localhost:8000](http://localhost:8000) → login en
-`/usuarios/login/` → tras entrar, el sistema redirige al área del usuario
-(`/programacion/` para el superusuario).
+**Enrutado por subdominios.** Cada área se sirve en su propio subdominio. En dev
+usamos `lvh.me` (y `*.lvh.me`), que resuelven a `127.0.0.1` sin tocar el archivo
+`hosts` — basta con `BASE_DOMAIN=lvh.me` en `.env.dev-api`:
+
+| Host (dev)                          | Sirve                                   |
+|-------------------------------------|-----------------------------------------|
+| `http://lvh.me:8000/`               | **Apex**: login único + selector de área |
+| `http://programacion.lvh.me:8000/`  | **Área programacion** (Kanban, colegios, API…) |
+
+🌐 Abrir [http://lvh.me:8000](http://lvh.me:8000) → login en `/usuarios/login/` →
+tras entrar, el sistema redirige al **subdominio** del área del usuario
+(`http://programacion.lvh.me:8000/` para el superusuario). La sesión se comparte
+en `.lvh.me`, así un solo login vale para todos los subdominios (SSO).
 
 ---
 
@@ -272,7 +283,8 @@ python manage.py runserver
 |-------------------------|:-----------:|----------------------|--------------------------------------------------------------------------|
 | `SECRET_KEY`            | ✅          | —                    | Clave secreta de Django. Sin ella la app no arranca.                     |
 | `DEBUG`                 | ❌          | `False`              | `True` para desarrollo local.                                            |
-| `ALLOWED_HOSTS`         | ❌          | `localhost,127.0.0.1`| Hosts permitidos (CSV).                                                  |
+| `ALLOWED_HOSTS`         | ❌          | `localhost,127.0.0.1`| Hosts extra (CSV). El apex y `.BASE_DOMAIN` se añaden solos.             |
+| `BASE_DOMAIN`           | ❌          | `miltonochoa.app`    | Dominio base del enrutado por subdominios (dev: `lvh.me`).               |
 | `PASSWORD_ENCRYPT_KEY`  | ✅          | —                    | Clave Fernet para datos sensibles.                                       |
 | `DATABASE_URL`          | ✅          | —                    | URL completa de PostgreSQL (Supabase, Render…).                          |
 | `SECURE_SSL_REDIRECT`   | ❌          | `False`              | `True` en producción si el dominio sirve HTTPS.                          |
@@ -297,7 +309,7 @@ AAMO/
 ├── 🧩 core/                  # Motor: settings, URLs raíz (router de áreas), seleccion_area
 ├── 👥 usuarios/              # GLOBAL: login único, perfiles, middleware de acceso, rate-limit
 │
-├── 📚 programacion/          # ÁREA programacion (paquete Python) — montada en /programacion/
+├── 📚 programacion/          # ÁREA programacion (paquete Python) — servida en programacion.miltonochoa.app
 │   ├── urls.py               #   router del área (agrupa las sub-apps)
 │   ├── 🗂️  configuracion/     #   Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
 │   │      └── management/commands/importar_backup.py   # importador del Excel de respaldo
@@ -333,20 +345,25 @@ AAMO/
 
 ## 🔐 Roles y control de acceso
 
-**Login único + selección de área:** todos entran por `/usuarios/login/`. Tras
-autenticarse, `core.views.seleccion_area` mira las áreas del usuario (vía el
-grupo `area:programacion` o un perfil de colegio/profesor; el superusuario tiene
-todas) y: si solo tiene una, redirige directo; si tiene varias, muestra un
-selector; si no tiene ninguna, un mensaje claro. Hoy la única área activa es
-`programacion`, montada bajo `/programacion/`.
+**Login único + selección de área por subdominio:** todos entran por el **apex**
+(`miltonochoa.app/usuarios/login/`). Tras autenticarse, `core.views.seleccion_area`
+/ `usuarios.views.login_redirect` miran las áreas del usuario (vía el grupo
+`area:programacion` o un perfil de colegio/profesor; el superusuario tiene todas)
+y redirigen al **subdominio** del área (`programacion.miltonochoa.app`); si tiene
+varias, muestra un selector; si no tiene ninguna, un mensaje claro. Si alguien
+entra directo a un subdominio sin sesión, se le envía al login del apex y de ahí,
+según permisos, a su área. La sesión se comparte en `.miltonochoa.app` (SSO).
 
-El middleware [`usuarios/middleware.py`](usuarios/middleware.py) impone scope por rol y ruta:
+El middleware de host [`core/middleware.py`](core/middleware.py) elige el `urlconf`
+según el subdominio (`request.area`); el de acceso
+[`usuarios/middleware.py`](usuarios/middleware.py) impone scope por rol **dentro
+del subdominio del área** (en el apex deja pasar — sus vistas usan decoradores):
 
-| Rol                    | Vinculación                  | Rutas permitidas                                         | Atributos inyectados en `request`              |
-|------------------------|------------------------------|----------------------------------------------------------|------------------------------------------------|
-| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                                     | `perfil_colegio=None`, `perfil_profesor=None`  |
-| 🏫 **Gestor colegio**  | `UsuarioColegio` (OneToOne)  | `/programacion/colegios/`, `/programacion/informes/`     | `perfil_colegio`, `colegio_anio_activo`        |
-| 👨‍🏫 **Profesor**         | `UsuarioProfesor` (OneToOne) | `/programacion/profesores/`, `/programacion/informes/`   | `perfil_profesor`                              |
+| Rol                    | Vinculación                  | Rutas permitidas (en `programacion.miltonochoa.app`) | Atributos inyectados en `request`              |
+|------------------------|------------------------------|------------------------------------------------------|------------------------------------------------|
+| 👑 **Superusuario**    | `User.is_superuser=True`     | Todo                                                 | `perfil_colegio=None`, `perfil_profesor=None`  |
+| 🏫 **Gestor colegio**  | `UsuarioColegio` (OneToOne)  | `/colegios/`, `/informes/`                           | `perfil_colegio`, `colegio_anio_activo`        |
+| 👨‍🏫 **Profesor**         | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/`                         | `perfil_profesor`                              |
 
 > ⚠️ Un usuario autenticado **sin perfil/área vinculada** se desloguea automáticamente. El login (`/usuarios/`) y las rutas PWA (`/manifest.json`, `/sw.js`) quedan fuera del scope de área; la API REST usa JWT propio.
 
@@ -358,19 +375,20 @@ El middleware [`usuarios/middleware.py`](usuarios/middleware.py) impone scope po
 
 ## 📡 API REST
 
-**Prefijo:** `/programacion/api/v1/`
+**Base:** `https://programacion.miltonochoa.app/api/v1/` (la API vive en el
+subdominio del área; en dev, `http://programacion.lvh.me:8000/api/v1/`).
 
 ### 🔑 Autenticación
 
 ```bash
 # Obtener token
-curl -X POST http://localhost:8000/programacion/api/v1/auth/token/ \
+curl -X POST http://programacion.lvh.me:8000/api/v1/auth/token/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "***"}'
 # → { "access": "eyJ...", "refresh": "eyJ..." }
 
 # Refrescar
-curl -X POST http://localhost:8000/programacion/api/v1/auth/token/refresh/ \
+curl -X POST http://programacion.lvh.me:8000/api/v1/auth/token/refresh/ \
   -H "Content-Type: application/json" \
   -d '{"refresh": "eyJ..."}'
 ```
@@ -384,20 +402,20 @@ curl -X POST http://localhost:8000/programacion/api/v1/auth/token/refresh/ \
 
 | Recurso          | URL                                                                                  |
 |------------------|--------------------------------------------------------------------------------------|
-| 🧪 Swagger UI     | [`/programacion/api/v1/docs/`](http://localhost:8000/programacion/api/v1/docs/)                                |
-| 📖 ReDoc          | [`/programacion/api/v1/redoc/`](http://localhost:8000/programacion/api/v1/redoc/)                              |
-| 📄 OpenAPI schema | [`/programacion/api/v1/schema/`](http://localhost:8000/programacion/api/v1/schema/)                            |
+| 🧪 Swagger UI     | [`/api/v1/docs/`](http://programacion.lvh.me:8000/api/v1/docs/)                                |
+| 📖 ReDoc          | [`/api/v1/redoc/`](http://programacion.lvh.me:8000/api/v1/redoc/)                              |
+| 📄 OpenAPI schema | [`/api/v1/schema/`](http://programacion.lvh.me:8000/api/v1/schema/)                            |
 
 ### 🛣️ Endpoints disponibles
 
 | Recurso                          | Métodos | Descripción                                                  |
 |----------------------------------|---------|--------------------------------------------------------------|
-| `/programacion/api/v1/profesores/`            | `GET`   | Listado de profesores con filtros y búsqueda                 |
-| `/programacion/api/v1/colegios/`              | `GET`   | Catálogo base de colegios                                    |
-| `/programacion/api/v1/colegios-anio/`         | `GET`   | Instancias anuales con `valor_hora`                          |
-| `/programacion/api/v1/clases/`                | `GET`   | Clases programadas (filtros: desde/hasta, profesor, colegio) |
-| `/programacion/api/v1/clases-particulares/`   | `GET`   | Clases particulares                                           |
-| `/programacion/api/v1/pagos/`                 | `GET`, `POST` | Pagos realizados — crear marca `marcado_por=request.user` |
+| `/api/v1/profesores/`            | `GET`   | Listado de profesores con filtros y búsqueda                 |
+| `/api/v1/colegios/`              | `GET`   | Catálogo base de colegios                                    |
+| `/api/v1/colegios-anio/`         | `GET`   | Instancias anuales con `valor_hora`                          |
+| `/api/v1/clases/`                | `GET`   | Clases programadas (filtros: desde/hasta, profesor, colegio) |
+| `/api/v1/clases-particulares/`   | `GET`   | Clases particulares                                           |
+| `/api/v1/pagos/`                 | `GET`, `POST` | Pagos realizados — crear marca `marcado_por=request.user` |
 
 **Paginación**: 200/página por defecto, `?page_size=N` (max 1000).
 **Throttle**: `1000/hora/usuario`.
@@ -437,32 +455,59 @@ coverage html  # → htmlcov/index.html
 
 ## ☁️ Despliegue en producción
 
-### Render
+Despliegue continuo: **push a `main` en GitHub → deploy automático en Railway**.
+Base de datos gestionada en **Supabase** (PostgreSQL). El dominio definitivo es
+`miltonochoa.app`, con cada área en su subdominio.
 
-**Build command**:
-```bash
-pip install -r requirements.txt && \
-python manage.py collectstatic --noinput && \
-python manage.py migrate
-```
+### 1 · Base de datos (Supabase)
 
-**Start command**:
-```bash
-gunicorn core.wsgi:application
-```
+1. Crea un proyecto en Supabase.
+2. Copia la cadena de conexión del **Session pooler** (puerto `5432`):
+   `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+   (Settings ya fuerza SSL en producción vía `dj_database_url(ssl_require=not DEBUG)`.)
 
-**Variables de entorno** (Settings → Environment):
-- `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS=<tu-dominio>`
-- `DATABASE_URL` (Supabase pooler con SSL)
-- `PASSWORD_ENCRYPT_KEY`, `SECURE_SSL_REDIRECT=True`
-- `CACHE_BACKEND=redis` + `REDIS_URL` (opcional)
+### 2 · App (Railway)
 
-**Cron sugerido** (Render Cron Jobs, cada 30 min):
-```bash
-python manage.py ejecutar_auditoria
-```
+1. **New Project → Deploy from GitHub repo** y selecciona este repositorio.
+   Railway construye con **Nixpacks** y respeta [`railway.json`](railway.json):
+   en cada deploy ejecuta `migrate` → `collectstatic` → `gunicorn`.
+2. **Auto-deploy:** en *Settings → Service*, deja el branch de despliegue en `main`.
+   Cada commit a `main` dispara un nuevo deploy.
+3. **Variables** (*Variables*):
 
-> ⚠️ Render tiene **filesystem efímero** — todos los Excel/ZIP se generan en `BytesIO` y se devuelven directamente en la respuesta.
+   | Variable | Valor |
+   |----------|-------|
+   | `SECRET_KEY` | (genérala) |
+   | `DEBUG` | `False` |
+   | `BASE_DOMAIN` | `miltonochoa.app` |
+   | `ALLOWED_HOSTS` | `<tu-app>.up.railway.app` *(el apex y `.miltonochoa.app` se añaden solos)* |
+   | `DATABASE_URL` | cadena del Session pooler de Supabase |
+   | `PASSWORD_ENCRYPT_KEY` | clave Fernet |
+   | `SECURE_SSL_REDIRECT` | `True` |
+   | `CACHE_BACKEND` | `redis` + `REDIS_URL` *(opcional)* |
+
+### 3 · Dominio y subdominios (DNS + TLS)
+
+En *Settings → Networking → Custom Domain* de Railway añade el apex y cada área,
+y crea los registros DNS que Railway indique (normalmente `CNAME`):
+
+| Dominio | Apunta a |
+|---------|----------|
+| `miltonochoa.app` (apex) | destino de Railway |
+| `www.miltonochoa.app` | destino de Railway |
+| `programacion.miltonochoa.app` | destino de Railway |
+| *(futuro)* `logistica.` / `financiera.` | destino de Railway |
+
+Railway emite el certificado TLS por dominio automáticamente. Todos los hosts
+llegan a la **misma** app; `core.middleware.EnrutadoPorAreaMiddleware` decide el
+área por el subdominio. Para añadir un área nueva: regístrala en
+[`core/areas.py`](core/areas.py), crea su `urlconf` y añade su subdominio aquí.
+
+**Auditoría programada:** crea en Railway un *Cron Service* (o usa el scheduler)
+con `python manage.py ejecutar_auditoria` (sugerido cada 30 min).
+
+> ⚠️ Filesystem efímero en Railway — todos los Excel/ZIP se generan en `BytesIO`
+> y se devuelven directamente en la respuesta.
 
 **Cabeceras de seguridad activadas con `DEBUG=False`**:
 - 🔒 `SECURE_SSL_REDIRECT` (configurable)

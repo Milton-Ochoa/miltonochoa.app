@@ -395,7 +395,7 @@ El src del iframe se inyecta por JS (configColegio()) con el id del ColegioAnio.
 // ── Modales ──────────────────────────────────────────────────
 function abrirConfiguracion(id, nombre) {
   document.getElementById('nombreColegioModal').textContent = nombre;
-  document.getElementById('iframeConfig').src = `/programacion/colegios/configurar-colegio/${id}/`;
+  document.getElementById('iframeConfig').src = `/colegios/configurar-colegio/${id}/`;
   new bootstrap.Modal(document.getElementById('modalConfigColegio')).show();
 }
 
@@ -479,7 +479,7 @@ function abrirGestionAnios(btn) {
 function clonarColegioDesdeGestion(id, nombre, anio) {
   if (!confirm(`¿Crear copia de "${nombre}" para el año ${anio + 1}?\nSe copiarán todos los bloques y asignaciones.`)) return;
   const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-  fetch(`/programacion/colegios/ajax/clonar/${id}/`, {
+  fetch(`/colegios/ajax/clonar/${id}/`, {
     method: 'POST',
     headers: {'X-CSRFToken': csrfToken}
   })

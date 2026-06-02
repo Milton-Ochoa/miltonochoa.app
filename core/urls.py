@@ -1,3 +1,9 @@
+"""URLconf del **apex** (`miltonochoa.app`).
+
+Es la entrada canónica de AAMO: login único, selector de área y administración.
+Las áreas viven en sus propios subdominios (ver `core.urls_programacion` y
+`core.middleware`), no aquí.
+"""
 from django.contrib import admin
 from django.urls import path, include
 from .views import seleccion_area, manifest_view, sw_view
@@ -7,17 +13,14 @@ handler404 = 'core.views.error_404'
 handler500 = 'core.views.error_500'
 
 urlpatterns = [
-    # Punto de entrada AAMO: decide a qué área enviar al usuario logueado.
+    # Punto de entrada AAMO: decide a qué área (subdominio) enviar al usuario.
     path('', seleccion_area, name='seleccion_area'),
     path('admin/', admin.site.urls),
 
     # Login único / gestión de usuarios — GLOBAL, compartido por todas las áreas.
     path('usuarios/', include('usuarios.urls')),
 
-    # Áreas. Por ahora solo 'programacion'; logistica/financiera son placeholders.
-    path('programacion/', include('programacion.urls')),
-
-    # PWA — recursos globales servidos desde la raíz (scope /).
+    # PWA — recursos del origen apex (scope /).
     path('manifest.json', manifest_view, name='pwa_manifest'),
     path('sw.js', sw_view, name='pwa_sw'),
 ]

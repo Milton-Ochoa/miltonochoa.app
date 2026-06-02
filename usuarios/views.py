@@ -14,11 +14,16 @@ import logging
 from .models import UsuarioColegio, UsuarioProfesor
 from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
+from core.areas import AREAS, url_apex, url_en_area, host_apex, host_de_area
 
 logger = logging.getLogger('aamo')
 
 def solo_admin(user):
     return user.is_superuser
+
+def _hosts_permitidos(request):
+    """Hosts propios (apex + subdominios de áreas) para validar `?next=` cross-subdominio."""
+    return {host_apex(request)} | {host_de_area(slug, request) for slug in AREAS}
 
 def _generar_password():
     # 9 bytes → 12 chars base64url; entropía suficiente para una credencial temporal.
@@ -45,25 +50,32 @@ def _crear_usuario_base(username, password):
                                     is_staff=False, is_superuser=False)
 
 def login_redirect(request):
-    """Redirige al usuario autenticado a la página inicial de su rol (dashboard, horario o home)."""
+    """Redirige al usuario autenticado a su área (subdominio) y página de rol.
+
+    El login es del apex; el destino vive en otro host (programacion.<dominio>),
+    así que se construyen URLs **absolutas** al subdominio con los helpers de
+    core.areas (resuelven la ruta en el urlconf del área).
+    """
     if not request.user.is_authenticated:
         return redirect('login')
     if request.user.is_superuser:
-        return redirect('seleccion_area')
+        return redirect(url_apex('seleccion_area', request))
     try:
         perfil = request.user.perfil_colegio
         from programacion.configuracion.models import ColegioAnio
         ca = perfil.colegio.anios.filter(activo=True).order_by('-anio').first()
         id_col = ca.id if ca else ''
-        return redirect(f'{reverse("dashboard")}?id_col={id_col}')
+        destino = url_en_area('programacion', 'dashboard', request)
+        return redirect(f'{destino}?id_col={id_col}')
     except UsuarioColegio.DoesNotExist:
         pass
     try:
         perfil = request.user.perfil_profesor
-        return redirect(f'{reverse("ver_horario")}?profesor_id={perfil.profesor.id}')
+        destino = url_en_area('programacion', 'ver_horario', request)
+        return redirect(f'{destino}?profesor_id={perfil.profesor.id}')
     except UsuarioProfesor.DoesNotExist:
         pass
-    return redirect('seleccion_area')
+    return redirect(url_apex('seleccion_area', request))
 
 @rate_limit(max_calls=10, periodo=60)
 def vista_login(request):
@@ -82,7 +94,7 @@ def vista_login(request):
         if user is not None:
             login(request, user)
             next_url = request.GET.get('next', '')
-            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts=_hosts_permitidos(request)):
                 return redirect(next_url)
             return login_redirect(request)
         else:

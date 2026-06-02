@@ -258,7 +258,7 @@ document.getElementById('btn-confirmar-ignorar').addEventListener('click', async
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
 
     try {
-        const res = await fetch(`/programacion/auditoria/ajax/ignorar/${_ignorarId}/`, {
+        const res = await fetch(`/auditoria/ajax/ignorar/${_ignorarId}/`, {
             method: 'POST',
             headers: {'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
             body: `motivo=${encodeURIComponent(motivo)}`,

@@ -89,31 +89,31 @@ class LibroParaFechaTest(TestCase):
 class VerHorarioViewTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser(
             username='admin_prof', password='pass123'
         )
         self.profesor = Profesor.objects.create(nombre='Adrianis', apellido='Mercado')
 
     def test_no_autenticado_redirige_a_login(self):
-        r = self.client.get('/programacion/profesores/')
+        r = self.client.get('/profesores/')
         self.assertEqual(r.status_code, 302)
         self.assertIn('/usuarios/login/', r['Location'])
 
     def test_admin_puede_acceder_sin_profesor(self):
         self.client.login(username='admin_prof', password='pass123')
-        r = self.client.get('/programacion/profesores/')
+        r = self.client.get('/profesores/')
         self.assertEqual(r.status_code, 200)
 
     def test_admin_puede_acceder_con_profesor(self):
         self.client.login(username='admin_prof', password='pass123')
-        r = self.client.get(f'/programacion/profesores/?profesor_id={self.profesor.id}')
+        r = self.client.get(f'/profesores/?profesor_id={self.profesor.id}')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['profesor_sel'], str(self.profesor.id))
 
     def test_contexto_incluye_lista_de_profesores(self):
         self.client.login(username='admin_prof', password='pass123')
-        r = self.client.get('/programacion/profesores/')
+        r = self.client.get('/profesores/')
         self.assertIn('profesores', r.context)
 
     def test_usuario_profesor_no_puede_acceder_a_colegios(self):
@@ -123,7 +123,7 @@ class VerHorarioViewTest(TestCase):
         )
         self.client.login(username='adrianis', password='pass')
         # El middleware bloquea /colegios/ y redirige a su horario
-        r = self.client.get('/programacion/colegios/')
+        r = self.client.get('/colegios/')
         self.assertEqual(r.status_code, 302)
         self.assertIn(f'profesor_id={self.profesor.id}', r['Location'])
 
@@ -131,7 +131,7 @@ class VerHorarioViewTest(TestCase):
 class AjaxAsignaturasViewTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
         nombre_libro = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
@@ -146,18 +146,18 @@ class AjaxAsignaturasViewTest(TestCase):
         )
 
     def test_devuelve_materias_para_material_existente(self):
-        r = self.client.get('/programacion/profesores/ajax/asignaturas/?material=Saberes 11 Oro')
+        r = self.client.get('/profesores/ajax/asignaturas/?material=Saberes 11 Oro')
         self.assertEqual(r.status_code, 200)
         data = json.loads(r.content)
         self.assertIn('Lectura Crítica', data)
 
     def test_material_inexistente_devuelve_lista_vacia(self):
-        r = self.client.get('/programacion/profesores/ajax/asignaturas/?material=Libro Inventado')
+        r = self.client.get('/profesores/ajax/asignaturas/?material=Libro Inventado')
         data = json.loads(r.content)
         self.assertEqual(data, [])
 
     def test_sin_parametro_devuelve_lista_vacia(self):
-        r = self.client.get('/programacion/profesores/ajax/asignaturas/')
+        r = self.client.get('/profesores/ajax/asignaturas/')
         data = json.loads(r.content)
         self.assertEqual(data, [])
 
@@ -165,7 +165,7 @@ class AjaxAsignaturasViewTest(TestCase):
 class AjaxUnidadesViewTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
         nombre_libro = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
@@ -177,7 +177,7 @@ class AjaxUnidadesViewTest(TestCase):
 
     def test_devuelve_unidades_para_material_y_materia_validos(self):
         r = self.client.get(
-            '/programacion/profesores/ajax/unidades/?material=Saberes 11 Oro&materia=Lectura Crítica'
+            '/profesores/ajax/unidades/?material=Saberes 11 Oro&materia=Lectura Crítica'
         )
         data = json.loads(r.content)
         self.assertTrue(len(data) > 0)
@@ -185,6 +185,6 @@ class AjaxUnidadesViewTest(TestCase):
         self.assertIn('nombre_unidad', data[0])
 
     def test_sin_parametros_devuelve_lista_vacia(self):
-        r = self.client.get('/programacion/profesores/ajax/unidades/')
+        r = self.client.get('/profesores/ajax/unidades/')
         data = json.loads(r.content)
         self.assertEqual(data, [])

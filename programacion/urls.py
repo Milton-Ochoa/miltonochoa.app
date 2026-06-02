@@ -1,9 +1,9 @@
 """Router del área **programacion**.
 
-Agrupa todas las sub-apps del área bajo el prefijo `/programacion/` (montado en
-core/urls.py). El home del área (`kanban_inicio`) conserva el nombre de URL
-`home`, por lo que todas las plantillas con `{% url 'home' %}` siguen apuntando
-al inicio del área sin cambios.
+Agrupa todas las sub-apps del área en la **raíz** del subdominio
+`programacion.miltonochoa.app` (montado en core/urls_programacion.py). El home del
+área (`kanban_inicio`) conserva el nombre de URL `home`, por lo que todas las
+plantillas con `{% url 'home' %}` siguen apuntando al inicio del área sin cambios.
 
 Las vistas transversales del área (vista_general, historial_global y la búsqueda
 global) viven en core.views por motivos históricos; se referencian aquí para

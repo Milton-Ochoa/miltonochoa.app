@@ -25,7 +25,7 @@ def _setup_base():
 class ClaseListTest(TestCase):
 
     def setUp(self):
-        self.client = APIClient()
+        self.client = APIClient(HTTP_HOST='programacion.testserver')
         self.user = User.objects.create_user(username='u', password='p', is_staff=True)
         self.client.force_authenticate(user=self.user)
         self.ca, self.bloque, self.prof, self.materia = _setup_base()
@@ -35,44 +35,44 @@ class ClaseListTest(TestCase):
         )
 
     def test_list_ok(self):
-        resp = self.client.get('/programacion/api/v1/clases/')
+        resp = self.client.get('/api/v1/clases/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['count'], 1)
 
     def test_fields_presentes(self):
-        resp = self.client.get('/programacion/api/v1/clases/')
+        resp = self.client.get('/api/v1/clases/')
         c = resp.data['results'][0]
         for f in ('id', 'fecha', 'materia_nombre', 'profesor_nombre', 'colegio_nombre',
                   'colegio_anio', 'valor_hora', 'unidad', 'cancelada', 'grado', 'hora'):
             self.assertIn(f, c, f"Falta campo: {f}")
 
     def test_profesor_nombre_corto(self):
-        resp = self.client.get(f'/programacion/api/v1/clases/{self.clase.id}/')
+        resp = self.client.get(f'/api/v1/clases/{self.clase.id}/')
         self.assertEqual(resp.data['profesor_nombre'], 'Luis Torres')
 
     def test_valor_hora_correcto(self):
-        resp = self.client.get(f'/programacion/api/v1/clases/{self.clase.id}/')
+        resp = self.client.get(f'/api/v1/clases/{self.clase.id}/')
         self.assertEqual(resp.data['valor_hora'], 40000)
 
     def test_retrieve_ok(self):
-        resp = self.client.get(f'/programacion/api/v1/clases/{self.clase.id}/')
+        resp = self.client.get(f'/api/v1/clases/{self.clase.id}/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['unidad'], '1')
 
     def test_filtro_colegio(self):
-        resp = self.client.get(f'/programacion/api/v1/clases/?colegio={self.ca.id}')
+        resp = self.client.get(f'/api/v1/clases/?colegio={self.ca.id}')
         self.assertEqual(resp.data['count'], 1)
 
     def test_filtro_profesor_querystring(self):
-        resp = self.client.get(f'/programacion/api/v1/clases/?profesor={self.prof.id}')
+        resp = self.client.get(f'/api/v1/clases/?profesor={self.prof.id}')
         self.assertEqual(resp.data['count'], 1)
 
     def test_filtro_desde_hasta(self):
-        resp = self.client.get('/programacion/api/v1/clases/?desde=2026-04-01&hasta=2026-04-30')
+        resp = self.client.get('/api/v1/clases/?desde=2026-04-01&hasta=2026-04-30')
         self.assertEqual(resp.data['count'], 1)
 
     def test_filtro_hasta_excluye(self):
-        resp = self.client.get('/programacion/api/v1/clases/?hasta=2026-03-31')
+        resp = self.client.get('/api/v1/clases/?hasta=2026-03-31')
         self.assertEqual(resp.data['count'], 0)
 
     def test_filtro_cancelada(self):
@@ -83,11 +83,11 @@ class ClaseListTest(TestCase):
             ),
             fecha=date(2026, 4, 8), cancelada=True,
         )
-        resp = self.client.get('/programacion/api/v1/clases/?cancelada=true')
+        resp = self.client.get('/api/v1/clases/?cancelada=true')
         self.assertEqual(resp.data['count'], 1)
 
     def test_post_no_permitido(self):
-        resp = self.client.post('/programacion/api/v1/clases/', {}, format='json')
+        resp = self.client.post('/api/v1/clases/', {}, format='json')
         self.assertEqual(resp.status_code, 405)
 
     def test_clase_sin_profesor(self):
@@ -99,14 +99,14 @@ class ClaseListTest(TestCase):
             ),
             fecha=date(2026, 4, 9),
         )
-        resp = self.client.get(f'/programacion/api/v1/clases/{clase2.id}/')
+        resp = self.client.get(f'/api/v1/clases/{clase2.id}/')
         self.assertIsNone(resp.data['profesor_nombre'])
 
 
 class ClaseParticularListTest(TestCase):
 
     def setUp(self):
-        self.client = APIClient()
+        self.client = APIClient(HTTP_HOST='programacion.testserver')
         self.user = User.objects.create_user(username='u2', password='p', is_staff=True)
         self.client.force_authenticate(user=self.user)
         self.prof = Profesor.objects.create(nombre='María', apellido='López')
@@ -121,20 +121,20 @@ class ClaseParticularListTest(TestCase):
         )
 
     def test_list_ok(self):
-        resp = self.client.get('/programacion/api/v1/clases-particulares/')
+        resp = self.client.get('/api/v1/clases-particulares/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['count'], 1)
 
     def test_fields_presentes(self):
-        resp = self.client.get('/programacion/api/v1/clases-particulares/')
+        resp = self.client.get('/api/v1/clases-particulares/')
         cp = resp.data['results'][0]
         for f in ('id', 'fecha', 'hora_inicio', 'hora_fin', 'profesor_nombre', 'grado_nombre'):
             self.assertIn(f, cp)
 
     def test_filtro_profesor(self):
-        resp = self.client.get(f'/programacion/api/v1/clases-particulares/?profesor={self.prof.id}')
+        resp = self.client.get(f'/api/v1/clases-particulares/?profesor={self.prof.id}')
         self.assertEqual(resp.data['count'], 1)
 
     def test_filtro_desde(self):
-        resp = self.client.get('/programacion/api/v1/clases-particulares/?desde=2026-04-11')
+        resp = self.client.get('/api/v1/clases-particulares/?desde=2026-04-11')
         self.assertEqual(resp.data['count'], 0)

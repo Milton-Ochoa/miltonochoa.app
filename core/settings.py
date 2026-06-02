@@ -30,11 +30,35 @@ if not SECRET_KEY:
     )
 
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 PASSWORD_ENCRYPT_KEY = os.environ.get('PASSWORD_ENCRYPT_KEY')
+
+# ── Enrutado por subdominios (áreas) ──
+# Cada área se sirve en su propio subdominio: programacion.<BASE_DOMAIN>, etc.
+# El apex (<BASE_DOMAIN>) es el login único + selector de área (ver core.middleware).
+#   prod:  BASE_DOMAIN=miltonochoa.app
+#   dev:   BASE_DOMAIN=lvh.me      (lvh.me y *.lvh.me resuelven a 127.0.0.1)
+BASE_DOMAIN = os.environ.get('BASE_DOMAIN', 'miltonochoa.app')
+
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
+# Garantizar el apex y todos sus subdominios (el comodín '.dominio' cubre las áreas).
+ALLOWED_HOSTS += [BASE_DOMAIN, '.' + BASE_DOMAIN]
+
+# Sesión y CSRF compartidos entre apex y subdominios → un solo login (SSO real).
+SESSION_COOKIE_DOMAIN = '.' + BASE_DOMAIN
+CSRF_COOKIE_DOMAIN = '.' + BASE_DOMAIN
+# Orígenes de confianza para POST cross-subdominio (formularios del área).
+CSRF_TRUSTED_ORIGINS = [
+    f'https://{BASE_DOMAIN}',
+    f'https://*.{BASE_DOMAIN}',
+]
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += [f'http://{BASE_DOMAIN}:8000', f'http://*.{BASE_DOMAIN}:8000']
 
 # ── Cabeceras de seguridad HTTP (solo en producción) ──
 if not DEBUG:
+    # Railway termina TLS en su proxy y reenvía la petición por HTTP interno.
+    # Sin esto, request.is_secure() sería False y SECURE_SSL_REDIRECT haría un bucle.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False') == 'True'
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -74,6 +98,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    # Selecciona el urlconf según el subdominio (área). Antes de CommonMiddleware.
+    'core.middleware.EnrutadoPorAreaMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -276,5 +302,11 @@ if 'test' in sys.argv:
             'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
+    # Enrutado por área en tests: apex = 'testserver', área = 'programacion.testserver'.
+    BASE_DOMAIN = 'testserver'
+    ALLOWED_HOSTS = ['testserver', '.testserver']
+    # Sin dominio de cookie en tests: el Client envía la sesión a cualquier host.
+    SESSION_COOKIE_DOMAIN = None
+    CSRF_COOKIE_DOMAIN = None
 
 TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'

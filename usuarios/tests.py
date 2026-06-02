@@ -155,7 +155,8 @@ class AjaxCrearUsuarioTest(TestCase):
 class MiddlewareAccesoTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        # El control de acceso por rol actúa dentro del subdominio del área.
+        self.client = Client(HTTP_HOST='programacion.testserver')
         self.colegio_perm = Colegio.objects.create(
             nombre='Col MW', departamento='Santander', ciudad='BGA'
         )
@@ -169,23 +170,27 @@ class MiddlewareAccesoTest(TestCase):
         UsuarioProfesor.objects.create(user=user_prof, profesor=self.profesor)
 
     def test_usuario_no_autenticado_redirige_a_login(self):
-        r = self.client.get('/programacion/colegios/')
-        self.assertRedirects(r, '/usuarios/login/?next=/programacion/colegios/', fetch_redirect_response=False)
+        # Anónimo en un subdominio de área → login canónico del apex con ?next= absoluto.
+        r = self.client.get('/colegios/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+        self.assertIn('next=', r['Location'])
+        self.assertIn('colegios', r['Location'])
 
     def test_usuario_colegio_no_accede_a_configuracion(self):
         self.client.login(username='user_col_mw', password='pass')
-        r = self.client.get('/programacion/configuracion/libros/')
+        r = self.client.get('/configuracion/libros/')
         self.assertEqual(r.status_code, 302)
-        self.assertNotIn('/programacion/configuracion/', r['Location'])
+        self.assertNotIn('/configuracion/', r['Location'])
 
     def test_usuario_profesor_no_accede_a_colegios(self):
         self.client.login(username='user_prof_mw', password='pass')
-        r = self.client.get('/programacion/colegios/')
+        r = self.client.get('/colegios/')
         self.assertEqual(r.status_code, 302)
 
     def test_usuario_colegio_accede_a_su_propio_colegio(self):
         self.client.login(username='user_col_mw', password='pass')
-        r = self.client.get(f'/programacion/colegios/?id_col={self.colegio_anio.id}')
+        r = self.client.get(f'/colegios/?id_col={self.colegio_anio.id}')
         self.assertEqual(r.status_code, 200)
 
 

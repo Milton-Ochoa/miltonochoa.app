@@ -1,0 +1,49 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#212529">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="{% static 'img/logo_color.png' %}">
+    <title>{% block title %}AAMO{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #f4f6f9; min-height: 100vh; }
+        .apex-header {
+            background-color: #212529;
+            color: #fff;
+            padding: .75rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .apex-header .brand { display: flex; align-items: center; gap: .6rem; font-weight: 600; }
+        .apex-header img { height: 32px; }
+    </style>
+</head>
+<body>
+    <header class="apex-header">
+        <span class="brand">
+            <img src="{% static 'img/logo_color.png' %}" alt="Logo AAMO">
+            Milton Ochoa · AAMO
+        </span>
+        {% if request.user.is_authenticated %}
+        <form method="post" action="{% url 'logout' %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-light btn-sm">
+                <i class="fas fa-sign-out-alt me-1"></i> Salir
+            </button>
+        </form>
+        {% endif %}
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

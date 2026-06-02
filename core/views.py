@@ -1,5 +1,6 @@
 import calendar
 from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
@@ -18,56 +19,28 @@ def home(request):
 
 
 # ── Enrutado por áreas (login único AAMO) ───────────────────────────────────
-#
-# Cada área del edificio AAMO se representa con un dict {slug, nombre, landing}.
-# `landing` es el nombre de URL al que se redirige al usuario al entrar al área.
-# Por ahora solo existe 'programacion'; logistica/financiera son placeholders.
-AREAS = {
-    'programacion': {'slug': 'programacion', 'nombre': 'Programación', 'landing': 'home'},
-}
-
-
-def _areas_del_usuario(user):
-    """Devuelve la lista de áreas a las que el usuario tiene acceso.
-
-    Reglas (lo más simple posible, documentado para escalar a logistica/financiera):
-      - Superusuario → todas las áreas.
-      - Acceso a 'programacion' si: pertenece al grupo 'area:programacion', o ya
-        tiene un perfil de colegio/profesor (que son conceptos de programacion).
-
-    Cuando se añadan nuevas áreas, basta con crear su grupo 'area:<slug>' y
-    registrar el área en AREAS.
-    """
-    if user.is_superuser:
-        return list(AREAS.values())
-
-    from usuarios.models import UsuarioColegio, UsuarioProfesor  # import diferido: evita circular
-
-    areas = []
-    tiene_programacion = (
-        user.groups.filter(name='area:programacion').exists()
-        or UsuarioColegio.objects.filter(user=user).exists()
-        or UsuarioProfesor.objects.filter(user=user).exists()
-    )
-    if tiene_programacion:
-        areas.append(AREAS['programacion'])
-    return areas
+# El registro de áreas y los helpers de URL entre subdominios viven en core.areas.
+from core.areas import areas_del_usuario, url_landing_area  # noqa: E402
 
 
 @login_required
 def seleccion_area(request):
-    """Punto de entrada AAMO tras el login.
+    """Punto de entrada AAMO (apex) tras el login.
 
     - Sin área asignada → mensaje claro (403).
-    - Una sola área     → redirige directo a su landing.
-    - Varias áreas      → página de selección.
+    - Una sola área     → redirige directo a su subdominio (URL absoluta).
+    - Varias áreas      → página de selección con enlaces a cada subdominio.
     """
-    areas = _areas_del_usuario(request.user)
+    areas = areas_del_usuario(request.user)
     if not areas:
         return render(request, 'core/sin_area.html', status=403)
     if len(areas) == 1:
-        return redirect(areas[0]['landing'])
-    return render(request, 'core/seleccion_area.html', {'areas': areas})
+        return redirect(url_landing_area(areas[0]['slug'], request))
+    areas_ctx = [
+        {'nombre': a['nombre'], 'url': url_landing_area(a['slug'], request)}
+        for a in areas
+    ]
+    return render(request, 'core/seleccion_area.html', {'areas': areas_ctx})
 
 
 @user_passes_test(lambda u: u.is_superuser, login_url='login')
@@ -269,11 +242,12 @@ def ajax_busqueda_global(request):
             .select_related('colegio')
             .order_by('colegio__nombre')[:6]
         )
+        url_colegios = reverse('dashboard')
         for ca in colegios:
             results.append({
                 'tipo': 'Colegio',
                 'nombre': ca.nombre,
-                'url': f'/programacion/colegios/?id_col={ca.pk}',
+                'url': f'{url_colegios}?id_col={ca.pk}',
                 'icon': 'fa-school',
             })
 
@@ -283,12 +257,13 @@ def ajax_busqueda_global(request):
             .filter(Q(nombre__icontains=q) | Q(apellido__icontains=q))
             .order_by('nombre', 'apellido')[:6]
         )
+        url_profesores = reverse('ver_horario')
         for p in profesores:
             nombre_completo = f"{p.nombre} {p.apellido}".strip()
             results.append({
                 'tipo': 'Profesor',
                 'nombre': nombre_completo,
-                'url': f'/programacion/profesores/?profesor_id={p.pk}',
+                'url': f'{url_profesores}?profesor_id={p.pk}',
                 'icon': 'fa-user-tie',
             })
 

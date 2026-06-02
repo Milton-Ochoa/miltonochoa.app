@@ -98,7 +98,7 @@ class InformeModelTest(TestCase):
 class ObtenerInformeTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
         self.profesor = Profesor.objects.create(nombre='Luis', apellido='Martínez')
@@ -107,27 +107,27 @@ class ObtenerInformeTest(TestCase):
         self.clase = crear_clase(self.colegio, self.profesor)
 
     def test_clase_sin_informe_devuelve_existe_false(self):
-        r = self.client.get(f'/programacion/informes/ajax/obtener/?clase_id={self.clase.id}')
+        r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
         self.assertEqual(r.status_code, 200)
         data = json.loads(r.content)
         self.assertFalse(data['existe'])
 
     def test_clase_con_informe_devuelve_datos(self):
         crear_informe(self.profesor, self.clase, actividades='Ejercicios.')
-        r = self.client.get(f'/programacion/informes/ajax/obtener/?clase_id={self.clase.id}')
+        r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
         data = json.loads(r.content)
         self.assertTrue(data['existe'])
         self.assertEqual(data['actividades'], 'Ejercicios.')
         self.assertEqual(data['colegio_nombre'], 'Col AJAX')
 
     def test_sin_parametros_devuelve_existe_false(self):
-        r = self.client.get('/programacion/informes/ajax/obtener/')
+        r = self.client.get('/informes/ajax/obtener/')
         data = json.loads(r.content)
         self.assertFalse(data['existe'])
 
     def test_no_autenticado_redirige(self):
         self.client.logout()
-        r = self.client.get(f'/programacion/informes/ajax/obtener/?clase_id={self.clase.id}')
+        r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
         self.assertEqual(r.status_code, 302)
 
 
@@ -136,7 +136,7 @@ class ObtenerInformeTest(TestCase):
 class GuardarInformeTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
         self.profesor = Profesor.objects.create(nombre='María', apellido='Torres')
@@ -164,7 +164,7 @@ class GuardarInformeTest(TestCase):
 
     def test_crea_informe_correctamente(self):
         r = self.client.post(
-            '/programacion/informes/ajax/guardar/',
+            '/informes/ajax/guardar/',
             data=json.dumps(self._payload(clase_id=self.clase.id)),
             content_type='application/json',
         )
@@ -176,7 +176,7 @@ class GuardarInformeTest(TestCase):
     def test_actualiza_informe_existente(self):
         crear_informe(self.profesor, self.clase, actividades='Texto original.')
         r = self.client.post(
-            '/programacion/informes/ajax/guardar/',
+            '/informes/ajax/guardar/',
             data=json.dumps(self._payload(clase_id=self.clase.id, actividades='Texto actualizado.')),
             content_type='application/json',
         )
@@ -188,7 +188,7 @@ class GuardarInformeTest(TestCase):
 
     def test_sin_clase_ni_particular_devuelve_error(self):
         r = self.client.post(
-            '/programacion/informes/ajax/guardar/',
+            '/informes/ajax/guardar/',
             data=json.dumps(self._payload()),  # clase_id=None, particular_id=None
             content_type='application/json',
         )
@@ -197,14 +197,14 @@ class GuardarInformeTest(TestCase):
 
     def test_json_invalido_devuelve_400(self):
         r = self.client.post(
-            '/programacion/informes/ajax/guardar/',
+            '/informes/ajax/guardar/',
             data='esto no es json',
             content_type='application/json',
         )
         self.assertEqual(r.status_code, 400)
 
     def test_get_no_permitido(self):
-        r = self.client.get('/programacion/informes/ajax/guardar/')
+        r = self.client.get('/informes/ajax/guardar/')
         self.assertEqual(r.status_code, 405)  # Method Not Allowed
 
 
@@ -213,7 +213,7 @@ class GuardarInformeTest(TestCase):
 class ListaInformesTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser(username='admin', password='pass')
         self.profesor = Profesor.objects.create(nombre='Jorge', apellido='Pérez')
         col = Colegio.objects.create(nombre='Col Lista', departamento='Santander', ciudad='BGA')
@@ -223,23 +223,23 @@ class ListaInformesTest(TestCase):
 
     def test_admin_puede_ver_todos_los_informes(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['informes'].count(), 1)
 
     def test_filtro_por_colegio(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/programacion/informes/?colegio=Col Lista')
+        r = self.client.get('/informes/?colegio=Col Lista')
         self.assertEqual(r.context['informes'].count(), 1)
 
     def test_filtro_colegio_que_no_existe_devuelve_cero(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/programacion/informes/?colegio=Inexistente')
+        r = self.client.get('/informes/?colegio=Inexistente')
         self.assertEqual(r.context['informes'].count(), 0)
 
     def test_filtro_solo_completos(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/programacion/informes/?completos=1')
+        r = self.client.get('/informes/?completos=1')
         # El informe de setUp tiene actividades → aparece
         self.assertEqual(r.context['informes'].count(), 1)
 
@@ -255,7 +255,7 @@ class ListaInformesTest(TestCase):
         crear_informe(otro_profesor, otra_clase, actividades='Otro texto.')
 
         self.client.login(username='jorge', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         # Solo debe ver su propio informe, no el del otro profesor
         for inf in r.context['informes']:
@@ -267,7 +267,7 @@ class ListaInformesTest(TestCase):
             user=user, colegio=self.colegio.colegio
         )
         self.client.login(username='user_col', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         for inf in r.context['informes']:
             self.assertEqual(inf.colegio_nombre, self.colegio.nombre)
@@ -278,7 +278,7 @@ class ListaInformesTest(TestCase):
 class ListaInformesAccesoTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser('admin_inf', password='pass')
         col = Colegio.objects.create(
             nombre='Col Inf', departamento='Santander', ciudad='BGA'
@@ -302,19 +302,19 @@ class ListaInformesAccesoTest(TestCase):
 
     def test_admin_ve_todos_los_informes(self):
         self.client.login(username='admin_inf', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['informes'].paginator.count, 2)
 
     def test_usuario_colegio_solo_ve_sus_informes(self):
         self.client.login(username='user_col_inf', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['informes'].paginator.count, 1)
 
     def test_usuario_profesor_solo_ve_sus_informes(self):
         self.client.login(username='user_prof_inf', password='pass')
-        r = self.client.get('/programacion/informes/')
+        r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context['informes'].paginator.count, 2)
 
@@ -324,7 +324,7 @@ class ListaInformesAccesoTest(TestCase):
 class EliminarInformeTest(TestCase):
 
     def setUp(self):
-        self.client = Client()
+        self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser(username='admin', password='pass')
         self.profesor = Profesor.objects.create(nombre='Test', apellido='Prof')
         col = Colegio.objects.create(nombre='Col Elim', departamento='Santander', ciudad='BGA')
@@ -334,7 +334,7 @@ class EliminarInformeTest(TestCase):
 
     def test_superusuario_puede_eliminar(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.post(f'/programacion/informes/{self.informe.id}/eliminar/')
+        r = self.client.post(f'/informes/{self.informe.id}/eliminar/')
         self.assertEqual(r.status_code, 302)
         self.assertFalse(Informe.objects.filter(id=self.informe.id).exists())
 
@@ -344,7 +344,7 @@ class EliminarInformeTest(TestCase):
             user=user, profesor=self.profesor
         )
         self.client.login(username='normal', password='pass')
-        r = self.client.post(f'/programacion/informes/{self.informe.id}/eliminar/')
+        r = self.client.post(f'/informes/{self.informe.id}/eliminar/')
         # Debe devolver 403 Forbidden
         self.assertEqual(r.status_code, 403)
         # El informe sigue existiendo
@@ -352,5 +352,5 @@ class EliminarInformeTest(TestCase):
 
     def test_informe_inexistente_devuelve_404(self):
         self.client.login(username='admin', password='pass')
-        r = self.client.post('/programacion/informes/99999/eliminar/')
+        r = self.client.post('/informes/99999/eliminar/')
         self.assertEqual(r.status_code, 404)

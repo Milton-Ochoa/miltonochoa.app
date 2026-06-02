@@ -1,29 +1,37 @@
+from urllib.parse import urlencode
+
 from django.shortcuts import redirect
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
+from core.areas import url_apex
+
 RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/admin/']
 
 # La API REST usa JWT propio — DRF maneja auth y permisos internamente.
-# El ControlAccesoMiddleware no aplica a estas rutas. (Ahora bajo el área programacion.)
-_RUTAS_API = ['/programacion/api/']
+# El ControlAccesoMiddleware no aplica a estas rutas. (Rutas del área, ya sin prefijo.)
+_RUTAS_API = ['/api/']
 
 # Recursos PWA: el navegador los pide sin cookies/sesión activa.
 _RUTAS_PWA = ['/manifest.json', '/sw.js']
 
 # Allocated once at import time, not on every request.
-# Prefijos del área programacion a los que cada rol tiene acceso.
-_PERMITIDAS_COLEGIO  = ['/programacion/colegios/', '/programacion/informes/']
-_PERMITIDAS_PROFESOR = ['/programacion/profesores/', '/programacion/informes/', '/programacion/informes/ajax/']
+# Prefijos del área programacion a los que cada rol tiene acceso (en la raíz del subdominio).
+_PERMITIDAS_COLEGIO  = ['/colegios/', '/informes/']
+_PERMITIDAS_PROFESOR = ['/profesores/', '/informes/', '/informes/ajax/']
 
 
 class ControlAccesoMiddleware:
     """
-    Control de acceso por rol para todos los paths no públicos.
+    Control de acceso por rol dentro de un **subdominio de área**.
 
-    Niveles de acceso (en orden de evaluación):
-      - No autenticado   → redirige a login con ?next=
+    Solo actúa cuando la petición va dirigida a un área (`request.area` definido por
+    EnrutadoPorAreaMiddleware). En el apex (login único, selector de área) deja pasar:
+    esas vistas se protegen con sus propios decoradores (`@login_required`, etc.).
+
+    Niveles de acceso (en orden de evaluación, dentro del área):
+      - No autenticado   → redirige al login del APEX con ?next= (URL absoluta)
       - Superusuario     → acceso irrestricto; inyecta perfil_colegio=None, perfil_profesor=None
       - UsuarioColegio   → solo /colegios/ e /informes/; inyecta colegio_anio_activo (último año activo)
       - UsuarioProfesor  → solo /profesores/ e /informes/; inyecta perfil_profesor
@@ -38,8 +46,11 @@ class ControlAccesoMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # Apex: las vistas se protegen con decoradores. Este control es por área.
+        if getattr(request, 'area', None) is None:
+            return self.get_response(request)
+
         path = request.path
-        login_url = reverse('login')
 
         if (any(path.startswith(r) for r in RUTAS_PUBLICAS)
                 or any(path.startswith(r) for r in _RUTAS_API)
@@ -49,7 +60,10 @@ class ControlAccesoMiddleware:
             return self.get_response(request)
 
         if not request.user.is_authenticated:
-            return redirect(f'{login_url}?next={path}')
+            # Login canónico en el apex; volver a la URL solicitada tras autenticar.
+            login_apex = url_apex('login', request)
+            next_abs = request.build_absolute_uri()
+            return redirect(f'{login_apex}?{urlencode({"next": next_abs})}')
 
         if request.user.is_superuser:
             request.perfil_colegio  = None
@@ -72,7 +86,9 @@ class ControlAccesoMiddleware:
 
             if not any(path.startswith(r) for r in _PERMITIDAS_COLEGIO):
                 id_col = colegio_anio.id if colegio_anio else ''
-                return redirect(f'{reverse("dashboard")}?id_col={id_col}')
+                # urlconf explícito: el thread-local aún apunta al apex en esta fase.
+                destino = reverse("dashboard", urlconf=request.urlconf)
+                return redirect(f'{destino}?id_col={id_col}')
 
             return self.get_response(request)
         except ObjectDoesNotExist:
@@ -84,7 +100,8 @@ class ControlAccesoMiddleware:
             request.perfil_profesor = perfil
 
             if not any(path.startswith(r) for r in _PERMITIDAS_PROFESOR):
-                return redirect(f'{reverse("ver_horario")}?profesor_id={perfil.profesor.id}')
+                destino = reverse("ver_horario", urlconf=request.urlconf)
+                return redirect(f'{destino}?profesor_id={perfil.profesor.id}')
 
             return self.get_response(request)
         except ObjectDoesNotExist:
@@ -92,4 +109,4 @@ class ControlAccesoMiddleware:
 
         # Usuario autenticado sin perfil vinculado → forzar logout para evitar sesión sin rol
         logout(request)
-        return redirect(login_url)
+        return redirect(url_apex('login', request))

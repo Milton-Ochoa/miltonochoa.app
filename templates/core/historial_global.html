@@ -68,7 +68,7 @@
                     <td class="text-muted small text-nowrap">{{ c.fecha|date:"d/m/Y H:i" }}</td>
                     <td>
                         {% if c.colegio %}
-                            <a href="/programacion/colegios/historial/{{ c.colegio.id }}/" class="text-decoration-none">{{ c.colegio.nombre }}</a>
+                            <a href="/colegios/historial/{{ c.colegio.id }}/" class="text-decoration-none">{{ c.colegio.nombre }}</a>
                         {% else %}—{% endif %}
                     </td>
                     <td>

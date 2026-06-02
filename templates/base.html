@@ -573,12 +573,12 @@
         {% else %}
         {# ── Vista reducida para gestores y profesores ── #}
         {% if request.user.perfil_colegio %}
-        <a href="/programacion/colegios/?id_col={{ request.user.perfil_colegio.colegio.id }}" class="nav-item active">
+        <a href="/colegios/?id_col={{ request.user.perfil_colegio.colegio.id }}" class="nav-item active">
             <i class="fas fa-calendar-alt icon-main text-info"></i> {{ request.user.perfil_colegio.colegio.nombre }}
         </a>
         {% endif %}
         {% if request.user.perfil_profesor %}
-        <a href="/programacion/profesores/?profesor_id={{ request.user.perfil_profesor.profesor.id }}" class="nav-item active">
+        <a href="/profesores/?profesor_id={{ request.user.perfil_profesor.profesor.id }}" class="nav-item active">
             <i class="fas fa-user-clock icon-main text-warning"></i> {{ request.user.perfil_profesor.profesor.nombre_corto }}
         </a>
         {% endif %}
