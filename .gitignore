@@ -8,7 +8,6 @@ logs/
 backups/
 .claude
 .superpowers/
-importar/
 CLAUDE.md
 # Resguardo local de BD por fase (no versionar)
 db.sqlite3.*.bak

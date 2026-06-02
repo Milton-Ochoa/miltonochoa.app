@@ -256,7 +256,6 @@ AAMO/
 ├── 📚 programacion/          # ÁREA programación (servida en programacion.miltonochoa.app)
 │   ├── urls.py               #   router del área (agrupa las 8 sub-apps en la raíz /)
 │   ├── 🗂️  configuracion/     #   Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
-│   │      └── management/commands/importar_backup.py   # importador del Excel de respaldo
 │   ├── 🏫 colegios/          #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
 │   ├── 👨‍🏫 profesores/         #   Vista de horario propio del profesor
 │   ├── 🚨 auditoria/         #   Motor de detección de errores + AlertaAuditoria + cron command
@@ -385,20 +384,7 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-### 4 · (Opcional) Cargar el backup de datos
-
-El proyecto incluye un importador del Excel de respaldo (`backups/AAMO_export.xlsx`, 17 hojas
-con toda la BD). Sobre una BD ya migrada:
-
-```bash
-python manage.py importar_backup backups/AAMO_export.xlsx
-```
-
-Preserva los ids originales, es idempotente (`update_or_create`) y conserva las marcas de
-tiempo del backup. **Nota:** las contraseñas no vienen en el Excel; los usuarios importados
-quedan con contraseña inutilizable — entra con el superusuario creado en el paso 3.
-
-### 5 · Levantar el servidor
+### 4 · Levantar el servidor
 
 ```bash
 python manage.py runserver
