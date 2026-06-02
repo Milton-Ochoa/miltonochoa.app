@@ -14,13 +14,13 @@
 | # | Tarea | Estado | Commit |
 |---|-------|--------|--------|
 | 0 | Baseline confirmado | ✅ hecho | — (202 OK) |
-| 1 | CI GitHub Actions (gate + pip-audit) | ✅ hecho | sin commit aún |
-| 2 | Gunicorn 1 worker + hilos | ✅ hecho | sin commit aún |
-| 3 | connection.close() en hilos _sync_safe | ✅ hecho | sin commit aún |
-| 4 | Eliminar PASSWORD_ENCRYPT_KEY | ✅ hecho | sin commit aún |
-| 5 | json_script en dashboard | ✅ hecho | sin commit aún |
-| 6 | AnonRateThrottle en DRF | ✅ hecho | sin commit aún |
-| 7 | Acotar except Exception en informes | ✅ hecho | sin commit aún |
+| 1 | CI GitHub Actions (gate + pip-audit) | ✅ hecho | 6cfc15f |
+| 2 | Gunicorn 1 worker + hilos | ✅ hecho | 6cfc15f |
+| 3 | connection.close() en hilos _sync_safe | ✅ hecho | 6cfc15f |
+| 4 | Eliminar PASSWORD_ENCRYPT_KEY | ✅ hecho | 6cfc15f |
+| 5 | json_script en dashboard | ✅ hecho | 9a6dfc4 |
+| 6 | AnonRateThrottle en DRF | ✅ hecho | 6cfc15f |
+| 7 | Acotar except Exception en informes | ✅ hecho | 6cfc15f |
 
 Leyenda: ⬜ pendiente · ⏳ en curso · ✅ hecho
 
