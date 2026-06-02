@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     'programacion.exportar',
     'programacion.pendientes',
     'programacion.api',
+    'programacion.viaticos',
 ]
 
 MIDDLEWARE = [
