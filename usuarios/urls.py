@@ -18,4 +18,9 @@ urlpatterns = [
     path('ajax/editar/',            views.ajax_editar_usuario,   name='ajax_editar_usuario'),
     path('ajax/eliminar/',          views.ajax_eliminar_usuario, name='ajax_eliminar_usuario'),
     path('ajax/resetear-password/', views.ajax_resetear_password, name='ajax_resetear_password'),
+
+    # Usuarios de etiqueta (grupo area:programacion) — gestionados desde el panel del apex.
+    path('ajax/area/crear/',    views.ajax_crear_usuario_area,     name='ajax_crear_usuario_area'),
+    path('ajax/area/eliminar/', views.ajax_eliminar_usuario_area,  name='ajax_eliminar_usuario_area'),
+    path('ajax/area/resetear/', views.ajax_resetear_password_area, name='ajax_resetear_password_area'),
 ]

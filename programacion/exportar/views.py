@@ -18,6 +18,7 @@ from collections import defaultdict
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 from django.contrib.auth.decorators import user_passes_test
+from core.areas import es_personal_programacion
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -639,7 +640,7 @@ def _parsear_fechas(fecha_inicio_str, fecha_fin_str):
 # VISTAS
 # ══════════════════════════════════════════════════════════════
 
-@user_passes_test(lambda u: u.is_superuser, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def exportar_view(request):
     """
     Exportación masiva de horarios en ZIP.
@@ -723,7 +724,7 @@ def exportar_view(request):
     return response
 
 
-@user_passes_test(lambda u: u.is_superuser, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def exportar_contar(request):
     """AJAX: cuenta clases según filtros activos (solo COUNT queries, sin generar Excels)."""
     tipo = request.GET.get('tipo', 'ambos')
@@ -971,7 +972,7 @@ def _generar_excel_pagos(filas, semana_label):
     return buf.getvalue()
 
 
-@user_passes_test(lambda u: u.is_superuser, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def exportar_pagos_view(request):
     """GET: página de pagos (tabs pendiente/realizado). POST: descarga Excel."""
     from datetime import timedelta
@@ -1082,7 +1083,7 @@ def exportar_pagos_view(request):
     return response
 
 
-@user_passes_test(lambda u: u.is_superuser, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def ajax_marcar_pago(request):
     """
     Marca o desmarca una fila (profesor, colegio, fecha) como pago realizado.

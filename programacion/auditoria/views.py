@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404
-from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import user_passes_test
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
@@ -9,11 +9,17 @@ import threading
 
 from .models import AlertaAuditoria
 from .engine import sincronizar
+from core.areas import es_personal_programacion
 
 logger = logging.getLogger('aamo')
 
+# Superusuario o staff del área. Sustituye a @staff_member_required: los usuarios de
+# etiqueta NO son is_staff (para no darles acceso a /admin/), así que ese decorador
+# los habría bloqueado. Ver core.areas.es_personal_programacion.
+solo_personal = user_passes_test(es_personal_programacion, login_url='login')
 
-@staff_member_required
+
+@solo_personal
 def lista_alertas(request):
     """
     Vista principal del módulo de auditoría. Muestra alertas vigentes.
@@ -45,7 +51,7 @@ def lista_alertas(request):
     return render(request, 'auditoria/lista.html', {'alertas': alertas})
 
 
-@staff_member_required
+@solo_personal
 @require_POST
 def ajax_ignorar_alerta(request, alerta_id):
     """

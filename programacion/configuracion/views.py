@@ -15,10 +15,12 @@ from .forms import ColegioForm, ProfesorForm
 from .colombia_geo import DEPARTAMENTOS, DEPARTAMENTOS_CIUDADES, ciudades_de
 from usuarios.ratelimit import rate_limit
 from programacion.colegios.historial import registrar_cambio
+from core.areas import es_personal_programacion
 
-# Decorador reutilizable — centraliza la verificación de superusuario para
-# todas las vistas de configuración sin repetir el lambda en cada una.
-solo_superusuario = user_passes_test(lambda u: u.is_superuser)
+# Decorador reutilizable — centraliza el control de acceso para todas las vistas
+# de configuración sin repetir el predicado en cada una. Permite superusuario y
+# staff del área (grupo 'area:programacion'); ver core.areas.es_personal_programacion.
+solo_superusuario = user_passes_test(es_personal_programacion)
 
 
 # ─────────────────────────────────────────────────────────────

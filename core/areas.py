@@ -30,6 +30,24 @@ AREAS = {
     },
 }
 
+# Grupo que actúa como "etiqueta" de acceso staff al área programación: sus miembros
+# usan la app completa (igual que un superusuario dentro del área) pero NO son admin
+# (sin gestión de usuarios, sin /admin/ de Django, sin otras áreas).
+GRUPO_STAFF_PROGRAMACION = 'area:programacion'
+
+
+def es_personal_programacion(user) -> bool:
+    """Superusuario o miembro del grupo staff del área programación.
+
+    Predicado único para los gates de página del área: permite abrir todas las
+    vistas a la vez (configuración, exportar, vista general, etc.) cambiando un
+    solo punto. Las acciones destructivas/admin siguen gated a `is_superuser`.
+    """
+    return bool(user.is_superuser or (
+        user.is_authenticated
+        and user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists()
+    ))
+
 
 def _puerto(request) -> str:
     """Puerto del host actual ('' o p. ej. '8000'). Se conserva en dev (lvh.me:8000)."""
@@ -85,7 +103,7 @@ def areas_del_usuario(user):
 
     areas = []
     tiene_programacion = (
-        user.groups.filter(name='area:programacion').exists()
+        user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists()
         or UsuarioColegio.objects.filter(user=user).exists()
         or UsuarioProfesor.objects.filter(user=user).exists()
     )

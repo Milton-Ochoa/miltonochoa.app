@@ -20,17 +20,20 @@ def home(request):
 
 # ── Enrutado por áreas (login único AAMO) ───────────────────────────────────
 # El registro de áreas y los helpers de URL entre subdominios viven en core.areas.
-from core.areas import areas_del_usuario, url_landing_area  # noqa: E402
+from core.areas import areas_del_usuario, url_landing_area, es_personal_programacion  # noqa: E402
 
 
 @login_required
 def seleccion_area(request):
     """Punto de entrada AAMO (apex) tras el login.
 
+    - Superusuario      → panel de administración (acceso a todas las áreas + gestión).
     - Sin área asignada → mensaje claro (403).
     - Una sola área     → redirige directo a su subdominio (URL absoluta).
     - Varias áreas      → página de selección con enlaces a cada subdominio.
     """
+    if request.user.is_superuser:
+        return redirect('panel_admin')
     areas = areas_del_usuario(request.user)
     if not areas:
         return render(request, 'core/sin_area.html', status=403)
@@ -44,6 +47,33 @@ def seleccion_area(request):
 
 
 @user_passes_test(lambda u: u.is_superuser, login_url='login')
+def panel_admin(request):
+    """Panel del superusuario (apex). Único punto de entrada para el admin.
+
+    Reúne el acceso a todas las áreas registradas (URL absoluta a la landing de cada
+    subdominio) y la gestión de usuarios de etiqueta (CRUD vía AJAX en usuarios.views).
+    Solo superusuarios; los usuarios de etiqueta van directo a su área, no aquí.
+    """
+    from core.areas import AREAS
+    from django.contrib.auth.models import User
+
+    areas_ctx = [
+        {'nombre': a['nombre'], 'slug': a['slug'],
+         'url': url_landing_area(a['slug'], request)}
+        for a in AREAS.values()
+    ]
+    usuarios_etiqueta = (
+        User.objects
+        .filter(groups__name='area:programacion')
+        .order_by('username')
+    )
+    return render(request, 'core/panel_admin.html', {
+        'areas': areas_ctx,
+        'usuarios_etiqueta': usuarios_etiqueta,
+    })
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
 def historial_global(request):
     """
     Historial de cambios de todo el sistema (todos los colegios), paginado server-side.
@@ -227,7 +257,7 @@ def vista_general(request):
 
 
 @login_required
-@user_passes_test(lambda u: u.is_superuser, login_url='login')
+@user_passes_test(es_personal_programacion, login_url='login')
 def ajax_busqueda_global(request):
     """Búsqueda global de colegios y profesores. Devuelve fragmento HTML para HTMX."""
     q = request.GET.get('q', '').strip()

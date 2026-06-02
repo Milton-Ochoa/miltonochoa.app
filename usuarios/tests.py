@@ -5,11 +5,12 @@ Vistas: vista_login, vista_logout, gestionar_usuarios, ajax_crear_usuario, ajax_
 Middleware: ControlAccesoMiddleware
 """
 from django.test import TestCase, Client, RequestFactory
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.core.cache import cache
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 from usuarios.models import UsuarioColegio, UsuarioProfesor
 from usuarios.ratelimit import rate_limit
+from core.areas import GRUPO_STAFF_PROGRAMACION
 
 
 # ── Modelos ───────────────────────────────────────────────────
@@ -79,7 +80,8 @@ class LoginViewTest(TestCase):
 
     def test_logout_redirige_a_login(self):
         self.client.login(username='admin', password='adminpass')
-        r = self.client.get('/usuarios/logout/')
+        # vista_logout es @require_POST (las plantillas envían POST con CSRF).
+        r = self.client.post('/usuarios/logout/')
         self.assertEqual(r.status_code, 302)
         self.assertIn('login', r['Location'])
 
@@ -192,6 +194,147 @@ class MiddlewareAccesoTest(TestCase):
         self.client.login(username='user_col_mw', password='pass')
         r = self.client.get(f'/colegios/?id_col={self.colegio_anio.id}')
         self.assertEqual(r.status_code, 200)
+
+
+# ── Panel del superusuario ────────────────────────────────────
+
+class PanelAdminTest(TestCase):
+    """Panel del apex: el superusuario aterriza aquí en vez de en el área."""
+
+    def setUp(self):
+        self.client = Client()  # host apex (testserver)
+        User.objects.create_superuser(username='admin', password='adminpass')
+
+    def test_seleccion_area_superusuario_redirige_al_panel(self):
+        self.client.login(username='admin', password='adminpass')
+        r = self.client.get('/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/panel/', r['Location'])
+
+    def test_panel_admin_superusuario_200(self):
+        self.client.login(username='admin', password='adminpass')
+        r = self.client.get('/panel/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_panel_admin_no_superusuario_bloqueado(self):
+        user = User.objects.create_user(username='pelao', password='pass')
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        user.groups.add(grupo)
+        self.client.login(username='pelao', password='pass')
+        r = self.client.get('/panel/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+
+
+# ── Usuarios de etiqueta (grupo area:programacion) ────────────
+
+class UsuarioEtiquetaTest(TestCase):
+    """Staff de área: acceso completo al área sin perfil; login los lleva a programación."""
+
+    def setUp(self):
+        self.area_client = Client(HTTP_HOST='programacion.testserver')
+        self.apex_client = Client()
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        self.staff = User.objects.create_user(username='staff_prog', password='pass')
+        self.staff.groups.add(self.grupo)
+
+    def test_no_es_deslogueado_y_ve_el_home(self):
+        """Antes caía en el logout del middleware por no tener perfil."""
+        self.area_client.login(username='staff_prog', password='pass')
+        r = self.area_client.get('/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_accede_a_configuracion(self):
+        self.area_client.login(username='staff_prog', password='pass')
+        r = self.area_client.get('/configuracion/libros/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_seleccion_area_lo_lleva_a_programacion(self):
+        self.apex_client.login(username='staff_prog', password='pass')
+        r = self.apex_client.get('/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('programacion.testserver', r['Location'])
+
+    def test_usuario_sin_etiqueta_sigue_bloqueado_en_configuracion(self):
+        sin = User.objects.create_user(username='sin_rol', password='pass')
+        # Sin perfil ni grupo → el middleware lo desloguea (sesión sin rol).
+        self.area_client.login(username='sin_rol', password='pass')
+        r = self.area_client.get('/configuracion/libros/')
+        self.assertNotEqual(r.status_code, 200)
+
+
+class AjaxUsuarioEtiquetaTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()  # apex
+        User.objects.create_superuser(username='admin', password='adminpass')
+        self.client.login(username='admin', password='adminpass')
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+
+    def test_crear_usuario_etiqueta_lo_mete_al_grupo(self):
+        r = self.client.post('/usuarios/ajax/area/crear/', {'username': 'nuevo_prog'})
+        data = r.json()
+        self.assertTrue(data['ok'])
+        self.assertIn('password_inicial', data)
+        user = User.objects.get(username='nuevo_prog')
+        self.assertTrue(user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists())
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
+    def test_crear_usuario_etiqueta_duplicado_falla(self):
+        User.objects.create_user(username='ya_existe', password='x')
+        r = self.client.post('/usuarios/ajax/area/crear/', {'username': 'ya_existe'})
+        self.assertFalse(r.json()['ok'])
+
+    def test_resetear_password_etiqueta(self):
+        user = User.objects.create_user(username='reset_prog', password='vieja')
+        user.groups.add(self.grupo)
+        r = self.client.post('/usuarios/ajax/area/resetear/', {'user_id': user.id})
+        data = r.json()
+        self.assertTrue(data['ok'])
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(data['nueva_password']))
+
+    def test_eliminar_usuario_etiqueta(self):
+        user = User.objects.create_user(username='borrar_prog', password='x')
+        user.groups.add(self.grupo)
+        r = self.client.post('/usuarios/ajax/area/eliminar/', {'user_id': user.id})
+        self.assertTrue(r.json()['ok'])
+        self.assertFalse(User.objects.filter(username='borrar_prog').exists())
+
+    def test_no_puede_resetear_a_un_no_etiqueta(self):
+        otro = User.objects.create_user(username='otro', password='x')  # sin grupo
+        r = self.client.post('/usuarios/ajax/area/resetear/', {'user_id': otro.id})
+        self.assertFalse(r.json()['ok'])
+
+
+class StaffGestionaUsuariosTest(TestCase):
+    """El staff del área SÍ gestiona usuarios de colegio/profesor, pero NO los de etiqueta."""
+
+    def setUp(self):
+        self.area_client = Client(HTTP_HOST='programacion.testserver')
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        self.staff = User.objects.create_user(username='staff_prog', password='pass')
+        self.staff.groups.add(self.grupo)
+        self.colegio = Colegio.objects.create(nombre='Col Staff', ciudad='Bogotá')
+        self.area_client.login(username='staff_prog', password='pass')
+
+    def test_staff_accede_a_gestion_colegios(self):
+        r = self.area_client.get('/usuarios/colegios/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_staff_crea_usuario_de_colegio(self):
+        r = self.area_client.post('/usuarios/ajax/crear/', {
+            'tipo': 'colegio', 'username': 'col_por_staff', 'colegio_id': self.colegio.id,
+        })
+        self.assertTrue(r.json()['ok'])
+        self.assertTrue(User.objects.filter(username='col_por_staff').exists())
+
+    def test_staff_no_puede_crear_usuario_de_etiqueta(self):
+        """El CRUD de etiqueta y el panel siguen siendo solo del superusuario."""
+        r = self.area_client.post('/usuarios/ajax/area/crear/', {'username': 'intruso'})
+        self.assertEqual(r.status_code, 302)  # user_passes_test → login
+        self.assertFalse(User.objects.filter(username='intruso').exists())
 
 
 # ── Rate Limiting ─────────────────────────────────────────────

@@ -1,0 +1,194 @@
+{% extends 'base_apex.html' %}
+{% block title %}Panel de administración — AAMO{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+  {# ── Acceso a áreas ── #}
+  <h1 class="h4 mb-3"><i class="fas fa-th-large me-2 text-secondary"></i>Áreas</h1>
+  <div class="row g-3 mb-5">
+    {% for area in areas %}
+    <div class="col-12 col-sm-6 col-md-4">
+      <a href="{{ area.url }}" class="card text-decoration-none h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <i class="fas fa-arrow-right-to-bracket fa-lg text-primary"></i>
+          <h2 class="h5 card-title mb-0">{{ area.nombre }}</h2>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Usuarios de etiqueta (programación) ── #}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h5 mb-0"><i class="fas fa-users me-2 text-secondary"></i>Usuarios — Programación</h2>
+    <button class="btn btn-primary btn-sm fw-bold" onclick="abrirCrearArea()">
+      <i class="fas fa-plus me-1"></i> Nuevo usuario
+    </button>
+  </div>
+  <p class="text-muted small">
+    Estos usuarios entran directamente a <strong>programación</strong> al iniciar sesión,
+    con acceso completo al área (no son administradores).
+  </p>
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-dark">
+        <tr><th>Usuario</th><th class="text-end" style="width:160px;">Acciones</th></tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios_etiqueta %}
+        <tr id="fila-area-{{ u.id }}">
+          <td class="fw-semibold">{{ u.username }}</td>
+          <td class="text-end">
+            <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
+                    onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
+              <i class="fas fa-key"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm" title="Eliminar"
+                    onclick="eliminarArea({{ u.id }}, '{{ u.username|escapejs }}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="text-center text-muted py-4">Aún no hay usuarios de programación.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-muted small mt-4">
+    <i class="fas fa-info-circle me-1"></i>
+    Los usuarios de <strong>colegio</strong> y <strong>profesor</strong> se gestionan dentro del área:
+    <a href="{{ areas.0.url }}usuarios/colegios/">Colegios</a> ·
+    <a href="{{ areas.0.url }}usuarios/profesores/">Profesores</a>.
+  </p>
+</div>
+
+
+<!-- MODAL: Crear usuario de etiqueta -->
+<div class="modal fade" id="modalCrearArea" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-plus me-2"></i>Nuevo usuario de Programación</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Nombre de usuario</label>
+          <input type="text" id="crear_area_username" class="form-control" placeholder="Ej: coord_programacion" autocomplete="off">
+        </div>
+        <div class="alert alert-info py-2 mb-0" style="font-size:0.88rem;">
+          <i class="fas fa-info-circle me-1"></i>
+          La contraseña se generará automáticamente y se mostrará <strong>una sola vez</strong>.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="submitCrearArea()">
+          <i class="fas fa-save me-1"></i>Crear usuario
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Mostrar contraseña -->
+<div class="modal fade" id="modalPasswordArea" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title" id="modalPasswordAreaTitulo"><i class="fas fa-key me-2"></i>Contraseña</h5>
+      </div>
+      <div class="modal-body text-center">
+        <p class="mb-1 text-muted" style="font-size:0.85rem;">Usuario: <strong id="modalPasswordAreaUsername"></strong></p>
+        <div class="alert alert-warning py-2 mb-3" style="font-size:0.82rem;">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Copia esta contraseña ahora. <strong>No se podrá recuperar.</strong>
+        </div>
+        <div class="input-group mb-3">
+          <input type="text" id="modalPasswordAreaValor" class="form-control text-center fw-bold fs-5"
+                 style="font-family:monospace; letter-spacing:0.05em;" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copiarPasswordArea()" title="Copiar">
+            <i class="fas fa-copy"></i>
+          </button>
+        </div>
+        <div id="modalPasswordAreaCopiadoMsg" class="text-success d-none" style="font-size:0.82rem;">
+          <i class="fas fa-check me-1"></i> Copiada al portapapeles
+        </div>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="location.reload()">
+          <i class="fas fa-check me-1"></i> Listo, la copié
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+const CSRF = '{{ csrf_token }}';
+
+function _post(url, datos) {
+    const body = new FormData();
+    body.append('csrfmiddlewaretoken', CSRF);
+    for (const k in datos) body.append(k, datos[k]);
+    return fetch(url, { method: 'POST', body, credentials: 'same-origin' }).then(r => r.json());
+}
+
+function abrirCrearArea() {
+    document.getElementById('crear_area_username').value = '';
+    new bootstrap.Modal(document.getElementById('modalCrearArea')).show();
+}
+
+function submitCrearArea() {
+    const username = document.getElementById('crear_area_username').value.trim();
+    if (!username) { alert('Escribe un nombre de usuario.'); return; }
+    _post('/usuarios/ajax/area/crear/', { username })
+        .then(data => {
+            if (data.ok) {
+                bootstrap.Modal.getInstance(document.getElementById('modalCrearArea')).hide();
+                mostrarPasswordArea(`Usuario creado: ${data.username}`, data.username, data.password_inicial);
+            } else { alert(data.error || 'Error al crear el usuario.'); }
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function resetearArea(userId, username) {
+    if (!confirm(`¿Resetear la contraseña de "${username}"?`)) return;
+    _post('/usuarios/ajax/area/resetear/', { user_id: userId })
+        .then(data => {
+            if (data.ok) mostrarPasswordArea('Contraseña reseteada', data.username, data.nueva_password);
+            else alert(data.error || 'Error al resetear.');
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function eliminarArea(userId, username) {
+    if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
+    _post('/usuarios/ajax/area/eliminar/', { user_id: userId })
+        .then(data => {
+            if (data.ok) location.reload();
+            else alert(data.error || 'Error al eliminar.');
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function mostrarPasswordArea(titulo, username, password) {
+    document.getElementById('modalPasswordAreaTitulo').innerHTML = `<i class="fas fa-key me-2"></i>${titulo}`;
+    document.getElementById('modalPasswordAreaUsername').textContent = username;
+    document.getElementById('modalPasswordAreaValor').value = password;
+    document.getElementById('modalPasswordAreaCopiadoMsg').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('modalPasswordArea')).show();
+}
+
+function copiarPasswordArea() {
+    const val = document.getElementById('modalPasswordAreaValor').value;
+    navigator.clipboard.writeText(val).then(() => {
+        document.getElementById('modalPasswordAreaCopiadoMsg').classList.remove('d-none');
+    });
+}
+</script>
+{% endblock %}
