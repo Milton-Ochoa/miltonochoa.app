@@ -36,6 +36,7 @@ class PagoRealizado(models.Model):
     )
 
     class Meta:
+        db_table            = 'prog_pagos'
         unique_together     = ('profesor', 'colegio', 'fecha')
         ordering            = ['-fecha', 'profesor__nombre']
         verbose_name        = 'Pago Realizado'

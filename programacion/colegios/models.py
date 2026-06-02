@@ -22,6 +22,7 @@ class Grado(models.Model):
     )
 
     class Meta:
+        db_table            = 'prog_grados'
         ordering            = ['nombre']
         verbose_name        = "Grado"
         verbose_name_plural = "Grados"
@@ -50,6 +51,7 @@ class Bloque(models.Model):
     hora_fin    = models.TimeField(verbose_name="Hora de Fin")
 
     class Meta:
+        db_table = 'prog_bloques'
         ordering = ['grado__nombre', 'hora_inicio']
         indexes = [
             models.Index(fields=['colegio', 'grado']),
@@ -110,6 +112,7 @@ class Asignacion(models.Model):
                                     verbose_name="Fecha de Fin")
 
     class Meta:
+        db_table            = 'prog_asignaciones'
         verbose_name        = "Asignación de Libro"
         verbose_name_plural = "Asignaciones de Libros"
         indexes = [
@@ -179,6 +182,7 @@ class Clase(models.Model):
                                      verbose_name="Comentarios / Motivo")
 
     class Meta:
+        db_table = 'prog_clases'
         # Un bloque solo puede tener una clase por fecha
         unique_together = ('fecha', 'bloque')
         indexes = [
@@ -245,6 +249,7 @@ class ClaseParticular(models.Model):
     unidad      = models.CharField(max_length=50, verbose_name="Unidad")
 
     class Meta:
+        db_table            = 'prog_clases_particulares'
         verbose_name        = "Clase Particular"
         verbose_name_plural = "Clases Particulares"
 
@@ -303,6 +308,7 @@ class HistorialCambio(models.Model):
     detalle     = models.TextField(blank=True, default='')
 
     class Meta:
+        db_table = 'prog_historial_cambios'
         ordering = ['-fecha']
         indexes = [
             # Para buscar el historial de un objeto específico (ej: quién editó esta clase)

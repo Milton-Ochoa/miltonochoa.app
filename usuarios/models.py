@@ -13,6 +13,7 @@ class UsuarioColegio(models.Model):
     colegio = models.ForeignKey(Colegio, on_delete=models.CASCADE, related_name='usuarios')
 
     class Meta:
+        db_table            = 'usuarios_colegio'
         verbose_name        = "Usuario de Colegio"
         verbose_name_plural = "Usuarios de Colegios"
 
@@ -30,6 +31,7 @@ class UsuarioProfesor(models.Model):
     profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE, related_name='usuarios')
 
     class Meta:
+        db_table            = 'usuarios_profesor'
         verbose_name        = "Usuario de Profesor"
         verbose_name_plural = "Usuarios de Profesores"
 

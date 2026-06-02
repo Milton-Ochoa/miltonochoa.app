@@ -43,6 +43,7 @@ class Informe(models.Model):
     actualizado_en   = models.DateTimeField(auto_now=True)
 
     class Meta:
+        db_table            = 'prog_informes'
         verbose_name        = 'Informe de Sesión'
         verbose_name_plural = 'Informes de Sesión'
         ordering            = ['-fecha', 'colegio_nombre']
