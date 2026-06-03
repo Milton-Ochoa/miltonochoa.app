@@ -28,12 +28,22 @@ AREAS = {
         'urlconf': 'core.urls_programacion',
         'landing': 'home',
     },
+    'financiera': {
+        'slug': 'financiera',
+        'nombre': 'Financiera',
+        'urlconf': 'core.urls_financiera',
+        'landing': 'fin_home',
+    },
 }
 
 # Grupo que actúa como "etiqueta" de acceso staff al área programación: sus miembros
 # usan la app completa (igual que un superusuario dentro del área) pero NO son admin
 # (sin gestión de usuarios, sin /admin/ de Django, sin otras áreas).
 GRUPO_STAFF_PROGRAMACION = 'area:programacion'
+
+# Grupo de acceso al área financiera. Por ahora la asignación de usuarios a este
+# grupo se hace desde /admin/ (no hay CRUD propio todavía).
+GRUPO_STAFF_FINANCIERA = 'area:financiera'
 
 
 def es_personal_programacion(user) -> bool:
@@ -46,6 +56,18 @@ def es_personal_programacion(user) -> bool:
     return bool(user.is_superuser or (
         user.is_authenticated
         and user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists()
+    ))
+
+
+def es_personal_financiera(user) -> bool:
+    """Superusuario o miembro del grupo de acceso al área financiera.
+
+    Espejo de `es_personal_programacion` para el subdominio financiera; gate único
+    de sus vistas (Inicio, gestión de viáticos).
+    """
+    return bool(user.is_superuser or (
+        user.is_authenticated
+        and user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists()
     ))
 
 
@@ -109,4 +131,6 @@ def areas_del_usuario(user):
     )
     if tiene_programacion:
         areas.append(AREAS['programacion'])
+    if user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists():
+        areas.append(AREAS['financiera'])
     return areas

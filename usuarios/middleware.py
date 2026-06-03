@@ -5,7 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
-from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION
+from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA
 
 RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/admin/']
 
@@ -65,6 +65,23 @@ class ControlAccesoMiddleware:
             next_abs = request.build_absolute_uri()
             return redirect(f'{login_apex}?{urlencode({"next": next_abs})}')
 
+        # Bandera por defecto para las plantillas (la rama de financiera la sube a True).
+        request.es_personal_financiera = False
+
+        # ── Área financiera ──
+        # Acceso por grupo 'area:financiera' (o superusuario). El subdominio no tiene
+        # perfiles de colegio/profesor: cualquier otro autenticado se manda al selector
+        # de área del apex (no se le hace logout: puede tener acceso a otra área).
+        if request.area == 'financiera':
+            if request.user.is_superuser or request.user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists():
+                request.perfil_colegio  = None
+                request.perfil_profesor = None
+                request.es_personal_programacion = False
+                request.es_personal_financiera = True
+                return self.get_response(request)
+            return redirect(url_apex('seleccion_area', request))
+
+        # ── Área programacion (comportamiento original) ──
         if request.user.is_superuser:
             request.perfil_colegio  = None
             request.perfil_profesor = None
