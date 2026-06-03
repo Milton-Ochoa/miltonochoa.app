@@ -16,6 +16,8 @@ Gate: superusuario o miembro del grupo `area:financiera`
 (`core.areas.es_personal_financiera`). El middleware filtra el acceso al subdominio;
 el decorador es la segunda barrera por-vista.
 """
+import os
+
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.db import transaction
@@ -25,8 +27,8 @@ from django.views.decorators.http import require_POST
 
 from core.areas import es_personal_financiera
 from programacion.viaticos.forms import SolicitudViaticoForm
-from programacion.viaticos.models import GastoViatico, SolicitudViatico
-from programacion.viaticos.views import _contexto_form, _parsear_gastos
+from programacion.viaticos.models import GastoViatico, SolicitudViatico, SoportePago
+from programacion.viaticos.views import _contexto_form, _parsear_gastos, _responder_soporte
 
 solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
 
@@ -34,6 +36,20 @@ solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
 # DEVUELTA queda fuera a propósito: pertenece a programación hasta que la reenvíe;
 # PAGADA es terminal. (Ver matriz de permisos arriba.)
 EDITABLES_FINANCIERA = {SolicitudViatico.Estado.ENVIADA, SolicitudViatico.Estado.APROBADA}
+
+# Restricciones del soporte de pago (solo se sube en PAGADA).
+SOPORTE_EXTENSIONES = {'.pdf', '.jpg', '.jpeg', '.png'}
+SOPORTE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _validar_soporte(archivo):
+    """Valida extensión y tamaño de un soporte; devuelve un mensaje de error o None."""
+    ext = os.path.splitext(archivo.name)[1].lower()
+    if ext not in SOPORTE_EXTENSIONES:
+        return f'Tipo de archivo no permitido ({ext or "sin extensión"}). Usa PDF, JPG o PNG.'
+    if archivo.size > SOPORTE_MAX_BYTES:
+        return 'El archivo supera el tamaño máximo de 10 MB.'
+    return None
 
 
 @solo_financiera
@@ -58,7 +74,8 @@ def fin_viaticos_detalle(request, pk):
     """Detalle con gastos, total, observaciones y los datos snapshot del docente/colegio.
     Expone qué acciones permite el estado actual para pintar los botones."""
     solicitud = get_object_or_404(
-        SolicitudViatico.objects.select_related('profesor', 'colegio').prefetch_related('gastos'),
+        SolicitudViatico.objects.select_related('profesor', 'colegio')
+        .prefetch_related('gastos', 'soportes', 'soportes__subido_por'),
         pk=pk,
     )
     return render(request, 'financiera/viaticos_detalle.html', {
@@ -156,3 +173,53 @@ def fin_viaticos_pagar(request, pk):
         solicitud.save()
         messages.success(request, 'Solicitud marcada como pagada.')
     return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+
+@solo_financiera
+@require_POST
+def fin_viaticos_subir_soporte(request, pk):
+    """Adjunta un soporte de pago a una solicitud `PAGADA` (solo en ese estado)."""
+    solicitud = get_object_or_404(SolicitudViatico, pk=pk)
+    if solicitud.estado != SolicitudViatico.Estado.PAGADA:
+        messages.error(request, 'Solo se puede adjuntar soporte a una solicitud pagada.')
+        return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        messages.error(request, 'Selecciona un archivo para subir.')
+        return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+    error = _validar_soporte(archivo)
+    if error:
+        messages.error(request, error)
+        return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+    SoportePago.objects.create(
+        solicitud=solicitud,
+        archivo=archivo,
+        nombre_original=archivo.name,
+        subido_por=request.user,
+    )
+    messages.success(request, 'Soporte de pago adjuntado.')
+    return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+
+@solo_financiera
+@require_POST
+def fin_viaticos_eliminar_soporte(request, soporte_id):
+    """Elimina un soporte (y su archivo en storage) subido por error."""
+    soporte = get_object_or_404(SoportePago.objects.select_related('solicitud'), pk=soporte_id)
+    pk = soporte.solicitud_id
+    # Borrar primero el archivo del storage (S3/disco), luego la fila.
+    soporte.archivo.delete(save=False)
+    soporte.delete()
+    messages.success(request, 'Soporte eliminado.')
+    return redirect('fin_viaticos_detalle', pk=pk)
+
+
+@solo_financiera
+def fin_soporte_descargar(request, soporte_id):
+    """Ver (``?inline=1``) o descargar un soporte desde el área financiera.
+    Mismo proxy que programación; difiere solo en el gate por urlconf de subdominio."""
+    soporte = get_object_or_404(SoportePago, pk=soporte_id)
+    return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')
