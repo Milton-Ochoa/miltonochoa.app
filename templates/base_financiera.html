@@ -14,7 +14,7 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# ── Viáticos ── (el badge de pendientes llega en la Fase 4) #}
+        {# ── Viáticos ── (badge = solicitudes ENVIADA, vía context processor viaticos_pendientes) #}
         <a href="{% url 'fin_viaticos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}active{% endif %}">
             <i class="fas fa-receipt icon-main text-warning"></i> Viáticos
             {% if viaticos_pendientes_count %}

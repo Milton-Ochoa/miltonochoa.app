@@ -126,6 +126,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'programacion.auditoria.context_processors.alertas_vigentes',
+                'financiera.viaticos.context_processors.viaticos_pendientes',
             ],
         },
     },

@@ -73,7 +73,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | 🏛️ **Apex** | `miltonochoa.app` | ✅ Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos, viáticos y API REST. |
-| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio + gestión de solicitudes de viáticos (en construcción). Acceso por grupo `area:financiera`. |
+| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio + gestión de solicitudes de viáticos (devolver / aprobar / pagar / editar, con badge de pendientes). Acceso por grupo `area:financiera`. |
 | 🚚 **Logística** | `logistica.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* (sidebar, header, footer,
@@ -269,7 +269,8 @@ AAMO/
 │
 ├── 💰 financiera/            # ÁREA financiera (servida en financiera.miltonochoa.app)
 │   ├── urls.py               #   router del área (raíz /)
-│   └── 💵 viaticos/          #   Inicio + gestión de viáticos (sin modelos: importa los de programacion)
+│   └── 💵 viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
+│                             #   (sin modelos: importa los de programacion.viaticos)
 ├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
 │
 ├── 🎨 templates/             # Globales: base_chrome.html (chrome compartido), base.html
