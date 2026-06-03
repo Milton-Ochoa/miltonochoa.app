@@ -46,8 +46,9 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6"><span class="text-muted small d-block">Docente</span><strong>{{ solicitud.docente_nombre }}</strong></div>
-                <div class="col-md-3"><span class="text-muted small d-block">Cédula</span>{{ solicitud.docente_cedula|default:"—" }}</div>
-                <div class="col-md-3"><span class="text-muted small d-block">Cuenta</span>{{ solicitud.docente_cuenta|default:"—" }}</div>
+                <div class="col-md-2"><span class="text-muted small d-block">Cédula</span>{{ solicitud.docente_cedula|default:"—" }}</div>
+                <div class="col-md-2"><span class="text-muted small d-block">Cuenta</span>{{ solicitud.docente_cuenta|default:"—" }}</div>
+                <div class="col-md-2"><span class="text-muted small d-block">Banco</span>{{ solicitud.docente_banco|default:"—" }}</div>
                 <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ solicitud.colegio_nombre }}</strong></div>
                 <div class="col-md-3"><span class="text-muted small d-block">Código</span>{{ solicitud.colegio_codigo|default:"—" }}</div>
                 <div class="col-md-3"></div>

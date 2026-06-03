@@ -52,6 +52,7 @@
                             <option value="{{ p.pk }}"
                                     data-cedula="{{ p.documento|default:'' }}"
                                     data-cuenta="{{ p.cuenta_bancaria|default:'' }}"
+                                    data-banco="{{ p.banco|default:'' }}"
                                     {% if form.profesor.value|stringformat:'s' == p.pk|stringformat:'s' %}selected{% endif %}>
                                 {{ p.nombre }} {{ p.apellido|default:'' }}
                             </option>
@@ -59,13 +60,17 @@
                         </select>
                         {% if form.profesor.errors %}<div class="text-danger small">{{ form.profesor.errors|striptags }}</div>{% endif %}
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Cédula</label>
                         <input type="text" id="docente-cedula" class="form-control bg-light" readonly placeholder="—">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Cuenta</label>
                         <input type="text" id="docente-cuenta" class="form-control bg-light" readonly placeholder="—">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Banco</label>
+                        <input type="text" id="docente-banco" class="form-control bg-light" readonly placeholder="—">
                     </div>
                 </div>
 
@@ -147,6 +152,7 @@
         var opt = selProf.options[selProf.selectedIndex];
         document.getElementById('docente-cedula').value = opt ? (opt.dataset.cedula || '') : '';
         document.getElementById('docente-cuenta').value = opt ? (opt.dataset.cuenta || '') : '';
+        document.getElementById('docente-banco').value  = opt ? (opt.dataset.banco  || '') : '';
     }
     function rellenarColegio() {
         var opt = selCol.options[selCol.selectedIndex];

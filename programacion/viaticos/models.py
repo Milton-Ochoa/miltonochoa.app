@@ -29,6 +29,7 @@ class SolicitudViatico(models.Model):
     docente_nombre = models.CharField(max_length=200)
     docente_cedula = models.CharField(max_length=50,  blank=True)
     docente_cuenta = models.CharField(max_length=50,  blank=True)
+    docente_banco  = models.CharField(max_length=100, blank=True)
     colegio_codigo = models.CharField(max_length=50,  blank=True)
     colegio_nombre = models.CharField(max_length=200)
 
@@ -73,6 +74,7 @@ class SolicitudViatico(models.Model):
         self.docente_nombre = f'{p.nombre} {p.apellido or ""}'.strip()
         self.docente_cedula = p.documento or ''
         self.docente_cuenta = p.cuenta_bancaria or ''
+        self.docente_banco  = p.banco or ''
         self.colegio_codigo = c.codigo or ''
         self.colegio_nombre = c.nombre
 
