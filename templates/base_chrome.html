@@ -2,7 +2,8 @@
 <!DOCTYPE html>
 <html lang="es">
 
-{# ════════════════════════════════════════════════════════════════════════
+{% comment %}
+   ════════════════════════════════════════════════════════════════════════
    CHROME COMPARTIDO DE LAS ÁREAS AAMO (sidebar + header + footer + CSS/JS).
 
    Toda la estructura, estilos y comportamiento visual viven aquí para que
@@ -16,7 +17,8 @@
    Las piezas gated por `request.es_personal_programacion` (búsqueda global,
    modales, atajos) solo se renderizan en programación; en otras áreas esa
    bandera es False y quedan inertes sin ensuciar el HTML.
-   ════════════════════════════════════════════════════════════════════════ #}
+   ════════════════════════════════════════════════════════════════════════
+{% endcomment %}
 
 <head>
     <meta charset="UTF-8">

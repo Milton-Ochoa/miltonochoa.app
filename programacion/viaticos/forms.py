@@ -22,8 +22,13 @@ class SolicitudViaticoForm(forms.ModelForm):
         widgets = {
             'profesor':      forms.Select(attrs={'class': 'form-select'}),
             'colegio':       forms.Select(attrs={'class': 'form-select'}),
-            'fecha_viaje':   forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'fecha_regreso': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            # format='%Y-%m-%d' es obligatorio: <input type="date"> solo muestra valores
+            # en ISO; sin él Django renderiza la fecha localizada (dd/mm/aaaa) y el
+            # navegador la descarta → el campo aparece vacío al editar.
+            'fecha_viaje':   forms.DateInput(attrs={'class': 'form-control', 'type': 'date'},
+                                             format='%Y-%m-%d'),
+            'fecha_regreso': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'},
+                                             format='%Y-%m-%d'),
             'observaciones': forms.Textarea(attrs={'class': 'form-control', 'rows': 3,
                                                    'placeholder': 'Observaciones (opcional)...'}),
         }

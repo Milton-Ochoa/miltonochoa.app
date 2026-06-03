@@ -1,7 +1,9 @@
 {% extends 'base_chrome.html' %}
 
-{# Área PROGRAMACIÓN: solo aporta el menú lateral y los títulos; todo el chrome
-   (CSS, header, footer, JS, búsqueda global) vive en base_chrome.html. #}
+{% comment %}
+   Área PROGRAMACIÓN: solo aporta el menú lateral y los títulos; todo el chrome
+   (CSS, header, footer, JS, búsqueda global) vive en base_chrome.html.
+{% endcomment %}
 
 {% block doc_title %}Programación AAMO{% endblock %}
 {% block brand_title %}Programación AAMO{% endblock %}
@@ -13,14 +15,7 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# ── Viáticos ── #}
-        <a href="{% url 'viaticos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
-            <i class="fas fa-plane-departure icon-main text-warning"></i> Viáticos
-        </a>
-
         {# ── OPERACIONES (colapsable) ── #}
-        {% with op_active=request.resolver_match.url_name|slugify %}
-        {% endwith %}
         <a href="#collapseOperaciones" data-bs-toggle="collapse"
            class="nav-item justify-content-between sidebar-section-toggle"
            data-section-key="operaciones"
@@ -28,7 +23,7 @@
             <span><i class="fas fa-tasks icon-main text-success"></i> Operaciones</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' %}show{% endif %}" id="collapseOperaciones">
+        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' or request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}show{% endif %}" id="collapseOperaciones">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'vista_general' %}" class="{% if request.resolver_match.url_name == 'vista_general' %}active{% endif %}">
                     <i class="fas fa-calendar-week" style="width: 20px; text-align: center; margin-right: 8px;"></i> General
@@ -38,6 +33,9 @@
                 </a>
                 <a href="{% url 'ver_horario' %}" class="{% if request.resolver_match.url_name == 'ver_horario' %}active{% endif %}">
                     <i class="fas fa-user-clock" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
+                </a>
+                <a href="{% url 'viaticos_lista' %}" class="{% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
+                    <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
                 </a>
             </div>
         </div>
