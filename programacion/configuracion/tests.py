@@ -4,7 +4,8 @@ Modelos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor
 """
 from datetime import date
 
-from django.test import TestCase
+from django.test import TestCase, Client
+from django.contrib.auth.models import User
 from django.db import IntegrityError
 from programacion.configuracion.models import (
     Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor,
@@ -194,3 +195,82 @@ class ProfesorCamposTest(TestCase):
         Profesor.objects.create(nombre='Prof A')
         Profesor.objects.create(nombre='Prof B')
         self.assertEqual(Profesor.objects.filter(documento=None).count(), 2)
+
+
+# ── Vista configuracion_colegios: calendario A/B (Fase 2) ────────
+
+class ConfiguracionColegiosCalendarioViewTest(TestCase):
+    """La UI de configuración elige A/B al crear/editar y recomputa la ventana."""
+
+    URL = '/configuracion/colegios/'
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_cfg', password='pass123')
+        self.client.login(username='admin_cfg', password='pass123')
+
+    def _datos_base(self, **extra):
+        datos = {
+            'accion':       'add',
+            'nombre':       'Colegio Prueba',
+            'codigo':       '',
+            'departamento': 'Santander',
+            'ciudad':       'Bucaramanga',
+            'direccion':    '',
+            'observacion':  '',
+            'mapa_link':    '',
+            'anio':         2025,
+            'calendario':   Colegio.Calendario.A,
+        }
+        datos.update(extra)
+        return datos
+
+    def test_crear_colegio_b_genera_periodo_ago_jun(self):
+        self.client.post(self.URL, self._datos_base(
+            nombre='Colegio B', calendario=Colegio.Calendario.B, anio=2025))
+        col = Colegio.objects.get(nombre='Colegio B')
+        self.assertEqual(col.calendario, Colegio.Calendario.B)
+        ca = col.anios.get(anio=2025)
+        self.assertEqual(ca.fecha_inicio, date(2025, 8, 1))
+        self.assertEqual(ca.fecha_fin, date(2026, 6, 30))
+        self.assertEqual(ca.periodo_label, '2025-2026')
+
+    def test_crear_colegio_a_genera_periodo_natural(self):
+        self.client.post(self.URL, self._datos_base(
+            nombre='Colegio A', calendario=Colegio.Calendario.A, anio=2025))
+        ca = Colegio.objects.get(nombre='Colegio A').anios.get(anio=2025)
+        self.assertEqual(ca.fecha_inicio, date(2025, 1, 1))
+        self.assertEqual(ca.fecha_fin, date(2025, 12, 31))
+
+    def test_editar_a_a_b_recomputa_periodos_sin_clases(self):
+        # Colegio A con dos años; al pasarlo a B su ventana debe recalcularse.
+        col = Colegio.objects.create(
+            nombre='Colegio Mutante', departamento='Santander', ciudad='Bucaramanga')
+        ColegioAnio.objects.create(colegio=col, anio=2025)
+        ColegioAnio.objects.create(colegio=col, anio=2026)
+
+        self.client.post(self.URL, self._datos_base(
+            accion='edit', colegio_id=col.id, nombre='Colegio Mutante',
+            calendario=Colegio.Calendario.B))
+
+        col.refresh_from_db()
+        self.assertEqual(col.calendario, Colegio.Calendario.B)
+        ca25 = col.anios.get(anio=2025)
+        self.assertEqual(ca25.fecha_inicio, date(2025, 8, 1))
+        self.assertEqual(ca25.fecha_fin, date(2026, 6, 30))
+        ca26 = col.anios.get(anio=2026)
+        self.assertEqual(ca26.fecha_inicio, date(2026, 8, 1))
+        self.assertEqual(ca26.fecha_fin, date(2027, 6, 30))
+
+    def test_contexto_expone_calendario_y_periodo_label(self):
+        col = Colegio.objects.create(
+            nombre='Colegio Ctx', departamento='Santander', ciudad='Bucaramanga',
+            calendario=Colegio.Calendario.B)
+        ColegioAnio.objects.create(colegio=col, anio=2025)
+
+        r = self.client.get(self.URL)
+        self.assertEqual(r.status_code, 200)
+        ctx_col = next(c for c in r.context['colegios'] if c.nombre == 'Colegio Ctx')
+        self.assertEqual(ctx_col.calendario, Colegio.Calendario.B)
+        self.assertEqual(ctx_col.todos_anios[0].periodo_label, '2025-2026')
+        self.assertIn('2025-2026', ctx_col.anios_json)

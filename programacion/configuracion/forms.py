@@ -17,9 +17,10 @@ class ColegioForm(forms.ModelForm):
 
     class Meta:
         model  = Colegio
-        fields = ['codigo', 'nombre', 'departamento', 'ciudad',
+        fields = ['codigo', 'nombre', 'calendario', 'departamento', 'ciudad',
                   'direccion', 'observacion', 'mapa_link']
         widgets = {
+            'calendario':  forms.Select(attrs={'class': 'form-select'}),
             'codigo':      forms.TextInput(attrs={
                 'class': 'form-control', 'placeholder': 'Ej: COL-001'}),
             'nombre':      forms.TextInput(attrs={
