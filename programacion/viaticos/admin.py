@@ -1,11 +1,17 @@
 from django.contrib import admin
 
-from .models import GastoViatico, SolicitudViatico
+from .models import GastoViatico, SolicitudViatico, SoportePago
 
 
 class GastoViaticoInline(admin.TabularInline):
     model = GastoViatico
     extra = 0
+
+
+class SoportePagoInline(admin.TabularInline):
+    model = SoportePago
+    extra = 0
+    readonly_fields = ('subido_por', 'subido_en')
 
 
 @admin.register(SolicitudViatico)
@@ -15,4 +21,4 @@ class SolicitudViaticoAdmin(admin.ModelAdmin):
     list_filter   = ('estado',)
     search_fields = ('docente_nombre', 'docente_cedula', 'colegio_nombre')
     date_hierarchy = 'creado_en'
-    inlines = [GastoViaticoInline]
+    inlines = [GastoViaticoInline, SoportePagoInline]
