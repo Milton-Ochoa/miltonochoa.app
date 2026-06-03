@@ -1,10 +1,15 @@
 """
 Tests — app: configuracion
-Modelos: Materia, NombreLibro, Unidad, Colegio, Profesor
+Modelos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor
 """
+from datetime import date
+
 from django.test import TestCase
 from django.db import IntegrityError
-from programacion.configuracion.models import Materia, NombreLibro, Unidad, Colegio, Profesor
+from programacion.configuracion.models import (
+    Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor,
+    periodo_por_defecto,
+)
 
 
 # ── NombreLibro ──────────────────────────────────────────────
@@ -78,6 +83,74 @@ class ColegioModelTest(TestCase):
     def test_mapa_link_es_opcional(self):
         c = Colegio.objects.create(nombre='Sin Mapa', departamento='Antioquia', ciudad='Medellín')
         self.assertIsNone(c.mapa_link)
+
+    def test_calendario_default_es_a(self):
+        self.assertEqual(self.colegio.calendario, Colegio.Calendario.A)
+
+
+# ── Calendario A/B y periodo (ColegioAnio) ───────────────────
+
+class CalendarioPeriodoTest(TestCase):
+    """Cubre el helper periodo_por_defecto, las propiedades de ColegioAnio
+    (calendario/periodo_label/rango) y el autocálculo de fechas en save()."""
+
+    def setUp(self):
+        self.col_a = Colegio.objects.create(
+            nombre='Colegio A', departamento='Santander', ciudad='Bucaramanga',
+            calendario=Colegio.Calendario.A,
+        )
+        self.col_b = Colegio.objects.create(
+            nombre='Colegio B', departamento='Santander', ciudad='Bucaramanga',
+            calendario=Colegio.Calendario.B,
+        )
+
+    def test_periodo_por_defecto_calendario_a(self):
+        inicio, fin = periodo_por_defecto(Colegio.Calendario.A, 2025)
+        self.assertEqual(inicio, date(2025, 1, 1))
+        self.assertEqual(fin, date(2025, 12, 31))
+
+    def test_periodo_por_defecto_calendario_b_cruza_anio(self):
+        inicio, fin = periodo_por_defecto(Colegio.Calendario.B, 2025)
+        self.assertEqual(inicio, date(2025, 8, 1))
+        self.assertEqual(fin, date(2026, 6, 30))
+
+    def test_save_autocompleta_ventana_a(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_a, anio=2025)
+        self.assertEqual(ca.fecha_inicio, date(2025, 1, 1))
+        self.assertEqual(ca.fecha_fin, date(2025, 12, 31))
+
+    def test_save_autocompleta_ventana_b(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_b, anio=2025)
+        self.assertEqual(ca.fecha_inicio, date(2025, 8, 1))
+        self.assertEqual(ca.fecha_fin, date(2026, 6, 30))
+
+    def test_save_respeta_fechas_explicitas(self):
+        ca = ColegioAnio.objects.create(
+            colegio=self.col_b, anio=2025,
+            fecha_inicio=date(2025, 9, 15), fecha_fin=date(2026, 6, 15),
+        )
+        self.assertEqual(ca.fecha_inicio, date(2025, 9, 15))
+        self.assertEqual(ca.fecha_fin, date(2026, 6, 15))
+
+    def test_periodo_label_a_es_anio(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_a, anio=2025)
+        self.assertEqual(ca.periodo_label, '2025')
+
+    def test_periodo_label_b_es_rango_cruzado(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_b, anio=2025)
+        self.assertEqual(ca.periodo_label, '2025-2026')
+
+    def test_rango_usa_fechas_guardadas(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_b, anio=2025)
+        self.assertEqual(ca.rango, (date(2025, 8, 1), date(2026, 6, 30)))
+
+    def test_calendario_proxy_delega_al_colegio(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_b, anio=2025)
+        self.assertEqual(ca.calendario, Colegio.Calendario.B)
+
+    def test_str_usa_periodo_label(self):
+        ca = ColegioAnio.objects.create(colegio=self.col_b, anio=2025)
+        self.assertIn('2025-2026', str(ca))
 
 
 # ── Profesor ──────────────────────────────────────────────────

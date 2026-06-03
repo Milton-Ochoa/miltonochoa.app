@@ -38,7 +38,8 @@ class ColegioAnioInline(admin.TabularInline):
 
 @admin.register(Colegio)
 class ColegioAdmin(admin.ModelAdmin):
-    list_display  = ('nombre', 'ciudad', 'mapa_link')
+    list_display  = ('nombre', 'ciudad', 'calendario', 'mapa_link')
+    list_filter   = ('calendario',)
     search_fields = ('nombre', 'ciudad')
     ordering      = ('nombre',)
     inlines       = [ColegioAnioInline]
@@ -46,8 +47,8 @@ class ColegioAdmin(admin.ModelAdmin):
 
 @admin.register(ColegioAnio)
 class ColegioAnioAdmin(admin.ModelAdmin):
-    list_display  = ('colegio', 'anio', 'activo')
-    list_filter   = ('anio', 'activo')
+    list_display  = ('colegio', 'anio', 'periodo_label', 'fecha_inicio', 'fecha_fin', 'activo')
+    list_filter   = ('anio', 'activo', 'colegio__calendario')
     search_fields = ('colegio__nombre',)
     ordering      = ('colegio__nombre', '-anio')
 
