@@ -4,17 +4,19 @@ Aquí el staff de programación crea, lista, edita (mientras la solicitud sigue
 `ENVIADA`/`DEVUELTA`) y reenvía solicitudes. La gestión por parte de financiera
 (devolver/aprobar/pagar) vive en la app `financiera.viaticos`.
 """
+import os
 import re
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.areas import es_personal_programacion
 from programacion.configuracion.models import Colegio, Profesor
 from .forms import SolicitudViaticoForm
-from .models import GastoViatico, SolicitudViatico
+from .models import GastoViatico, SolicitudViatico, SoportePago
 
 # Superusuario o staff del área (grupo area:programacion). Mismo predicado que
 # el resto del área; los gestores de colegio/profesor NO pasan → no ven viáticos.
@@ -151,10 +153,29 @@ def editar_viatico(request, pk):
 def detalle_viatico(request, pk):
     """Vista de solo lectura: estado, motivo de devolución (si lo hay), gastos y total."""
     solicitud = get_object_or_404(
-        SolicitudViatico.objects.select_related('profesor', 'colegio').prefetch_related('gastos'),
+        SolicitudViatico.objects.select_related('profesor', 'colegio')
+        .prefetch_related('gastos', 'soportes', 'soportes__subido_por'),
         pk=pk,
     )
     return render(request, 'viaticos/detalle.html', {
         'solicitud': solicitud,
         'puede_editar': solicitud.estado in EDITABLES_PROGRAMACION,
     })
+
+
+def _responder_soporte(soporte, *, inline):
+    """Transmite el archivo del soporte vía el backend de storage (disco o S3).
+
+    Proxiar por Django (en vez de exponer URLs firmadas) deja el gate de
+    permiso en cada vista server-side y funciona idéntico en dev y prod. El
+    nombre de descarga es el nombre limpio que ya fijó `_soporte_upload_to`.
+    """
+    nombre = os.path.basename(soporte.archivo.name)
+    return FileResponse(soporte.archivo.open('rb'), as_attachment=not inline, filename=nombre)
+
+
+@solo_personal
+def soporte_descargar(request, soporte_id):
+    """Ver (``?inline=1``) o descargar el soporte de pago de un viático."""
+    soporte = get_object_or_404(SoportePago, pk=soporte_id)
+    return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')

@@ -1,18 +1,29 @@
 """
 Tests — app: viaticos
-Modelos: SolicitudViatico, GastoViatico
-Vistas (programación): lista/crear/editar/detalle de solicitudes.
+Modelos: SolicitudViatico, GastoViatico, SoportePago
+Vistas (programación): lista/crear/editar/detalle de solicitudes + descarga de soportes.
 """
+import shutil
+import tempfile
 from datetime import date
 
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
-from django.test import Client, TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client, TestCase, override_settings
 
 from core.areas import GRUPO_STAFF_PROGRAMACION
 from programacion.configuracion.models import Colegio, Profesor
 from usuarios.models import UsuarioColegio
-from programacion.viaticos.models import GastoViatico, SolicitudViatico
+from programacion.viaticos.models import GastoViatico, SolicitudViatico, SoportePago
+
+# Almacenamiento local en tmp para los tests de soportes: NUNCA tocar Supabase.
+# (default ya es FileSystemStorage en tests; aquí solo se aísla MEDIA_ROOT.)
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP_PROG = tempfile.mkdtemp()
 
 
 class SolicitudViaticoModelTest(TestCase):
@@ -21,7 +32,7 @@ class SolicitudViaticoModelTest(TestCase):
         self.user = User.objects.create_user('staff', 'staff@x.com', 'x')
         self.profesor = Profesor.objects.create(
             nombre='Juan', apellido='Pérez', documento='123',
-            cuenta_bancaria='999-888',
+            cuenta_bancaria='999-888', banco=Profesor.Banco.BANCOLOMBIA,
         )
         self.colegio = Colegio.objects.create(
             codigo='COL-1', nombre='Colegio Norte',
@@ -46,8 +57,23 @@ class SolicitudViaticoModelTest(TestCase):
         self.assertEqual(s.docente_nombre, 'Juan Pérez')
         self.assertEqual(s.docente_cedula, '123')
         self.assertEqual(s.docente_cuenta, '999-888')
+        self.assertEqual(s.docente_banco, 'Bancolombia')
         self.assertEqual(s.colegio_codigo, 'COL-1')
         self.assertEqual(s.colegio_nombre, 'Colegio Norte')
+
+    def test_snapshot_banco_se_actualiza_al_reaplicar(self):
+        """El banco es snapshot: editar reaplica desde la FK (cambia si cambió el maestro)."""
+        s = self._crear()
+        self.profesor.banco = Profesor.Banco.DAVIVIENDA
+        self.profesor.save()
+        s.aplicar_snapshot()  # lo que hace la vista al editar
+        self.assertEqual(s.docente_banco, 'Davivienda')
+
+    def test_snapshot_banco_vacio_si_profesor_sin_banco(self):
+        self.profesor.banco = None
+        self.profesor.save()
+        s = self._crear()
+        self.assertEqual(s.docente_banco, '')
 
     def test_estado_por_defecto_enviada(self):
         s = self._crear()
@@ -225,3 +251,59 @@ class ViaticosVistasTest(TestCase):
         r = self.client.get(f'/viaticos/{s.pk}/')
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Falta factura')
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_PROG, STORAGES=_STORAGE_LOCAL)
+class SoporteDescargaProgramacionTest(TestCase):
+    """Programación ve/descarga (solo lectura) el soporte de pago subido por financiera.
+    El archivo se sirve por una vista protegida (proxy), con el nombre limpio del upload_to."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.admin = User.objects.create_superuser('admin_s', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Juan', apellido='Pérez', documento='123', cuenta_bancaria='999-888',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='COL-1', nombre='Colegio Norte', departamento='Antioquia', ciudad='Medellín',
+        )
+        self.solicitud = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=date(2026, 6, 1), fecha_regreso=date(2026, 6, 3),
+            estado=SolicitudViatico.Estado.PAGADA, creado_por=self.admin,
+        )
+        self.solicitud.aplicar_snapshot()
+        self.solicitud.save()
+        self.soporte = SoportePago.objects.create(
+            solicitud=self.solicitud,
+            archivo=SimpleUploadedFile('comprobante.pdf', b'%PDF-1.4 datos', content_type='application/pdf'),
+            nombre_original='comprobante.pdf', subido_por=self.admin,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_PROG, ignore_errors=True)
+        super().tearDownClass()
+
+    def test_descarga_attachment_con_nombre_limpio(self):
+        self.client.login(username='admin_s', password='pass')
+        r = self.client.get(f'/viaticos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 200)
+        disp = r['Content-Disposition']
+        self.assertIn('attachment', disp)
+        # El nombre de descarga es el limpio del upload_to: viatico-<slug>-<fecha>.pdf
+        self.assertIn('viatico-juan-perez-2026-06-01.pdf', disp)
+
+    def test_ver_inline(self):
+        self.client.login(username='admin_s', password='pass')
+        r = self.client.get(f'/viaticos/soporte/{self.soporte.pk}/?inline=1')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('inline', r['Content-Disposition'])
+
+    def test_sin_permiso_redirige(self):
+        """Un gestor de colegio (sin acceso al área completa) no descarga el soporte."""
+        gestor = User.objects.create_user('gestor_s', password='pass')
+        UsuarioColegio.objects.create(user=gestor, colegio=self.colegio)
+        self.client.login(username='gestor_s', password='pass')
+        r = self.client.get(f'/viaticos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 302)

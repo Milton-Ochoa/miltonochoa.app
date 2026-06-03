@@ -7,14 +7,24 @@ refactor del chrome.
 Fase 4: gestión de viáticos (listar/devolver/aprobar/pagar/editar), el badge de
 pendientes y el flujo cruzado programación ↔ financiera.
 """
+import shutil
+import tempfile
 from datetime import date
 
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User, Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_PROGRAMACION
 from programacion.configuracion.models import Colegio, Profesor
-from programacion.viaticos.models import GastoViatico, SolicitudViatico
+from programacion.viaticos.models import GastoViatico, SolicitudViatico, SoportePago
+
+# Soportes en disco local aislado en tmp para los tests: NUNCA tocar Supabase.
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP_FIN = tempfile.mkdtemp()
 
 
 class FinancieraAccesoTest(TestCase):
@@ -296,3 +306,173 @@ class FlujoViaticosCruzadoTest(TestCase):
         # 5) Terminal: programación ya no puede editar
         r = self.prog.get(f'/viaticos/{s.pk}/editar/')
         self.assertEqual(r.status_code, 302)
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_FIN, STORAGES=_STORAGE_LOCAL)
+class FinancieraSoporteTest(TestCase):
+    """Fase 3/4: financiera sube/elimina/descarga el soporte de pago (solo en PAGADA)."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        self.admin = User.objects.create_superuser('fin_sop', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Ana', apellido='Gómez', documento='555', cuenta_bancaria='111-222',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='C-9', nombre='Colegio Sur', departamento='Valle', ciudad='Cali',
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_FIN, ignore_errors=True)
+        super().tearDownClass()
+
+    def _solicitud(self, estado=SolicitudViatico.Estado.PAGADA):
+        s = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=date(2026, 6, 1), fecha_regreso=date(2026, 6, 3),
+            estado=estado, creado_por=self.admin,
+        )
+        s.aplicar_snapshot()
+        s.save()
+        return s
+
+    def _pdf(self, nombre='soporte.pdf', size=None):
+        contenido = b'%PDF-1.4 ' + (b'x' * size if size else b'datos')
+        return SimpleUploadedFile(nombre, contenido, content_type='application/pdf')
+
+    def _login(self):
+        self.client.login(username='fin_sop', password='pass')
+
+    # ── Subir ───────────────────────────────────────────────
+    def test_subir_en_pagada_crea_soporte(self):
+        s = self._solicitud(SolicitudViatico.Estado.PAGADA)
+        self._login()
+        r = self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(s.soportes.count(), 1)
+        soporte = s.soportes.get()
+        self.assertEqual(soporte.subido_por, self.admin)
+        # Nombre limpio del upload_to (no el original).
+        self.assertIn('viatico-ana-gomez-2026-06-01', soporte.archivo.name)
+
+    def test_subir_en_estado_no_pagada_rechazado(self):
+        s = self._solicitud(SolicitudViatico.Estado.APROBADA)
+        self._login()
+        r = self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(s.soportes.count(), 0)
+
+    def test_subir_extension_invalida_rechazada(self):
+        s = self._solicitud()
+        self._login()
+        malo = SimpleUploadedFile('virus.exe', b'MZ', content_type='application/octet-stream')
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': malo})
+        self.assertEqual(s.soportes.count(), 0)
+
+    def test_subir_tamano_excedido_rechazado(self):
+        s = self._solicitud()
+        self._login()
+        grande = self._pdf(size=11 * 1024 * 1024)  # > 10 MB
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': grande})
+        self.assertEqual(s.soportes.count(), 0)
+
+    # ── Gate de área ────────────────────────────────────────
+    def test_usuario_programacion_no_sube(self):
+        """Un usuario solo-programación no puede subir soporte en financiera (gate)."""
+        s = self._solicitud()
+        grupo_prog, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        u = User.objects.create_user('solo_prog_s', password='pass')
+        u.groups.add(grupo_prog)
+        self.client.login(username='solo_prog_s', password='pass')
+        r = self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn('financiera.testserver', r['Location'])
+        self.assertEqual(s.soportes.count(), 0)
+
+    # ── Eliminar ────────────────────────────────────────────
+    def test_eliminar_soporte_borra_fila(self):
+        s = self._solicitud()
+        self._login()
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        soporte = s.soportes.get()
+        r = self.client.post(f'/viaticos/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(s.soportes.count(), 0)
+
+    # ── Descargar ───────────────────────────────────────────
+    def test_descargar_soporte_financiera(self):
+        s = self._solicitud()
+        self._login()
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        soporte = s.soportes.get()
+        r = self.client.get(f'/viaticos/soporte/{soporte.pk}/descargar/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('attachment', r['Content-Disposition'])
+        self.assertIn('viatico-ana-gomez-2026-06-01.pdf', r['Content-Disposition'])
+
+
+class FinancieraExportTest(TestCase):
+    """Fase 5: exportación a Excel con filtros de estado y rango de fecha de viaje."""
+
+    XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        self.admin = User.objects.create_superuser('fin_exp', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Ana', apellido='Gómez', documento='555', cuenta_bancaria='111-222',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='C-9', nombre='Colegio Sur', departamento='Valle', ciudad='Cali',
+        )
+
+    def _solicitud(self, estado, fecha_viaje=date(2026, 6, 1)):
+        s = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=fecha_viaje, fecha_regreso=fecha_viaje,
+            estado=estado, creado_por=self.admin,
+        )
+        s.aplicar_snapshot()
+        s.save()
+        GastoViatico.objects.create(solicitud=s, nombre='Bus', valor=10000, orden=0)
+        return s
+
+    def test_export_devuelve_xlsx(self):
+        self._solicitud(SolicitudViatico.Estado.APROBADA)
+        self.client.login(username='fin_exp', password='pass')
+        r = self.client.post('/viaticos/exportar/', {'estados': ['APROBADA']})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], self.XLSX)
+        self.assertIn('attachment', r['Content-Disposition'])
+        self.assertTrue(r.content)  # bytes del .xlsx
+
+    def test_export_get_no_permitido(self):
+        self.client.login(username='fin_exp', password='pass')
+        r = self.client.get('/viaticos/exportar/')
+        self.assertEqual(r.status_code, 405)  # require_POST
+
+    def test_export_default_solo_aprobada(self):
+        """Sin estados marcados, el default es APROBADA → solo esas filas (1 cabecera + 1 dato)."""
+        from openpyxl import load_workbook
+        from io import BytesIO
+        self._solicitud(SolicitudViatico.Estado.APROBADA)
+        self._solicitud(SolicitudViatico.Estado.ENVIADA)
+        self._solicitud(SolicitudViatico.Estado.PAGADA)
+        self.client.login(username='fin_exp', password='pass')
+        r = self.client.post('/viaticos/exportar/', {})  # sin 'estados'
+        wb = load_workbook(BytesIO(r.content))
+        ws = wb.active
+        self.assertEqual(ws.max_row, 2)  # cabecera + 1 fila (solo la APROBADA)
+
+    def test_export_filtra_por_rango_fecha_viaje(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        self._solicitud(SolicitudViatico.Estado.APROBADA, fecha_viaje=date(2026, 6, 1))
+        self._solicitud(SolicitudViatico.Estado.APROBADA, fecha_viaje=date(2026, 8, 1))
+        self.client.login(username='fin_exp', password='pass')
+        r = self.client.post('/viaticos/exportar/', {
+            'estados': ['APROBADA'], 'fecha_desde': '2026-07-01', 'fecha_hasta': '2026-09-01',
+        })
+        wb = load_workbook(BytesIO(r.content))
+        self.assertEqual(wb.active.max_row, 2)  # solo la de agosto

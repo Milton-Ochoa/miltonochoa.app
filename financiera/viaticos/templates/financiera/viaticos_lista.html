@@ -1,6 +1,12 @@
 {% extends 'base_financiera.html' %}
 {% block header_title %}Viáticos{% endblock %}
 
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarVia">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
 {% block content %}
 <style>
     .tabla-viaticos { table-layout: fixed; width: 100%; }
@@ -106,6 +112,59 @@
             <small class="text-muted">Mostrando <span id="contadorVisiblesVia">0</span> de {{ solicitudes|length }}</small>
             <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesVia"></ul></nav>
         </div>
+    </div>
+</div>
+
+<!-- Modal: exportar a Excel con filtros -->
+<div class="modal fade" id="modalExportarVia" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'fin_viaticos_exportar' %}">
+            {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar viáticos</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="fw-semibold mb-2">Estados a incluir</p>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="estados" value="ENVIADA" id="estEnviada">
+                            <label class="form-check-label" for="estEnviada">Enviada</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="estados" value="DEVUELTA" id="estDevuelta">
+                            <label class="form-check-label" for="estDevuelta">Devuelta</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="estados" value="APROBADA" id="estAprobada" checked>
+                            <label class="form-check-label" for="estAprobada">Aprobada</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="estados" value="PAGADA" id="estPagada">
+                            <label class="form-check-label" for="estPagada">Pagada</label>
+                        </div>
+                    </div>
+                    <p class="fw-semibold mb-2">Rango de fecha de viaje <span class="text-muted fw-normal">(opcional)</span></p>
+                    <div class="row g-2">
+                        <div class="col">
+                            <label class="form-label small mb-1" for="fechaDesde">Desde</label>
+                            <input type="date" class="form-control form-control-sm" name="fecha_desde" id="fechaDesde">
+                        </div>
+                        <div class="col">
+                            <label class="form-label small mb-1" for="fechaHasta">Hasta</label>
+                            <input type="date" class="form-control form-control-sm" name="fecha_hasta" id="fechaHasta">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-download me-1"></i> Descargar
+                    </button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 

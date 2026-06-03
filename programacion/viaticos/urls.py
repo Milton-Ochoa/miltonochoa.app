@@ -7,4 +7,5 @@ urlpatterns = [
     path('crear/',           views.crear_viatico,   name='viaticos_crear'),
     path('<int:pk>/',        views.detalle_viatico, name='viaticos_detalle'),
     path('<int:pk>/editar/', views.editar_viatico,  name='viaticos_editar'),
+    path('soporte/<int:soporte_id>/', views.soporte_descargar, name='viaticos_soporte_descargar'),
 ]
