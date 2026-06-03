@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path('',                            views.fin_home,             name='fin_home'),
     path('viaticos/',                   views.fin_viaticos_lista,   name='fin_viaticos_lista'),
+    path('viaticos/exportar/',          views.fin_viaticos_exportar, name='fin_viaticos_exportar'),
     path('viaticos/<int:pk>/',          views.fin_viaticos_detalle, name='fin_viaticos_detalle'),
     path('viaticos/<int:pk>/editar/',   views.fin_viaticos_editar,  name='fin_viaticos_editar'),
     path('viaticos/<int:pk>/devolver/', views.fin_viaticos_devolver, name='fin_viaticos_devolver'),
