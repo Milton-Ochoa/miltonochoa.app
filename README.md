@@ -424,6 +424,12 @@ La sesión se comparte en `.lvh.me`, así un solo login vale para todos los subd
 | `CACHE_BACKEND` | ❌ | `locmem` | `locmem` o `redis`. |
 | `REDIS_URL` | ⚠️ | `redis://127.0.0.1:6379/1` | Solo si `CACHE_BACKEND=redis`. |
 | `BACKUP_DIR` | ❌ | `backups/` | Directorio para backups (`BASE_DIR/backups`). |
+| `USE_SUPABASE_STORAGE` | ❌ | `False` | `True` en producción → soportes de pago en Supabase Storage (S3). Sin definir/`False` → disco local (`./media/`). |
+| `SUPABASE_BUCKET` | ⚠️ | — | Bucket privado (p. ej. `soportes-pago`). Obligatoria si `USE_SUPABASE_STORAGE=True`. |
+| `SUPABASE_S3_ENDPOINT` | ⚠️ | — | Endpoint S3: `https://<ref>.supabase.co/storage/v1/s3`. Obligatoria si storage en Supabase. |
+| `SUPABASE_S3_REGION` | ⚠️ | — | Región del bucket (p. ej. `us-east-1`). Obligatoria si storage en Supabase. |
+| `SUPABASE_S3_ACCESS_KEY` | ⚠️ | — | Access key S3 del bucket. Obligatoria si storage en Supabase. |
+| `SUPABASE_S3_SECRET_KEY` | ⚠️ | — | Secret key S3 del bucket. Obligatoria si storage en Supabase. |
 
 > 💡 Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin
 > tocar la config de producción.
