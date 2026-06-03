@@ -381,7 +381,7 @@ para darle tiempo al modal anterior de terminar la animación de cierre.
                 <div class="mb-3">
                     <label class="form-label fw-bold">Fecha</label>
                     <input type="date" id="crear_fecha" class="form-control form-control-sm"
-                           {% if sel_col %}min="{{ sel_col.anio }}-01-01" max="{{ sel_col.anio }}-12-31"{% endif %}>
+                           {% if sel_col %}min="{{ periodo_inicio|date:'Y-m-d' }}" max="{{ periodo_fin|date:'Y-m-d' }}"{% endif %}>
                 </div>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Grado</label>

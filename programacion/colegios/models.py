@@ -97,7 +97,8 @@ class Asignacion(models.Model):
     Las fechas se usan para determinar qué unidades son válidas en un día
     concreto, permitiendo que un grado cambie de libro a mitad de año.
     Si no se suministran fechas al guardar, el método save() las infiere
-    como el 1 de enero y 31 de diciembre del año del ColegioAnio.
+    como la ventana real del periodo del ColegioAnio (ColegioAnio.rango),
+    que respeta el calendario A (ene–dic) o B (ago→jun del año siguiente).
     """
     colegio      = models.ForeignKey(ColegioAnio, on_delete=models.CASCADE,
                                      related_name='asignaciones')
@@ -121,13 +122,18 @@ class Asignacion(models.Model):
 
     def save(self, *args, **kwargs):
         # Garantizar que siempre haya un rango de fechas válido.
-        # Usar el año del colegio evita asignaciones que se desborden al año siguiente.
+        # Usar la ventana real del periodo (rango) respeta el calendario A/B y
+        # evita asignaciones que se desborden fuera del periodo del colegio.
         if not self.fecha_inicio or not self.fecha_fin:
-            anio = self.colegio.anio if self.colegio_id else date.today().year
+            if self.colegio_id:
+                inicio, fin = self.colegio.rango
+            else:
+                anio = date.today().year
+                inicio, fin = date(anio, 1, 1), date(anio, 12, 31)
             if not self.fecha_inicio:
-                self.fecha_inicio = date(anio, 1, 1)
+                self.fecha_inicio = inicio
             if not self.fecha_fin:
-                self.fecha_fin = date(anio, 12, 31)
+                self.fecha_fin = fin
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -209,9 +215,11 @@ class Clase(models.Model):
                     'El bloque debe pertenecer al mismo colegio que la clase.'
                 )
         if self.fecha and self.colegio_id:
-            if self.fecha.year != self.colegio.anio:
+            inicio, fin = self.colegio.rango
+            if not (inicio <= self.fecha <= fin):
                 raise ValidationError(
-                    f'La fecha debe pertenecer al año {self.colegio.anio} del colegio.'
+                    f'La fecha debe pertenecer al periodo {self.colegio.periodo_label} '
+                    f'del colegio ({inicio:%d/%m/%Y}–{fin:%d/%m/%Y}).'
                 )
 
     def __str__(self):

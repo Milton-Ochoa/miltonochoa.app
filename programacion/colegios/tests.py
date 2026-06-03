@@ -201,6 +201,74 @@ class ClaseModelTest(TestCase):
         clase.clean()  # No debe lanzar excepción
 
 
+class ClaseCalendarioBTest(TestCase):
+    """Validación de fechas de clase para un colegio Calendario B (ago→jun)."""
+
+    def setUp(self):
+        col = Colegio.objects.create(
+            nombre='Col B', departamento='Santander', ciudad='BGA',
+            calendario=Colegio.Calendario.B,
+        )
+        # anio=2025 (ancla) → ventana ago-2025 … jun-2026
+        self.colegio = ColegioAnio.objects.create(colegio=col, anio=2025, activo=True)
+        self.grado = Grado.objects.create(nombre='11-1')
+        self.bloque = Bloque.objects.create(
+            colegio=self.colegio, grado=self.grado,
+            hora_inicio=time(8, 0), hora_fin=time(10, 0),
+        )
+
+    def test_rango_cruza_dos_anios(self):
+        self.assertEqual(self.colegio.rango, (date(2025, 8, 1), date(2026, 6, 30)))
+
+    def test_clean_acepta_fecha_del_primer_tramo(self):
+        # septiembre 2025 (ago–dic del año ancla)
+        Clase(colegio=self.colegio, bloque=self.bloque,
+              fecha=date(2025, 9, 15)).clean()
+
+    def test_clean_acepta_fecha_del_segundo_tramo(self):
+        # marzo 2026 (ene–jun del año+1)
+        Clase(colegio=self.colegio, bloque=self.bloque,
+              fecha=date(2026, 3, 15)).clean()
+
+    def test_clean_rechaza_fecha_antes_de_la_ventana(self):
+        from django.core.exceptions import ValidationError
+        # julio 2025, antes del inicio
+        with self.assertRaises(ValidationError):
+            Clase(colegio=self.colegio, bloque=self.bloque,
+                  fecha=date(2025, 7, 15)).clean()
+
+    def test_clean_rechaza_fecha_despues_de_la_ventana(self):
+        from django.core.exceptions import ValidationError
+        # julio 2026, después del fin
+        with self.assertRaises(ValidationError):
+            Clase(colegio=self.colegio, bloque=self.bloque,
+                  fecha=date(2026, 7, 1)).clean()
+
+    def test_cohortes_no_se_mezclan(self):
+        # Dos periodos del mismo colegio B: cada clase queda particionada por su FK.
+        sig = ColegioAnio.objects.create(
+            colegio=self.colegio.colegio, anio=2026, activo=True
+        )
+        bloque_sig = Bloque.objects.create(
+            colegio=sig, grado=self.grado,
+            hora_inicio=time(8, 0), hora_fin=time(10, 0),
+        )
+        c1 = Clase.objects.create(colegio=self.colegio, bloque=self.bloque,
+                                  fecha=date(2025, 9, 15))
+        c2 = Clase.objects.create(colegio=sig, bloque=bloque_sig,
+                                  fecha=date(2026, 9, 15))
+        self.assertEqual(list(Clase.objects.filter(colegio=self.colegio)), [c1])
+        self.assertEqual(list(Clase.objects.filter(colegio=sig)), [c2])
+
+    def test_asignacion_autocompleta_con_ventana_b(self):
+        libro = NombreLibro.objects.create(nombre='Saberes B')
+        asig = Asignacion.objects.create(
+            colegio=self.colegio, grado=self.grado, libro=libro
+        )
+        self.assertEqual(asig.fecha_inicio, date(2025, 8, 1))
+        self.assertEqual(asig.fecha_fin, date(2026, 6, 30))
+
+
 class ClaseParticularModelTest(TestCase):
 
     def setUp(self):
@@ -369,6 +437,43 @@ class ClonarConfiguracionTest(TestCase):
                               content_type='application/json')
         data = r.json()
         self.assertFalse(data['ok'])
+
+
+class ClonarColegioBTest(TestCase):
+    """El clon de un colegio Calendario B conserva la ventana ago→jun cruzada."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser('admin_clone_b', password='pass')
+        self.client.login(username='admin_clone_b', password='pass')
+        self.col_perm = Colegio.objects.create(
+            nombre='Col Origen B', departamento='Santander', ciudad='BGA',
+            calendario=Colegio.Calendario.B,
+        )
+        # anio=2025 → ventana ago-2025 … jun-2026
+        self.colegio = ColegioAnio.objects.create(
+            colegio=self.col_perm, anio=2025, activo=True
+        )
+        self.grado = Grado.objects.create(nombre='11-1')
+        self.libro = NombreLibro.objects.create(nombre='Saberes 11 B')
+        # Asignación con la ventana B explícita (la que pondría el save()).
+        Asignacion.objects.create(
+            colegio=self.colegio, grado=self.grado, libro=self.libro,
+            fecha_inicio=date(2025, 8, 1), fecha_fin=date(2026, 6, 30),
+        )
+
+    def test_clon_genera_ventana_b_siguiente(self):
+        r = self.client.post(f'/colegios/ajax/clonar/{self.colegio.id}/',
+                             content_type='application/json')
+        self.assertTrue(r.json()['ok'])
+        nuevo = ColegioAnio.objects.get(colegio=self.col_perm, anio=2026)
+        # El nuevo periodo cruza ago-2026 … jun-2027.
+        self.assertEqual(nuevo.rango, (date(2026, 8, 1), date(2027, 6, 30)))
+        asig = Asignacion.objects.filter(colegio=nuevo).first()
+        self.assertIsNotNone(asig)
+        # Las fechas explícitas se desplazan +1 año relativo (no colapsan al ancla).
+        self.assertEqual(asig.fecha_inicio, date(2026, 8, 1))
+        self.assertEqual(asig.fecha_fin, date(2027, 6, 30))
 
 
 class ConstruirStatsTest(TestCase):
