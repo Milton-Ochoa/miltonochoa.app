@@ -1,6 +1,12 @@
 {% extends 'base_financiera.html' %}
 {% block header_title %}Viáticos{% endblock %}
 
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarVia">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
 {% block content %}
 <style>
     .tabla-viaticos { table-layout: fixed; width: 100%; }
@@ -39,12 +45,6 @@
         {% endfor %}
     </div>
     {% endif %}
-
-    <div class="d-flex justify-content-end mb-3">
-        <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalExportarVia">
-            <i class="fas fa-file-excel me-1"></i> Exportar a Excel
-        </button>
-    </div>
 
     <div class="card shadow-sm">
         <div class="table-responsive">
