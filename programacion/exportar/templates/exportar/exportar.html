@@ -117,10 +117,10 @@
                     </div>
                     <div id="items-col">
                     {% for c in colegios %}
-                    <div class="form-check item-col" data-nombre="{{ c.nombre|lower }}">
+                    <div class="form-check item-col" data-nombre="{{ c.nombre|lower }} {{ c.periodo_label|lower }}">
                         <input class="form-check-input check-col" type="checkbox"
                                name="colegios_ids" value="{{ c.id }}" id="col_{{ c.id }}">
-                        <label class="form-check-label" for="col_{{ c.id }}">{{ c.nombre }}</label>
+                        <label class="form-check-label" for="col_{{ c.id }}">{{ c.nombre }} <span class="text-muted small">{{ c.periodo_label }}</span></label>
                     </div>
                     {% endfor %}
                     </div>

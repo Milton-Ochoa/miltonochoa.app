@@ -623,7 +623,12 @@ def _generar_excel_colegio(colegio, fecha_inicio, fecha_fin):
 
 
 def _parsear_fechas(fecha_inicio_str, fecha_fin_str):
-    """Parsea strings de fecha o devuelve defaults del año actual."""
+    """Parsea strings de fecha o devuelve defaults del año actual.
+
+    El default ene–dic del año actual es **a propósito** independiente del
+    Calendario A/B: la exportación es un filtro de rango libre que cruza varios
+    colegios a la vez, así que no hay una única ventana de periodo aplicable. El
+    usuario ajusta el rango a mano (p. ej. ago→jun para una cohorte B)."""
     anio = date.today().year
     try:
         fi = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date() if fecha_inicio_str else date(anio, 1, 1)
