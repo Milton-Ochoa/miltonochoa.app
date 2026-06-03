@@ -160,8 +160,13 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **8 sub-
 
 ### 🗂️ Catálogo modular
 
-- **Colegio ↔ Colegio-Año**: separa datos invariantes (nombre, ciudad…) de los anuales
-  (tarifa por hora, activo/inactivo) → historial sin duplicar registros.
+- **Colegio ↔ Colegio-Año**: separa datos invariantes (nombre, ciudad, **calendario A/B**…)
+  de los anuales (tarifa por hora, activo/inactivo, **ventana del periodo**) → historial
+  sin duplicar registros.
+- **Calendario A / B**: cada colegio funciona en año natural (**A**: ene–dic) o en un
+  periodo que cruza dos años (**B**: ago → jun siguiente, típico de colegios privados).
+  El cronograma, las validaciones de fecha y las etiquetas respetan la ventana real del
+  periodo, no el año calendario.
 - **Libros normales vs. material asignado**: dos categorías con flujos distintos.
 - **Asignaciones por rango de fechas**: un grado puede cambiar de libro a mitad de año sin
   perder consistencia.

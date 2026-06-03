@@ -10,6 +10,22 @@ def _anio_actual():
     return date.today().year
 
 
+def periodo_por_defecto(calendario, anio):
+    """Ventana (fecha_inicio, fecha_fin) por defecto de un periodo según su calendario.
+
+    - Calendario A (año natural): 1-ene a 31-dic de `anio`.
+    - Calendario B (hemisferio norte): 1-ago de `anio` a 30-jun de `anio+1`. El periodo
+      cruza dos años calendario; `anio` es el año de inicio (ancla del ColegioAnio).
+
+    Centralizado aquí para que vistas, formularios y la clonación de año calculen el
+    rango de la misma forma. El parámetro es el string del choice ('A'/'B'), no el
+    Colegio, para poder llamarlo desde migraciones sin instanciar el modelo.
+    """
+    if calendario == Colegio.Calendario.B:
+        return date(anio, 8, 1), date(anio + 1, 6, 30)
+    return date(anio, 1, 1), date(anio, 12, 31)
+
+
 # Validación de color hex a nivel de módulo para reutilizarla en modelo y vistas.
 # El color se usa en inline styles de templates; sin validación un valor arbitrario
 # podría romper el CSS o introducir XSS vía expression() en IE antiguo.
@@ -111,7 +127,15 @@ class Colegio(models.Model):
     """Institución educativa. Datos invariantes que no cambian entre años.
 
     Los datos que varían por año (valor_hora, activo) viven en ColegioAnio.
+
+    El `calendario` (A/B) define cómo se delimita el periodo académico de cada
+    ColegioAnio: A = año natural (ene–dic); B = ago→jun del año siguiente. Es una
+    propiedad de la institución, no del año, por eso vive aquí y no en ColegioAnio.
     """
+
+    class Calendario(models.TextChoices):
+        A = 'A', 'Calendario A (año natural: ene–dic)'
+        B = 'B', 'Calendario B (ago–jun del año siguiente)'
 
     codigo       = models.CharField(max_length=50, blank=True, null=True,
                                     verbose_name="Código Interno")
@@ -123,6 +147,8 @@ class Colegio(models.Model):
                                     verbose_name="Dirección")
     observacion  = models.TextField(blank=True, null=True, verbose_name="Observación")
     mapa_link    = models.URLField(blank=True, null=True, verbose_name="Link de Maps")
+    calendario   = models.CharField(max_length=1, choices=Calendario.choices,
+                                    default=Calendario.A, verbose_name="Calendario")
 
     class Meta:
         db_table            = 'prog_colegios'
@@ -158,6 +184,11 @@ class ColegioAnio(models.Model):
         verbose_name="Valor por Hora (COP)",
         help_text="Valor en pesos colombianos que se paga por hora de clase en este colegio/año",
     )
+    # Ventana real del periodo académico. Se autocalcula en save() según el calendario
+    # del Colegio (ver periodo_por_defecto); editable para ajustes finos por colegio.
+    # null=True para permitir el backfill por migración y que save() las complete.
+    fecha_inicio = models.DateField(null=True, blank=True, verbose_name="Inicio del periodo")
+    fecha_fin    = models.DateField(null=True, blank=True, verbose_name="Fin del periodo")
 
     class Meta:
         db_table            = 'prog_colegio_anios'
@@ -200,8 +231,43 @@ class ColegioAnio(models.Model):
     def mapa_link(self):
         return self.colegio.mapa_link
 
+    @property
+    def calendario(self):
+        return self.colegio.calendario
+
+    @property
+    def periodo_label(self):
+        """Etiqueta del periodo para selectores y títulos.
+
+        A → "2025"; B → "2025-2026" (rango cruzado, inequívoco frente a un A 2025)."""
+        if self.colegio.calendario == Colegio.Calendario.B:
+            return f"{self.anio}-{self.anio + 1}"
+        return str(self.anio)
+
+    @property
+    def rango(self):
+        """Ventana (inicio, fin) efectiva del periodo.
+
+        Usa las fechas guardadas; si faltan (registro a medio migrar), las calcula
+        desde el calendario. Fuente única para validar clases, construir la matriz y
+        fijar defaults de asignaciones."""
+        if self.fecha_inicio and self.fecha_fin:
+            return self.fecha_inicio, self.fecha_fin
+        return periodo_por_defecto(self.colegio.calendario, self.anio)
+
+    def save(self, *args, **kwargs):
+        # Completar la ventana del periodo cuando no se suministra (espejo de
+        # Asignacion.save()). Requiere el colegio para conocer el calendario.
+        if (not self.fecha_inicio or not self.fecha_fin) and self.colegio_id:
+            inicio, fin = periodo_por_defecto(self.colegio.calendario, self.anio)
+            if not self.fecha_inicio:
+                self.fecha_inicio = inicio
+            if not self.fecha_fin:
+                self.fecha_fin = fin
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"{self.colegio.nombre} ({self.anio})"
+        return f"{self.colegio.nombre} ({self.periodo_label})"
 
 
 class Profesor(models.Model):

@@ -3,13 +3,17 @@
     <label class="fw-bold small">Código</label>
     {{ form.codigo }}
   </div>
-  <div class="col-md-5">
+  <div class="col-md-4">
     <label class="fw-bold small">Nombre <span class="text-danger">*</span></label>
     {{ form.nombre }}
   </div>
-  <div class="col-md-4">
+  <div class="col-md-2">
     <label class="fw-bold small">Año inicial <span class="text-danger">*</span></label>
     <input type="number" name="anio" class="form-control" min="2020" max="2100" value="{{ anio_actual }}" required>
+  </div>
+  <div class="col-md-3">
+    <label class="fw-bold small">Calendario <span class="text-danger">*</span></label>
+    {{ form.calendario }}
   </div>
   <div class="col-md-6">
     <label class="fw-bold small">Departamento <span class="text-danger">*</span></label>

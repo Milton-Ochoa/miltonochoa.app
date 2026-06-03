@@ -84,6 +84,11 @@
                         <td><span class="badge bg-secondary">{{ c.codigo|default:"—" }}</span></td>
                         <td>
                             <strong>{{ c.nombre }}</strong>
+                            {% if c.calendario == 'B' %}
+                                <span class="badge bg-info text-dark ms-1" title="Calendario B (ago–jun del año siguiente)">Cal B</span>
+                            {% else %}
+                                <span class="badge bg-light text-muted ms-1" title="Calendario A (año natural: ene–dic)">Cal A</span>
+                            {% endif %}
                             {% if c.observacion %}
                                 <i class="fas fa-info-circle text-muted ms-1" title="{{ c.observacion }}"></i>
                             {% endif %}
@@ -100,9 +105,9 @@
                         <td>
                             {% for ca in c.todos_anios %}
                                 {% if ca.activo %}
-                                    <span class="badge bg-success">{{ ca.anio }}</span>
+                                    <span class="badge bg-success">{{ ca.periodo_label }}</span>
                                 {% else %}
-                                    <span class="badge bg-secondary">{{ ca.anio }}</span>
+                                    <span class="badge bg-secondary">{{ ca.periodo_label }}</span>
                                 {% endif %}
                             {% empty %}
                                 <span class="text-muted small">—</span>
@@ -118,8 +123,8 @@
                         <td class="text-center text-nowrap">
                             {% if c.ultimo_anio_activo %}
                             <button class="btn btn-sm btn-outline-primary py-0 px-2"
-                                    title="Configurar bloques y libros ({{ c.ultimo_anio_activo.anio }})"
-                                    onclick="abrirConfiguracion({{ c.ultimo_anio_activo.id }}, '{{ c.nombre|escapejs }} ({{ c.ultimo_anio_activo.anio }})')">
+                                    title="Configurar bloques y libros ({{ c.ultimo_anio_activo.periodo_label }})"
+                                    onclick="abrirConfiguracion({{ c.ultimo_anio_activo.id }}, '{{ c.nombre|escapejs }} ({{ c.ultimo_anio_activo.periodo_label }})')">
                                 <i class="fas fa-cogs"></i>
                             </button>
                             {% endif %}
@@ -141,7 +146,8 @@
                                       '{{ c.ciudad|escapejs }}',
                                       '{{ c.direccion|default:''|escapejs }}',
                                       '{{ c.observacion|default:''|escapejs }}',
-                                      '{{ c.mapa_link|default:''|escapejs }}'
+                                      '{{ c.mapa_link|default:''|escapejs }}',
+                                      '{{ c.calendario|escapejs }}'
                                     )">
                                 <i class="fas fa-edit"></i>
                             </button>
@@ -205,9 +211,17 @@
             <label class="fw-bold small">Código</label>
             <input type="text" name="codigo" id="edit_codigo" class="form-control">
           </div>
-          <div class="col-md-8">
+          <div class="col-md-5">
             <label class="fw-bold small">Nombre <span class="text-danger">*</span></label>
             <input type="text" name="nombre" id="edit_nombre" class="form-control" required>
+          </div>
+          <div class="col-md-3">
+            <label class="fw-bold small">Calendario <span class="text-danger">*</span></label>
+            <select name="calendario" id="edit_calendario" class="form-select" required>
+              {% for val, label in form.fields.calendario.choices %}
+                <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="col-md-6">
             <label class="fw-bold small">Departamento <span class="text-danger">*</span></label>
@@ -399,13 +413,14 @@ function abrirConfiguracion(id, nombre) {
   new bootstrap.Modal(document.getElementById('modalConfigColegio')).show();
 }
 
-function abrirEditar(id, nombre, codigo, departamento, ciudad, direccion, observacion, mapa) {
+function abrirEditar(id, nombre, codigo, departamento, ciudad, direccion, observacion, mapa, calendario) {
   document.getElementById('edit_id').value          = id;
   document.getElementById('edit_nombre').value      = nombre;
   document.getElementById('edit_codigo').value      = codigo;
   document.getElementById('edit_direccion').value   = direccion;
   document.getElementById('edit_observacion').value = observacion;
   document.getElementById('edit_mapa').value        = mapa;
+  document.getElementById('edit_calendario').value  = calendario;
 
   cargarCiudadesColegio('#edit_departamento', '#edit_ciudad', departamento, ciudad);
   new bootstrap.Modal(document.getElementById('modalEditarColegio')).show();
@@ -433,9 +448,10 @@ function abrirGestionAnios(btn) {
       const row = document.createElement('div');
       row.className = 'd-flex justify-content-between align-items-center py-2 border-bottom';
 
+      const etiqueta = ca.periodo_label || ca.anio;
       const badge = ca.activo
-        ? `<span class="badge bg-success fs-6">${ca.anio}</span> <span class="text-success small ms-1">Activo</span>`
-        : `<span class="badge bg-secondary fs-6">${ca.anio}</span> <span class="text-muted small ms-1">Inactivo</span>`;
+        ? `<span class="badge bg-success fs-6">${etiqueta}</span> <span class="text-success small ms-1">Activo</span>`
+        : `<span class="badge bg-secondary fs-6">${etiqueta}</span> <span class="text-muted small ms-1">Inactivo</span>`;
 
       const toggleBtn = ca.activo ? 'Desactivar' : 'Activar';
       const toggleCls = ca.activo ? 'btn-outline-danger' : 'btn-outline-success';
@@ -453,7 +469,7 @@ function abrirGestionAnios(btn) {
                   data-id="${ca.id}" data-anio="${ca.anio}">
             <i class="fas fa-copy"></i>
           </button>
-          <button class="btn btn-sm btn-outline-primary js-configurar" title="Configurar ${ca.anio}"
+          <button class="btn btn-sm btn-outline-primary js-configurar" title="Configurar ${etiqueta}"
                   data-id="${ca.id}" data-anio="${ca.anio}">
             <i class="fas fa-cogs"></i>
           </button>
@@ -466,7 +482,7 @@ function abrirGestionAnios(btn) {
       });
       row.querySelector('.js-configurar').addEventListener('click', () => {
         bootstrap.Modal.getInstance(document.getElementById('modalGestionAnios')).hide();
-        abrirConfiguracion(ca.id, `${nombre} (${ca.anio})`);
+        abrirConfiguracion(ca.id, `${nombre} (${etiqueta})`);
       });
 
       lista.appendChild(row);

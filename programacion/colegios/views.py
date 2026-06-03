@@ -276,14 +276,16 @@ def _guardar_clase(request, sel_col):
     bloque_id   = request.POST.get('bloque_id')
     fecha_clase = request.POST.get('fecha_clase')
 
-    # Validar que la fecha pertenezca al año del colegio
+    # Validar que la fecha pertenezca a la ventana real del periodo (calendario A/B)
     if fecha_clase:
         try:
             fecha_obj = datetime.strptime(fecha_clase, '%Y-%m-%d').date()
-            if fecha_obj.year != sel_col.anio:
+            inicio, fin = sel_col.rango
+            if not (inicio <= fecha_obj <= fin):
                 messages.error(
                     request,
-                    f'La fecha {fecha_clase} no corresponde al año {sel_col.anio} del colegio.'
+                    f'La fecha {fecha_clase} no corresponde al periodo '
+                    f'{sel_col.periodo_label} del colegio.'
                 )
                 return
         except ValueError:
@@ -517,8 +519,9 @@ def ajax_guardar_clase(request, colegio_id):
     if fecha_clase:
         try:
             fecha_obj = datetime.strptime(fecha_clase, '%Y-%m-%d').date()
-            if fecha_obj.year != sel_col.anio:
-                err = f'Fecha fuera del año {sel_col.anio}'
+            inicio, fin = sel_col.rango
+            if not (inicio <= fecha_obj <= fin):
+                err = f'Fecha fuera del periodo {sel_col.periodo_label}'
                 if is_htmx:
                     resp = HttpResponse(status=400)
                     resp['HX-Trigger'] = json.dumps({'showToast': {'msg': err, 'level': 'danger'}})
@@ -1029,9 +1032,12 @@ def dashboard_colegios(request):
         # json_script, que escapa <, >, & y </script> (evita XSS por nombres editables).
         ctx['profesores_por_materia'] = dict(_prof_mat_map)
 
-        # Construir tabla: solo fechas que tienen clases
-        inicio = date(sel_col.anio, 1, 1)
-        fin    = date(sel_col.anio, 12, 31)
+        # Construir tabla: solo fechas que tienen clases.
+        # La ventana del periodo (rango) respeta el calendario A/B del colegio.
+        inicio, fin = sel_col.rango
+        # Expuestos al template para acotar el datepicker del modal "Crear clase".
+        ctx['periodo_inicio'] = inicio
+        ctx['periodo_fin']    = fin
         bloques_raw, bloques_agrupados = _construir_bloques_agrupados(sel_col)
         ctx['bloques_agrupados'] = bloques_agrupados
         _ck_matriz = _matriz_cache_key(sel_col.id, anio_sel)
@@ -1126,8 +1132,7 @@ def ajax_panel_tabla(request, colegio_id):
     sel_col = get_object_or_404(ColegioAnio, id=colegio_id)
     cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
 
-    inicio = date(sel_col.anio, 1, 1)
-    fin    = date(sel_col.anio, 12, 31)
+    inicio, fin = sel_col.rango
     bloques_raw, bloques_agrupados = _construir_bloques_agrupados(sel_col)
     matriz = _construir_matriz(sel_col, bloques_raw, inicio, fin)
     cache.set(_matriz_cache_key(sel_col.id, sel_col.anio), matriz, _MATRIZ_CACHE_TTL)
@@ -1362,10 +1367,16 @@ def ajax_clonar_colegio(request, colegio_id):
                     hora_fin    = b.hora_fin,
                 )
 
-            # Copiar asignaciones con fechas del nuevo año
+            # Copiar asignaciones con fechas del nuevo periodo.
+            # Los defaults usan la ventana real (nuevo.rango), que respeta el
+            # calendario A/B. Las fechas explícitas se desplazan por años RELATIVOS
+            # (delta), no al año ancla: así un periodo B que cruza dos años calendario
+            # (fin en jun del año+1) conserva su cruce en vez de colapsar al ancla.
+            delta = nuevo_anio - origen.anio
+            rango_inicio, rango_fin = nuevo.rango
             for a in Asignacion.objects.filter(colegio=origen).select_related('grado', 'libro'):
-                fi = _shift_year(a.fecha_inicio, nuevo_anio) if a.fecha_inicio else date(nuevo_anio, 1, 1)
-                ff = _shift_year(a.fecha_fin, nuevo_anio) if a.fecha_fin else date(nuevo_anio, 12, 31)
+                fi = _shift_year(a.fecha_inicio, a.fecha_inicio.year + delta) if a.fecha_inicio else rango_inicio
+                ff = _shift_year(a.fecha_fin, a.fecha_fin.year + delta) if a.fecha_fin else rango_fin
                 Asignacion.objects.create(
                     colegio      = nuevo,
                     grado        = a.grado,

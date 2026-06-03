@@ -88,9 +88,14 @@
     {% endcomment %}
     {% if sel_col %}
     <div class="d-flex align-items-center rounded-top bg-dark px-3 py-2" style="border: 1px solid #dee2e6; border-bottom: none;">
-        {% if request.user.is_staff and not usuario_bloqueado %}
-        <div style="width: 120px;"></div>
-        {% endif %}
+        {# Indicador de calendario del periodo seleccionado, a la izquierda del cronograma. #}
+        <div class="d-flex align-items-center" style="min-width: 140px;">
+            {% if sel_col.calendario == 'B' %}
+            <span class="badge bg-info text-dark" title="Calendario B (ago–jun del año siguiente)">Cal B · {{ sel_col.periodo_label }}</span>
+            {% else %}
+            <span class="badge bg-light text-muted" title="Calendario A (año natural: ene–dic)">Cal A · {{ sel_col.periodo_label }}</span>
+            {% endif %}
+        </div>
         <div class="mx-auto" style="width: 450px;">
             {% if usuario_bloqueado %}
             <div class="text-white text-center fw-bold"><i class="fas fa-school me-1"></i> {{ sel_col }}</div>
@@ -98,16 +103,19 @@
             <select class="form-select form-select-sm select2-busqueda" onchange="if(this.value) window.location.href='?id_col=' + this.value + '&anio={{ anio_sel }}'">
                 <option value="">Buscar colegio...</option>
                 {% for c in colegios %}
-                <option value="{{ c.id }}" {% if sel_col and sel_col.id == c.id %}selected{% endif %}>{{ c.nombre }}</option>
+                <option value="{{ c.id }}" {% if sel_col and sel_col.id == c.id %}selected{% endif %}>{% if c.codigo %}{{ c.codigo }} - {% endif %}{{ c.nombre }}</option>
                 {% endfor %}
             </select>
             {% endif %}
         </div>
-        {% if request.user.is_staff and not usuario_bloqueado %}
-        <button type="button" class="btn btn-success btn-sm ms-3" onclick="abrirModalCrear()">
-            <i class="fas fa-plus me-1"></i> Crear clase
-        </button>
-        {% endif %}
+        {# Contrapeso de 140px (espejo del indicador) para que el buscador quede centrado. #}
+        <div class="d-flex justify-content-end" style="min-width: 140px;">
+            {% if request.user.is_staff and not usuario_bloqueado %}
+            <button type="button" class="btn btn-success btn-sm" onclick="abrirModalCrear()">
+                <i class="fas fa-plus me-1"></i> Crear clase
+            </button>
+            {% endif %}
+        </div>
     </div>
     <div id="panel-tabla">
         {% include 'colegios/_partials/_panel_tabla.html' %}
@@ -153,7 +161,7 @@
             <select class="form-select select2-busqueda" onchange="if(this.value) window.location.href='?id_col=' + this.value + '&anio={{ anio_sel }}'">
                 <option value="">Buscar colegio...</option>
                 {% for c in colegios %}
-                <option value="{{ c.id }}">{{ c.nombre }}</option>
+                <option value="{{ c.id }}">{% if c.codigo %}{{ c.codigo }} - {% endif %}{{ c.nombre }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -381,7 +389,7 @@ para darle tiempo al modal anterior de terminar la animación de cierre.
                 <div class="mb-3">
                     <label class="form-label fw-bold">Fecha</label>
                     <input type="date" id="crear_fecha" class="form-control form-control-sm"
-                           {% if sel_col %}min="{{ sel_col.anio }}-01-01" max="{{ sel_col.anio }}-12-31"{% endif %}>
+                           {% if sel_col %}min="{{ periodo_inicio|date:'Y-m-d' }}" max="{{ periodo_fin|date:'Y-m-d' }}"{% endif %}>
                 </div>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Grado</label>

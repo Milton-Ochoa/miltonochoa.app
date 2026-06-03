@@ -10,7 +10,8 @@ import re
 # de vista antes de llegar al model.full_clean(), dando error AJAX inmediato.
 _HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$')
 
-from .models import NombreLibro, Materia, Unidad, Colegio, ColegioAnio, Profesor
+from .models import (NombreLibro, Materia, Unidad, Colegio, ColegioAnio,
+                     Profesor, periodo_por_defecto)
 from .forms import ColegioForm, ProfesorForm
 from .colombia_geo import DEPARTAMENTOS, DEPARTAMENTOS_CIUDADES, ciudades_de
 from usuarios.ratelimit import rate_limit
@@ -319,9 +320,23 @@ def configuracion_colegios(request):
 
         if accion == 'edit':
             col  = get_object_or_404(Colegio, id=request.POST.get('colegio_id'))
+            calendario_previo = col.calendario
             form = ColegioForm(request.POST, instance=col)
             if form.is_valid():
-                form.save()
+                col = form.save()
+                # Si cambió el calendario (A↔B), la ventana ene–dic vs ago–jun de cada
+                # periodo deja de ser válida. Recalculamos fecha_inicio/fecha_fin de los
+                # ColegioAnio del colegio que NO tengan clases (mover la ventana de un
+                # periodo con clases podría dejar clases fuera de rango). Hoy no hay
+                # clases, así que recomputa todos; el guard protege a futuro.
+                if col.calendario != calendario_previo:
+                    from programacion.colegios.models import Clase
+                    for ca in col.anios.all():
+                        if Clase.objects.filter(colegio=ca).exists():
+                            continue
+                        ca.fecha_inicio, ca.fecha_fin = periodo_por_defecto(
+                            col.calendario, ca.anio)
+                        ca.save(update_fields=['fecha_inicio', 'fecha_fin'])
 
         elif accion == 'toggle_activo':
             ca = get_object_or_404(ColegioAnio, id=request.POST.get('colegio_anio_id'))
@@ -375,7 +390,8 @@ def configuracion_colegios(request):
         c.anios_activos = [ca for ca in todos if ca.activo]
         c.ultimo_anio_activo = next((ca for ca in todos if ca.activo), None)
         c.anios_json = json.dumps([
-            {'id': ca.id, 'anio': ca.anio, 'activo': ca.activo} for ca in todos
+            {'id': ca.id, 'anio': ca.anio, 'activo': ca.activo,
+             'periodo_label': ca.periodo_label} for ca in todos
         ])
 
     # Valores únicos para los filtros Select2
