@@ -4,6 +4,8 @@ __pycache__/
 .env
 .env.dev-api
 _tmp_programacion/
+media/
+staticfiles/
 logs/
 backups/
 .claude

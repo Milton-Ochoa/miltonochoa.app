@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_spectacular',
     'django_filters',
+    'storages',
     'core',
     'programacion.configuracion',
     'programacion.colegios',
@@ -250,7 +251,41 @@ STATIC_URL = 'static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# ─────────────────────────────────────────────────────────────
+# ARCHIVOS SUBIDOS (MEDIA) Y ALMACENAMIENTO
+# ─────────────────────────────────────────────────────────────
+# Soportes de pago de viáticos: disco local en dev, Supabase Storage (S3) en prod.
+# Django 5.2 prohíbe mezclar STORAGES con STATICFILES_STORAGE/DEFAULT_FILE_STORAGE,
+# así que static y default conviven aquí dentro de STORAGES.
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+USE_SUPABASE_STORAGE = os.environ.get('USE_SUPABASE_STORAGE', 'False') == 'True'
+
+STORAGES = {
+    'default': (
+        {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+            'OPTIONS': {
+                'bucket_name':       os.environ['SUPABASE_BUCKET'],
+                'endpoint_url':      os.environ['SUPABASE_S3_ENDPOINT'],
+                'region_name':       os.environ['SUPABASE_S3_REGION'],
+                'access_key':        os.environ['SUPABASE_S3_ACCESS_KEY'],
+                'secret_key':        os.environ['SUPABASE_S3_SECRET_KEY'],
+                'addressing_style':  'path',   # Supabase exige path-style
+                'default_acl':       None,     # bucket privado
+                'querystring_auth':  True,
+                'querystring_expire': 600,
+                'file_overwrite':    False,    # colisiones → sufijo automático
+            },
+        }
+        if USE_SUPABASE_STORAGE else
+        {'BACKEND': 'django.core.files.storage.FileSystemStorage'}
+    ),
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -314,5 +349,12 @@ if 'test' in sys.argv:
     # Sin dominio de cookie en tests: el Client envía la sesión a cualquier host.
     SESSION_COOKIE_DOMAIN = None
     CSRF_COOKIE_DOMAIN = None
+    # Estáticos sin manifest en tests: el backend de WhiteNoise (CompressedManifest)
+    # exige un staticfiles.json de collectstatic que no existe en el entorno de
+    # tests, y haría fallar todo render con {% static %}. El backend plano replica
+    # el comportamiento previo (cuando STATICFILES_STORAGE era inerte en Django 5.2).
+    STORAGES['staticfiles'] = {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    }
 
 TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'
