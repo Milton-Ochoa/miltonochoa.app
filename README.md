@@ -72,12 +72,14 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 | Área | Subdominio | Estado | Qué hace |
 |------|------------|:------:|----------|
 | 🏛️ **Apex** | `miltonochoa.app` | ✅ Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
-| 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos y API REST. |
+| 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos, viáticos y API REST. |
+| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio + gestión de solicitudes de viáticos (devolver / aprobar / pagar / editar, con badge de pendientes). Acceso por grupo `area:financiera`. |
 | 🚚 **Logística** | `logistica.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
-| 💰 **Financiera** | `financiera.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
-Hoy la **única área implementada** es [Programación](#-área-programación). `logistica/` y
-`financiera/` son paquetes Python vacíos listos para crecer con el mismo patrón.
+**Programación** y **Financiera** comparten el mismo *chrome* (sidebar, header, footer,
+estilos) definido en `templates/base_chrome.html`; cada área solo aporta su menú y títulos
+(`templates/base.html`, `templates/base_financiera.html`). `logistica/` sigue siendo un
+paquete Python vacío listo para crecer con el mismo patrón.
 
 ---
 
@@ -254,7 +256,7 @@ AAMO/
 ├── 👥 usuarios/              # GLOBAL: login único, perfiles, middleware de acceso, rate-limit
 │
 ├── 📚 programacion/          # ÁREA programación (servida en programacion.miltonochoa.app)
-│   ├── urls.py               #   router del área (agrupa las 8 sub-apps en la raíz /)
+│   ├── urls.py               #   router del área (agrupa las sub-apps en la raíz /)
 │   ├── 🗂️  configuracion/     #   Catálogos: Materia, Libro, Unidad, Colegio, ColegioAnio, Profesor
 │   ├── 🏫 colegios/          #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
 │   ├── 👨‍🏫 profesores/         #   Vista de horario propio del profesor
@@ -262,13 +264,18 @@ AAMO/
 │   ├── 📝 informes/          #   Informes pedagógicos por sesión
 │   ├── 📊 exportar/          #   Generación de Excel + modelo PagoRealizado
 │   ├── 📋 pendientes/        #   Tablero Kanban (home del área)
+│   ├── ✈️  viaticos/          #   Solicitudes de viáticos (SolicitudViatico, GastoViatico)
 │   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
 │
+├── 💰 financiera/            # ÁREA financiera (servida en financiera.miltonochoa.app)
+│   ├── urls.py               #   router del área (raíz /)
+│   └── 💵 viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
+│                             #   (sin modelos: importa los de programacion.viaticos)
 ├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
-├── 💰 financiera/            # PLACEHOLDER de área futura (solo __init__.py + README)
 │
-├── 🎨 templates/             # Globales: base.html (área), base_apex.html (apex/lobby),
-│                             #   home, 404, 500, login, seleccion_area, panel_admin, sw.js
+├── 🎨 templates/             # Globales: base_chrome.html (chrome compartido), base.html
+│                             #   (menú programación), base_financiera.html (menú financiera),
+│                             #   base_apex.html (apex/lobby), home, 404, 500, login, sw.js
 ├── 📜 logs/                  # Rotating file handler (5MB × 5 backups, gitignored)
 ├── 💾 backups/               # AAMO_export.xlsx (respaldo de BD)
 │

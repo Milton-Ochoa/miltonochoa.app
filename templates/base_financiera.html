@@ -1,0 +1,27 @@
+{% extends 'base_chrome.html' %}
+
+{% comment %}
+   Área FINANCIERA: mismo chrome que programación (base_chrome.html); solo cambia
+   el menú lateral y los títulos. El menú es gated por `request.es_personal_financiera`
+   (lo fija usuarios.middleware en peticiones del subdominio financiera).
+{% endcomment %}
+
+{% block doc_title %}Financiera AAMO{% endblock %}
+{% block brand_title %}Financiera AAMO{% endblock %}
+
+{% block sidebar_menu %}
+        {% if request.es_personal_financiera %}
+        {# ── Inicio ── #}
+        <a href="{% url 'fin_home' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_home' %}active{% endif %}">
+            <i class="fas fa-home icon-main"></i> Inicio
+        </a>
+
+        {# ── Viáticos ── (badge = solicitudes ENVIADA, vía context processor viaticos_pendientes) #}
+        <a href="{% url 'fin_viaticos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}active{% endif %}">
+            <i class="fas fa-plane-departure icon-main text-warning"></i> Viáticos
+            {% if viaticos_pendientes_count %}
+            <span class="badge bg-danger nav-badge">{{ viaticos_pendientes_count }}</span>
+            {% endif %}
+        </a>
+        {% endif %}
+{% endblock %}

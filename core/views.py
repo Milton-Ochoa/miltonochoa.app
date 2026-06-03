@@ -67,9 +67,15 @@ def panel_admin(request):
         .filter(groups__name='area:programacion')
         .order_by('username')
     )
+    usuarios_etiqueta_financiera = (
+        User.objects
+        .filter(groups__name='area:financiera')
+        .order_by('username')
+    )
     return render(request, 'core/panel_admin.html', {
         'areas': areas_ctx,
         'usuarios_etiqueta': usuarios_etiqueta,
+        'usuarios_etiqueta_financiera': usuarios_etiqueta_financiera,
     })
 
 

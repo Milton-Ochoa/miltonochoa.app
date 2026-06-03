@@ -1,0 +1,139 @@
+{% extends 'base_financiera.html' %}
+{% block header_title %}Viáticos #{{ solicitud.pk }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 900px;">
+
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 text-secondary fw-bold">
+            <i class="fas fa-receipt me-1"></i> Solicitud #{{ solicitud.pk }}
+            {% if solicitud.estado == 'ENVIADA' %}<span class="badge bg-info text-dark ms-2">Enviada</span>
+            {% elif solicitud.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark ms-2">Devuelta</span>
+            {% elif solicitud.estado == 'APROBADA' %}<span class="badge bg-primary ms-2">Aprobada</span>
+            {% elif solicitud.estado == 'PAGADA' %}<span class="badge bg-success ms-2">Pagada</span>
+            {% endif %}
+        </h5>
+        <div class="d-flex gap-2">
+            <a href="{% url 'fin_viaticos_lista' %}" class="btn btn-outline-secondary btn-sm">Volver</a>
+            {% if puede_editar %}
+            <a href="{% url 'fin_viaticos_editar' solicitud.pk %}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-pen me-1"></i> Editar
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if solicitud.estado == 'DEVUELTA' and solicitud.motivo_devolucion %}
+    <div class="alert alert-warning">
+        <i class="fas fa-undo me-1"></i> <strong>Devuelta a programación:</strong>
+        {{ solicitud.motivo_devolucion }}
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-dark text-white fw-bold">Datos</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6"><span class="text-muted small d-block">Docente</span><strong>{{ solicitud.docente_nombre }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Cédula</span>{{ solicitud.docente_cedula|default:"—" }}</div>
+                <div class="col-md-3"><span class="text-muted small d-block">Cuenta</span>{{ solicitud.docente_cuenta|default:"—" }}</div>
+                <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ solicitud.colegio_nombre }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Código</span>{{ solicitud.colegio_codigo|default:"—" }}</div>
+                <div class="col-md-3"></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Fecha de viaje</span>{{ solicitud.fecha_viaje|date:"d/m/Y" }}</div>
+                <div class="col-md-3"><span class="text-muted small d-block">Fecha de regreso</span>{{ solicitud.fecha_regreso|date:"d/m/Y" }}</div>
+            </div>
+            {% if solicitud.observaciones %}
+            <hr>
+            <span class="text-muted small d-block">Observaciones</span>{{ solicitud.observaciones|linebreaksbr }}
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-dark text-white fw-bold">Gastos</div>
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Concepto</th><th class="text-end">Valor</th></tr>
+                </thead>
+                <tbody>
+                    {% for g in solicitud.gastos.all %}
+                    <tr><td>{{ g.nombre }}</td><td class="text-end">${{ g.valor|floatformat:"0" }}</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr><th>Total</th><th class="text-end">${{ solicitud.total|floatformat:"0" }}</th></tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    {# ── Acciones de gestión (según el estado) ── #}
+    {% if puede_devolver or puede_aprobar or puede_pagar %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-light fw-bold">Gestión</div>
+        <div class="card-body d-flex flex-wrap gap-2">
+            {% if puede_aprobar %}
+            <form method="post" action="{% url 'fin_viaticos_aprobar' solicitud.pk %}" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-check me-1"></i> Aprobar
+                </button>
+            </form>
+            {% endif %}
+            {% if puede_devolver %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalDevolver">
+                <i class="fas fa-undo me-1"></i> Devolver
+            </button>
+            {% endif %}
+            {% if puede_pagar %}
+            <form method="post" action="{% url 'fin_viaticos_pagar' solicitud.pk %}" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-money-bill-wave me-1"></i> Marcar como pagada
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{# Modal de devolución: el motivo es obligatorio (lo valida también el servidor). #}
+{% if puede_devolver %}
+<div class="modal fade" id="modalDevolver" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'fin_viaticos_devolver' solicitud.pk %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="fas fa-undo me-2"></i>Devolver a programación</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-bold">Motivo de la devolución</label>
+                <textarea name="motivo_devolucion" class="form-control" rows="3" required
+                          placeholder="Explica qué debe corregir programación..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-warning">
+                    <i class="fas fa-paper-plane me-1"></i> Devolver
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

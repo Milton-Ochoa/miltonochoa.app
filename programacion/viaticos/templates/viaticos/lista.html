@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% block header_title %}Viáticos{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Operaciones</li>
+    <li class="breadcrumb-item active">Viáticos</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'viaticos_crear' %}" class="btn btn-success btn-sm fw-bold">
+    <i class="fas fa-plus me-1"></i> Nueva solicitud
+</a>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-viaticos { table-layout: fixed; width: 100%; }
+    .tabla-viaticos th, .tabla-viaticos td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-viaticos thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-viaticos thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-viaticos thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-viaticos tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-viaticos tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
+    .col-id      { width: 5%;  }
+    .col-docente { width: 21%; }
+    .col-colegio { width: 21%; }
+    .col-viaje   { width: 12%; }
+    .col-regreso { width: 12%; }
+    .col-total   { width: 11%; text-align: right; }
+    .col-estado  { width: 11%; text-align: center; }
+    .col-ver     { width: 7%;  text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-viaticos" id="tablaViaticos">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-id">#</th>
+                        <th class="col-docente">Docente</th>
+                        <th class="col-colegio">Colegio</th>
+                        <th class="col-viaje">Viaje</th>
+                        <th class="col-regreso">Regreso</th>
+                        <th class="col-total">Total</th>
+                        <th class="col-estado">Estado</th>
+                        <th class="col-ver">Ver</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th></th>
+                        <th><input type="text" data-filtro="docente"></th>
+                        <th><input type="text" data-filtro="colegio"></th>
+                        <th><input type="text" data-filtro="viaje"></th>
+                        <th><input type="text" data-filtro="regreso"></th>
+                        <th></th>
+                        <th><input type="text" data-filtro="estado"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaViaticos">
+                    {% for s in solicitudes %}
+                    <tr data-docente="{{ s.docente_nombre|lower }}"
+                        data-colegio="{{ s.colegio_nombre|lower }}"
+                        data-viaje="{{ s.fecha_viaje|date:'d/m/Y' }}"
+                        data-regreso="{{ s.fecha_regreso|date:'d/m/Y' }}"
+                        data-estado="{{ s.get_estado_display|lower }}">
+                        <td>{{ s.pk }}</td>
+                        <td><strong>{{ s.docente_nombre }}</strong></td>
+                        <td>{{ s.colegio_nombre }}</td>
+                        <td>{{ s.fecha_viaje|date:"d/m/Y" }}</td>
+                        <td>{{ s.fecha_regreso|date:"d/m/Y" }}</td>
+                        <td class="text-end">${{ s.total|floatformat:"0" }}</td>
+                        <td class="text-center">
+                            {% if s.estado == 'ENVIADA' %}<span class="badge bg-info text-dark">Enviada</span>
+                            {% elif s.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark">Devuelta</span>
+                            {% elif s.estado == 'APROBADA' %}<span class="badge bg-primary">Aprobada</span>
+                            {% elif s.estado == 'PAGADA' %}<span class="badge bg-success">Pagada</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'viaticos_detalle' s.pk %}" class="btn btn-outline-info btn-sm py-0 px-2">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            <i class="fas fa-plane-slash me-1"></i> No hay solicitudes de viáticos todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisiblesVia">0</span> de {{ solicitudes|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesVia"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Filtrado + paginación inline (mismo patrón que informes/colegios) ──
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaViaticos tr[data-docente]'));
+    var ctrl   = document.getElementById('paginaControlesVia');
+    var cont   = document.getElementById('contadorVisiblesVia');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+
+    render();
+})();
+</script>
+{% endblock %}
+</content>
+</invoke>

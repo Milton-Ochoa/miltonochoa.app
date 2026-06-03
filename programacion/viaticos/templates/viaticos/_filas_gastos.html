@@ -1,0 +1,108 @@
+{% comment %}
+Widget reutilizable de gastos incrementales (parte variable del formulario).
+
+Lo usa el form de programación y, en la Fase 4, el de financiera (vía
+{% include 'viaticos/_filas_gastos.html' %}). Renderiza:
+  - una fila por cada gasto de `gastos` (o una fila vacía si no hay ninguno),
+  - un botón + que clona la fila plantilla, un − por fila que la quita,
+  - el Total (readonly) recalculado en vivo por JS.
+
+El servidor lee name="gasto_nombre"/name="gasto_valor" con getlist y recalcula
+el total; el campo Total es solo informativo (no se envía).
+{% endcomment %}
+<div class="mb-3" id="gastos-widget">
+    <label class="form-label fw-bold">Gastos</label>
+    <div id="gastos-filas">
+        {% for g in gastos %}
+        <div class="row g-2 mb-2 gasto-fila">
+            <div class="col-7">
+                <input type="text" name="gasto_nombre" class="form-control" placeholder="Concepto del gasto" value="{{ g.nombre }}" required>
+            </div>
+            <div class="col-4">
+                <input type="number" name="gasto_valor" class="form-control gasto-valor" placeholder="Valor (COP)" min="0" step="1" value="{{ g.valor }}" required>
+            </div>
+            <div class="col-1 d-grid">
+                <button type="button" class="btn btn-outline-danger gasto-quitar" title="Quitar gasto">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="row g-2 mb-2 gasto-fila">
+            <div class="col-7">
+                <input type="text" name="gasto_nombre" class="form-control" placeholder="Concepto del gasto" required>
+            </div>
+            <div class="col-4">
+                <input type="number" name="gasto_valor" class="form-control gasto-valor" placeholder="Valor (COP)" min="0" step="1" required>
+            </div>
+            <div class="col-1 d-grid">
+                <button type="button" class="btn btn-outline-danger gasto-quitar" title="Quitar gasto">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="row g-2 align-items-center">
+        <div class="col-7">
+            <button type="button" class="btn btn-outline-primary btn-sm" id="gasto-agregar">
+                <i class="fas fa-plus me-1"></i> Agregar gasto
+            </button>
+        </div>
+        <div class="col-4">
+            <div class="input-group">
+                <span class="input-group-text fw-bold">Total</span>
+                <input type="text" id="gasto-total" class="form-control fw-bold text-end" readonly>
+            </div>
+        </div>
+        <div class="col-1"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var filas   = document.getElementById('gastos-filas');
+    var agregar = document.getElementById('gasto-agregar');
+    var totalEl = document.getElementById('gasto-total');
+    if (!filas || !agregar || !totalEl) return;
+
+    function recalcular() {
+        var total = 0;
+        filas.querySelectorAll('.gasto-valor').forEach(function (inp) {
+            var v = parseInt(inp.value, 10);
+            if (!isNaN(v) && v > 0) total += v;
+        });
+        totalEl.value = total.toLocaleString('es-CO');
+    }
+
+    function nuevaFila() {
+        var base = filas.querySelector('.gasto-fila');
+        var fila = base.cloneNode(true);
+        fila.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+        filas.appendChild(fila);
+        fila.querySelector('input').focus();
+        recalcular();
+    }
+
+    agregar.addEventListener('click', nuevaFila);
+
+    filas.addEventListener('click', function (e) {
+        var btn = e.target.closest('.gasto-quitar');
+        if (!btn) return;
+        // No dejar el formulario sin filas: si es la última, solo la vacía.
+        if (filas.querySelectorAll('.gasto-fila').length > 1) {
+            btn.closest('.gasto-fila').remove();
+        } else {
+            btn.closest('.gasto-fila').querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+        }
+        recalcular();
+    });
+
+    filas.addEventListener('input', function (e) {
+        if (e.target.classList.contains('gasto-valor')) recalcular();
+    });
+
+    recalcular();
+})();
+</script>

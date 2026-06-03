@@ -14,7 +14,17 @@ import logging
 from .models import UsuarioColegio, UsuarioProfesor
 from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
-from core.areas import AREAS, url_apex, url_en_area, host_apex, host_de_area, GRUPO_STAFF_PROGRAMACION, es_personal_programacion
+from core.areas import (
+    AREAS, url_apex, url_en_area, host_apex, host_de_area,
+    GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, es_personal_programacion,
+)
+
+# Áreas cuyos usuarios de etiqueta se gestionan desde el panel del apex: slug → grupo.
+# El grupo basta para que el login lleve al usuario a su subdominio (sin perfil ni is_staff).
+GRUPOS_ETIQUETA = {
+    'programacion': GRUPO_STAFF_PROGRAMACION,
+    'financiera': GRUPO_STAFF_FINANCIERA,
+}
 
 logger = logging.getLogger('aamo')
 
@@ -269,24 +279,29 @@ def ajax_resetear_password(request):
 # desde el panel del superusuario en el apex.
 
 def _get_usuario_etiqueta(user_id):
-    """User del grupo etiqueta y NO superusuario; None si no aplica (evita tocar admins)."""
+    """User de cualquier grupo de etiqueta y NO superusuario; None si no aplica (evita tocar admins)."""
     if not user_id:
         return None
     return (User.objects
-            .filter(id=user_id, groups__name=GRUPO_STAFF_PROGRAMACION, is_superuser=False)
+            .filter(id=user_id, groups__name__in=list(GRUPOS_ETIQUETA.values()), is_superuser=False)
             .first())
 
 @user_passes_test(solo_admin, login_url='login')
 @require_POST
 def ajax_crear_usuario_area(request):
     """
-    Crea un usuario de etiqueta 'programacion' y devuelve su contraseña temporal una vez.
+    Crea un usuario de etiqueta para un área (programacion/financiera) y devuelve su
+    contraseña temporal una vez.
 
     El usuario no es is_staff (no entra a /admin/) ni superusuario; pertenecer al grupo
-    'area:programacion' basta para que el login lo lleve al subdominio del área y el
-    middleware le conceda acceso completo dentro de ella.
+    de etiqueta del área basta para que el login lo lleve a su subdominio y el middleware
+    le conceda acceso completo dentro de ella.
     """
     username = request.POST.get('username', '').strip()
+    area = request.POST.get('area', 'programacion').strip()
+    grupo_nombre = GRUPOS_ETIQUETA.get(area)
+    if not grupo_nombre:
+        return JsonResponse({'ok': False, 'error': 'Área no válida.'}, status=400)
     if not username:
         return JsonResponse({'ok': False, 'error': 'El nombre de usuario es obligatorio.'}, status=400)
     if User.objects.filter(username=username).exists():
@@ -299,13 +314,13 @@ def ajax_crear_usuario_area(request):
                 username=username, password=password,
                 is_staff=False, is_superuser=False,
             )
-            grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+            grupo, _ = Group.objects.get_or_create(name=grupo_nombre)
             user.groups.add(grupo)
     except Exception:
         logger.exception('Error al crear usuario de etiqueta')
         return JsonResponse({'ok': False, 'error': 'Error interno. Intenta de nuevo.'}, status=500)
 
-    logger.info('Usuario de etiqueta programacion creado: %s (por %s)', username, request.user.username)
+    logger.info('Usuario de etiqueta %s creado: %s (por %s)', area, username, request.user.username)
     return JsonResponse({'ok': True, 'username': username, 'password_inicial': password})
 
 @user_passes_test(solo_admin, login_url='login')
