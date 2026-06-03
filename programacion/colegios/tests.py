@@ -346,6 +346,25 @@ class DashboardColegiosViewTest(TestCase):
         r = self.client.get('/colegios/?id_col=99999')
         self.assertEqual(r.status_code, 404)
 
+    def test_buscador_incluye_codigo_y_nombre(self):
+        # El buscador (select2) debe ofrecer "codigo - nombre" para buscar por ambos.
+        col = Colegio.objects.create(
+            nombre='Col Con Codigo', codigo='12345',
+            departamento='Bogota D.C.', ciudad='Bogotá')
+        ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
+        self.client.login(username='admin_col', password='pass123')
+        html = self.client.get('/colegios/').content.decode()
+        self.assertIn('12345 - Col Con Codigo', html)
+
+    def test_badge_calendario_b_se_muestra(self):
+        col = Colegio.objects.create(
+            nombre='Col Norte', departamento='Bogota D.C.', ciudad='Bogotá',
+            calendario=Colegio.Calendario.B)
+        ca = ColegioAnio.objects.create(colegio=col, anio=2025, activo=True)
+        self.client.login(username='admin_col', password='pass123')
+        html = self.client.get(f'/colegios/?id_col={ca.id}').content.decode()
+        self.assertIn('Cal B · 2025-2026', html)
+
 
 class CargarGradosViewTest(TestCase):
 
