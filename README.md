@@ -270,7 +270,8 @@ AAMO/
 │   ├── 👨‍🏫 profesores/         #   Vista de horario propio del profesor
 │   ├── 🚨 auditoria/         #   Motor de detección de errores + AlertaAuditoria + cron command
 │   ├── 📝 informes/          #   Informes pedagógicos por sesión
-│   ├── 📊 exportar/          #   Generación de Excel + modelo PagoRealizado
+│   ├── 📊 exportar/          #   Generación de Excel de horarios
+│   ├── 💵 pagos/             #   Pagos semanales a profesores (PagoRealizado + soportes); en menú Reportes
 │   ├── 📋 pendientes/        #   Tablero Kanban (home del área)
 │   ├── ✈️  viaticos/          #   Solicitudes de viáticos (SolicitudViatico, GastoViatico)
 │   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
@@ -280,7 +281,7 @@ AAMO/
 │   ├── ✈️  viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
 │   │                         #   (sin modelos: importa los de programacion.viaticos)
 │   └── 💵 pagos/             #   Pagos a profesores: marcar pago + soportes + Excel
-│                             #   (sin modelos: usa programacion.exportar/PagoRealizado)
+│                             #   (sin modelos: usa programacion.pagos/PagoRealizado)
 ├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
 │
 ├── 🎨 templates/             # Globales: base_chrome.html (chrome compartido), base.html
