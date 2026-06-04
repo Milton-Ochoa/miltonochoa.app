@@ -1,6 +1,6 @@
 {% comment %}
   Contenido de la cabecera de la tabla de pagos: pestañas Pendientes/Realizados (izquierda)
-  + filtro de rango de fechas (derecha) + etiqueta de la semana. Se incrusta dentro del
+  + filtro de rango de fechas (derecha). Se incrusta dentro del
   `card-header` de la tabla (no trae su propia tarjeta). Compartido por programación y
   financiera; los enlaces de pestaña usan querystring relativa (resuelven en el host actual)
   y el botón #btnAplicar lo cablea `_tabla_js.html` (espera la global `URL_PAGOS`).
@@ -41,7 +41,4 @@
       <i class="fas fa-search me-1"></i>Aplicar
     </button>
   </div>
-</div>
-<div class="text-muted small mt-2 w-100">
-  <i class="fas fa-calendar-week me-1"></i>{{ semana_label }}
 </div>
