@@ -8,7 +8,7 @@ from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth.models import User, Group
 from django.core.cache import cache
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from usuarios.models import UsuarioColegio, UsuarioProfesor
+from usuarios.models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado
 from usuarios.ratelimit import rate_limit
 from core.areas import GRUPO_STAFF_PROGRAMACION
 
@@ -102,27 +102,38 @@ class AjaxCrearUsuarioTest(TestCase):
         self.colegio = Colegio.objects.create(nombre='Col Test', ciudad='Bogotá')
         self.profesor = Profesor.objects.create(nombre='Ana', apellido='García')
 
-    def test_crear_usuario_colegio_retorna_password(self):
+    def test_crear_usuario_colegio_con_password_manual(self):
         r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'colegio',
             'username': 'col_test',
+            'password': 'ClaveManual123',
             'colegio_id': self.colegio.id,
         })
         data = r.json()
         self.assertTrue(data['ok'])
-        self.assertIn('password_inicial', data)
-        self.assertGreater(len(data['password_inicial']), 6)
-        self.assertTrue(User.objects.filter(username='col_test').exists())
+        self.assertNotIn('password_inicial', data)  # ya no se devuelve: el admin la asignó
+        user = User.objects.get(username='col_test')
+        self.assertTrue(user.check_password('ClaveManual123'))
 
-    def test_crear_usuario_profesor_retorna_password(self):
+    def test_crear_usuario_profesor_con_password_manual(self):
         r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'profesor',
             'username': 'prof_test',
+            'password': 'OtraClave456',
             'profesor_id': self.profesor.id,
         })
         data = r.json()
         self.assertTrue(data['ok'])
-        self.assertIn('password_inicial', data)
+        self.assertTrue(User.objects.get(username='prof_test').check_password('OtraClave456'))
+
+    def test_crear_usuario_sin_password_falla(self):
+        r = self.client.post('/usuarios/ajax/crear/', {
+            'tipo': 'colegio',
+            'username': 'col_sin_pass',
+            'colegio_id': self.colegio.id,
+        })
+        self.assertFalse(r.json()['ok'])
+        self.assertFalse(User.objects.filter(username='col_sin_pass').exists())
 
     def test_crear_usuario_duplicado_retorna_error(self):
         User.objects.create_user(username='existente', password='x')
@@ -132,24 +143,24 @@ class AjaxCrearUsuarioTest(TestCase):
         r = self.client.post('/usuarios/ajax/crear/', {
             'tipo': 'colegio',
             'username': 'existente',
+            'password': 'Clave789',
             'colegio_id': self.colegio.id,
         })
         data = r.json()
         self.assertFalse(data['ok'])
 
-    def test_resetear_password_genera_nueva(self):
+    def test_resetear_password_asigna_la_manual(self):
         user = User.objects.create_user(username='reset_test', password='antigua')
         perfil = UsuarioColegio.objects.create(user=user, colegio=self.colegio)
         r = self.client.post('/usuarios/ajax/resetear-password/', {
             'tipo': 'colegio',
             'perfil_id': perfil.id,
+            'password': 'NuevaManual321',
         })
         data = r.json()
         self.assertTrue(data['ok'])
-        self.assertIn('nueva_password', data)
-        # El hash debe haber cambiado
         user.refresh_from_db()
-        self.assertTrue(user.check_password(data['nueva_password']))
+        self.assertTrue(user.check_password('NuevaManual321'))
 
 
 # ── Middleware de control de acceso ───────────────────────────
@@ -272,28 +283,58 @@ class AjaxUsuarioEtiquetaTest(TestCase):
         self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
 
     def test_crear_usuario_etiqueta_lo_mete_al_grupo(self):
-        r = self.client.post('/usuarios/ajax/area/crear/', {'username': 'nuevo_prog'})
+        r = self.client.post('/usuarios/ajax/area/crear/', {
+            'username': 'nuevo_prog', 'email': 'nuevo@ejemplo.com', 'password': 'Generica123',
+        })
         data = r.json()
         self.assertTrue(data['ok'])
-        self.assertIn('password_inicial', data)
+        self.assertNotIn('password_inicial', data)
         user = User.objects.get(username='nuevo_prog')
         self.assertTrue(user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists())
+        self.assertEqual(user.email, 'nuevo@ejemplo.com')
+        self.assertTrue(user.check_password('Generica123'))
         self.assertFalse(user.is_staff)
         self.assertFalse(user.is_superuser)
+        # Debe cambiar la clave en el primer ingreso.
+        self.assertTrue(user.perfil_empleado.debe_cambiar_password)
+
+    def test_crear_usuario_etiqueta_sin_correo_falla(self):
+        r = self.client.post('/usuarios/ajax/area/crear/', {
+            'username': 'sin_correo', 'password': 'Generica123',
+        })
+        self.assertFalse(r.json()['ok'])
+        self.assertFalse(User.objects.filter(username='sin_correo').exists())
 
     def test_crear_usuario_etiqueta_duplicado_falla(self):
         User.objects.create_user(username='ya_existe', password='x')
-        r = self.client.post('/usuarios/ajax/area/crear/', {'username': 'ya_existe'})
+        r = self.client.post('/usuarios/ajax/area/crear/', {
+            'username': 'ya_existe', 'email': 'x@ejemplo.com', 'password': 'Generica123',
+        })
         self.assertFalse(r.json()['ok'])
 
     def test_resetear_password_etiqueta(self):
         user = User.objects.create_user(username='reset_prog', password='vieja')
         user.groups.add(self.grupo)
-        r = self.client.post('/usuarios/ajax/area/resetear/', {'user_id': user.id})
+        PerfilEmpleado.objects.create(user=user, debe_cambiar_password=False)
+        r = self.client.post('/usuarios/ajax/area/resetear/', {
+            'user_id': user.id, 'password': 'NuevaGenerica999',
+        })
         data = r.json()
         self.assertTrue(data['ok'])
         user.refresh_from_db()
-        self.assertTrue(user.check_password(data['nueva_password']))
+        self.assertTrue(user.check_password('NuevaGenerica999'))
+        # El reseteo vuelve a exigir el cambio.
+        self.assertTrue(user.perfil_empleado.debe_cambiar_password)
+
+    def test_editar_correo_etiqueta(self):
+        user = User.objects.create_user(username='edita_prog', password='x', email='viejo@e.com')
+        user.groups.add(self.grupo)
+        r = self.client.post('/usuarios/ajax/area/editar/', {
+            'user_id': user.id, 'email': 'nuevo@e.com',
+        })
+        self.assertTrue(r.json()['ok'])
+        user.refresh_from_db()
+        self.assertEqual(user.email, 'nuevo@e.com')
 
     def test_eliminar_usuario_etiqueta(self):
         user = User.objects.create_user(username='borrar_prog', password='x')
@@ -325,16 +366,95 @@ class StaffGestionaUsuariosTest(TestCase):
 
     def test_staff_crea_usuario_de_colegio(self):
         r = self.area_client.post('/usuarios/ajax/crear/', {
-            'tipo': 'colegio', 'username': 'col_por_staff', 'colegio_id': self.colegio.id,
+            'tipo': 'colegio', 'username': 'col_por_staff',
+            'password': 'ClaveStaff123', 'colegio_id': self.colegio.id,
         })
         self.assertTrue(r.json()['ok'])
         self.assertTrue(User.objects.filter(username='col_por_staff').exists())
 
     def test_staff_no_puede_crear_usuario_de_etiqueta(self):
         """El CRUD de etiqueta y el panel siguen siendo solo del superusuario."""
-        r = self.area_client.post('/usuarios/ajax/area/crear/', {'username': 'intruso'})
+        r = self.area_client.post('/usuarios/ajax/area/crear/', {
+            'username': 'intruso', 'email': 'x@e.com', 'password': 'Clave123',
+        })
         self.assertEqual(r.status_code, 302)  # user_passes_test → login
         self.assertFalse(User.objects.filter(username='intruso').exists())
+
+
+# ── Cambio obligatorio en el primer ingreso (empleados de área) ──
+
+class CambioPasswordObligatorioTest(TestCase):
+
+    def setUp(self):
+        self.area_client = Client(HTTP_HOST='programacion.testserver')
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        self.user = User.objects.create_user('emp_force', password='generica', email='f@e.com')
+        self.user.groups.add(self.grupo)
+        PerfilEmpleado.objects.create(user=self.user, debe_cambiar_password=True)
+        self.area_client.login(username='emp_force', password='generica')
+
+    def test_empleado_con_flag_es_redirigido(self):
+        r = self.area_client.get('/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/cambiar-password/', r['Location'])
+
+    def test_pagina_de_cambio_es_accesible(self):
+        r = self.area_client.get('/usuarios/cambiar-password/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_cambiar_password_limpia_flag_y_da_acceso(self):
+        r = self.area_client.post('/usuarios/cambiar-password/', {
+            'new_password1': 'ClaveElegida88', 'new_password2': 'ClaveElegida88',
+        })
+        self.assertEqual(r.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('ClaveElegida88'))
+        self.assertFalse(self.user.perfil_empleado.debe_cambiar_password)
+        # Ya no se le fuerza el cambio: accede al home del área.
+        self.assertEqual(self.area_client.get('/').status_code, 200)
+
+    def test_password_debil_es_rechazada(self):
+        r = self.area_client.post('/usuarios/cambiar-password/', {
+            'new_password1': '123', 'new_password2': '123',
+        })
+        self.assertEqual(r.status_code, 200)  # re-renderiza con errores
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.perfil_empleado.debe_cambiar_password)
+
+
+class PasswordResetEmpleadoTest(TestCase):
+    """El auto-servicio "olvidé mi contraseña" limpia el flag de cambio forzado."""
+
+    def setUp(self):
+        self.client = Client()  # apex
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        self.user = User.objects.create_user('emp_reset', password='vieja', email='emp@e.com')
+        self.user.groups.add(self.grupo)
+        PerfilEmpleado.objects.create(user=self.user, debe_cambiar_password=True)
+
+    def test_envia_correo_con_enlace(self):
+        from django.core import mail
+        r = self.client.post('/usuarios/reset/', {'email': 'emp@e.com'})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('/usuarios/reset/', mail.outbox[0].body)
+
+    def test_confirmar_enlace_limpia_flag(self):
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        from django.contrib.auth.tokens import default_token_generator
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        # GET fija el token en sesión y redirige al formulario set-password.
+        r = self.client.get(f'/usuarios/reset/{uid}/{token}/')
+        self.assertEqual(r.status_code, 302)
+        r2 = self.client.post(r.url, {
+            'new_password1': 'MiClaveNueva77', 'new_password2': 'MiClaveNueva77',
+        })
+        self.assertEqual(r2.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('MiClaveNueva77'))
+        self.assertFalse(self.user.perfil_empleado.debe_cambiar_password)
 
 
 # ── Rate Limiting ─────────────────────────────────────────────

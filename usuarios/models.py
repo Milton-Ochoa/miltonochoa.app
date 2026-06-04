@@ -37,3 +37,26 @@ class UsuarioProfesor(models.Model):
 
     def __str__(self):
         return f"{self.user.username} → {self.profesor.nombre}"
+
+
+class PerfilEmpleado(models.Model):
+    """
+    Credencial de un empleado de área (usuario "de etiqueta": grupo `area:programacion`/
+    `area:financiera`). A diferencia de colegio/profesor no vincula un dominio: solo guarda
+    el estado de la contraseña.
+
+    `debe_cambiar_password` arranca en True al crearlo (clave genérica que asigna el admin) y
+    cada vez que el admin la resetea; el middleware obliga a cambiarla en el primer ingreso y
+    la pone en False cuando el empleado elige su propia clave (cambio forzado o reset por correo).
+    El correo del empleado vive en `User.email` (lo usa el flujo de "olvidé mi contraseña").
+    """
+    user                  = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil_empleado')
+    debe_cambiar_password = models.BooleanField(default=True)
+
+    class Meta:
+        db_table            = 'usuarios_empleados'
+        verbose_name        = "Perfil de Empleado"
+        verbose_name_plural = "Perfiles de Empleados"
+
+    def __str__(self):
+        return f"{self.user.username} (empleado)"

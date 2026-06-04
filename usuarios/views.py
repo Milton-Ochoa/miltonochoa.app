@@ -1,17 +1,20 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.models import User, Group
+from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.decorators import user_passes_test, login_required
 from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
-import secrets
 import logging
 
-from .models import UsuarioColegio, UsuarioProfesor
+from .models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado
 from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
 from core.areas import (
@@ -40,9 +43,30 @@ def _hosts_permitidos(request):
     """Hosts propios (apex + subdominios de áreas) para validar `?next=` cross-subdominio."""
     return {host_apex(request)} | {host_de_area(slug, request) for slug in AREAS}
 
-def _generar_password():
-    # 9 bytes → 12 chars base64url; entropía suficiente para una credencial temporal.
-    return secrets.token_urlsafe(9)
+def _limpiar_password_temporal(password):
+    """Valida una contraseña **temporal asignada por el admin** (colegio/profesor o la
+    genérica de empleado).
+
+    A propósito NO aplica los AUTH_PASSWORD_VALIDATORS: el staff debe poder asignar la clave
+    que quiera (los empleados igual la cambian en el primer ingreso). Solo se exige que no
+    esté vacía. Devuelve la clave limpia o lanza ValueError con un mensaje legible.
+    """
+    password = (password or '').strip()
+    if not password:
+        raise ValueError('La contraseña es obligatoria.')
+    return password
+
+
+def _limpiar_email(email):
+    """Valida que el correo del empleado sea obligatorio y con formato válido."""
+    email = (email or '').strip()
+    if not email:
+        raise ValueError('El correo es obligatorio.')
+    try:
+        validate_email(email)
+    except ValidationError:
+        raise ValueError('El correo no tiene un formato válido.')
+    return email
 
 def _crear_usuario_base(username, password):
     """
@@ -152,9 +176,8 @@ def gestionar_profesores(request):
 @require_POST
 def ajax_crear_usuario(request):
     """
-    Crea un usuario de colegio o profesor y devuelve la contraseña temporal en texto plano.
-    Esta es la única vez que la contraseña es visible — el frontend debe mostrarla al admin
-    y no hay forma de recuperarla después.
+    Crea un usuario de colegio o profesor con la contraseña que asigna **manualmente** el
+    staff de programación (no aleatoria). La clave no se devuelve: el admin ya la conoce.
     """
     tipo = request.POST.get('tipo')
     username = request.POST.get('username', '').strip()
@@ -162,7 +185,10 @@ def ajax_crear_usuario(request):
     if not username or tipo not in ('colegio', 'profesor'):
         return JsonResponse({'ok': False, 'error': 'Datos inválidos.'}, status=400)
 
-    password = _generar_password()
+    try:
+        password = _limpiar_password_temporal(request.POST.get('password'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
 
     try:
         with transaction.atomic():
@@ -191,7 +217,6 @@ def ajax_crear_usuario(request):
         'ok': True,
         'username': username,
         'nombre_destino': nombre_destino,
-        'password_inicial': password,
     })
 
 @user_passes_test(es_personal_programacion, login_url='login')
@@ -249,8 +274,8 @@ def ajax_eliminar_usuario(request):
 @require_POST
 def ajax_resetear_password(request):
     """
-    Genera y asigna una nueva contraseña temporal. Se devuelve en texto plano una sola vez.
-    Operación auditada: registra quién reseteó, a quién, y desde qué IP.
+    Asigna la nueva contraseña que escribe **manualmente** el staff a un usuario de
+    colegio/profesor. Operación auditada: registra quién reseteó, a quién, y desde qué IP.
     """
     tipo      = request.POST.get('tipo')
     perfil_id = request.POST.get('perfil_id')
@@ -258,10 +283,14 @@ def ajax_resetear_password(request):
     if tipo not in ('colegio', 'profesor') or not perfil_id:
         return JsonResponse({'ok': False, 'error': 'Datos inválidos.'}, status=400)
 
+    try:
+        nueva = _limpiar_password_temporal(request.POST.get('password'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+
     modelo = UsuarioColegio if tipo == 'colegio' else UsuarioProfesor
     perfil = get_object_or_404(modelo, id=perfil_id)
 
-    nueva = _generar_password()
     perfil.user.set_password(nueva)
     perfil.user.save()
 
@@ -270,7 +299,7 @@ def ajax_resetear_password(request):
         tipo, perfil_id, perfil.user.username,
         request.user.username, request.META.get('REMOTE_ADDR'),
     )
-    return JsonResponse({'ok': True, 'nueva_password': nueva, 'username': perfil.user.username})
+    return JsonResponse({'ok': True, 'username': perfil.user.username})
 
 
 # ── Usuarios de etiqueta (grupo 'area:programacion') ─────────────────────────
@@ -290,8 +319,9 @@ def _get_usuario_etiqueta(user_id):
 @require_POST
 def ajax_crear_usuario_area(request):
     """
-    Crea un usuario de etiqueta para un área (programacion/financiera) y devuelve su
-    contraseña temporal una vez.
+    Crea un empleado de área (programacion/financiera) con la **clave genérica** y el
+    **correo** que asigna el admin. El correo es obligatorio (lo usa "olvidé mi contraseña")
+    y el empleado debe cambiar la clave en el primer ingreso (`PerfilEmpleado`).
 
     El usuario no es is_staff (no entra a /admin/) ni superusuario; pertenecer al grupo
     de etiqueta del área basta para que el login lo lleve a su subdominio y el middleware
@@ -307,21 +337,27 @@ def ajax_crear_usuario_area(request):
     if User.objects.filter(username=username).exists():
         return JsonResponse({'ok': False, 'error': f'El usuario "{username}" ya existe.'}, status=400)
 
-    password = _generar_password()
+    try:
+        email = _limpiar_email(request.POST.get('email'))
+        password = _limpiar_password_temporal(request.POST.get('password'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+
     try:
         with transaction.atomic():
             user = User.objects.create_user(
-                username=username, password=password,
+                username=username, password=password, email=email,
                 is_staff=False, is_superuser=False,
             )
             grupo, _ = Group.objects.get_or_create(name=grupo_nombre)
             user.groups.add(grupo)
+            PerfilEmpleado.objects.create(user=user, debe_cambiar_password=True)
     except Exception:
         logger.exception('Error al crear usuario de etiqueta')
         return JsonResponse({'ok': False, 'error': 'Error interno. Intenta de nuevo.'}, status=500)
 
     logger.info('Usuario de etiqueta %s creado: %s (por %s)', area, username, request.user.username)
-    return JsonResponse({'ok': True, 'username': username, 'password_inicial': password})
+    return JsonResponse({'ok': True, 'username': username})
 
 @user_passes_test(solo_admin, login_url='login')
 @require_POST
@@ -337,16 +373,75 @@ def ajax_eliminar_usuario_area(request):
 
 @user_passes_test(solo_admin, login_url='login')
 @require_POST
-def ajax_resetear_password_area(request):
-    """Genera y asigna una nueva contraseña temporal a un usuario de etiqueta (una vez)."""
+def ajax_editar_usuario_area(request):
+    """Edita el correo (obligatorio) de un empleado de etiqueta."""
     user = _get_usuario_etiqueta(request.POST.get('user_id'))
     if not user:
         return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
-    nueva = _generar_password()
+    try:
+        user.email = _limpiar_email(request.POST.get('email'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+    user.save(update_fields=['email'])
+    return JsonResponse({'ok': True, 'username': user.username, 'email': user.email})
+
+
+@user_passes_test(solo_admin, login_url='login')
+@require_POST
+def ajax_resetear_password_area(request):
+    """Asigna la nueva clave genérica que escribe el admin a un empleado y vuelve a exigir
+    el cambio en el próximo ingreso (`debe_cambiar_password = True`)."""
+    user = _get_usuario_etiqueta(request.POST.get('user_id'))
+    if not user:
+        return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
+    try:
+        nueva = _limpiar_password_temporal(request.POST.get('password'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
     user.set_password(nueva)
     user.save()
+    PerfilEmpleado.objects.update_or_create(user=user, defaults={'debe_cambiar_password': True})
     logger.info(
         'Contraseña reseteada (etiqueta): usuario=%s (por %s desde %s)',
         user.username, request.user.username, request.META.get('REMOTE_ADDR'),
     )
-    return JsonResponse({'ok': True, 'nueva_password': nueva, 'username': user.username})
+    return JsonResponse({'ok': True, 'username': user.username})
+
+
+# ── Cambio obligatorio en el primer ingreso (empleados de área) ──────────────
+# El middleware redirige aquí a los empleados con `debe_cambiar_password=True` y bloquea
+# todo lo demás hasta que elijan su clave. Usa SetPasswordForm (no pide la anterior: acaban
+# de autenticarse con la genérica) → aplica los AUTH_PASSWORD_VALIDATORS de Django.
+
+@login_required(login_url='login')
+def cambiar_password_obligatorio(request):
+    perfil = PerfilEmpleado.objects.filter(user=request.user).first()
+    # Si ya no debe cambiarla (o no es empleado), no tiene nada que hacer aquí.
+    if perfil is None or not perfil.debe_cambiar_password:
+        return login_redirect(request)
+
+    if request.method == 'POST':
+        form = SetPasswordForm(request.user, request.POST)
+        if form.is_valid():
+            form.save()
+            update_session_auth_hash(request, form.user)  # no cerrar la sesión tras cambiar
+            perfil.debe_cambiar_password = False
+            perfil.save(update_fields=['debe_cambiar_password'])
+            messages.success(request, 'Contraseña actualizada. ¡Bienvenido!')
+            return login_redirect(request)
+    else:
+        form = SetPasswordForm(request.user)
+
+    return render(request, 'usuarios/cambiar_password.html', {'form': form})
+
+
+# ── "Olvidé mi contraseña" (auto-servicio por correo) ────────────────────────
+# Reutiliza las vistas integradas de Django. La única personalización: al confirmar el
+# enlace, si quien restablece es un empleado, limpiar `debe_cambiar_password` (acaba de
+# elegir su propia clave, ya no debe forzársele el cambio).
+
+class EmpleadoPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    def form_valid(self, form):
+        respuesta = super().form_valid(form)
+        PerfilEmpleado.objects.filter(user=self.user).update(debe_cambiar_password=False)
+        return respuesta

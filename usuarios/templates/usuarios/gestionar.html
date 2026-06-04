@@ -99,9 +99,19 @@
                     <input type="text" id="crear_username" class="form-control"
                            placeholder="Ej: {% if tipo == 'colegio' %}colegio_nacional{% else %}prof_perez{% endif %}" autocomplete="off">
                 </div>
-                <div class="alert alert-info py-2 mb-0" style="font-size:0.88rem;">
-                    <i class="fas fa-info-circle me-1"></i>
-                    La contraseña se generará automáticamente y se mostrará <strong>una sola vez</strong>.
+                <div class="mb-2">
+                    <label class="form-label fw-bold">Contraseña</label>
+                    <div class="input-group">
+                        <input type="text" id="crear_password" class="form-control password-field"
+                               placeholder="Escribe la contraseña" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button"
+                                onclick="togglePassVis('crear_password')" title="Mostrar/ocultar">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="form-text" style="font-size:0.8rem;">
+                        Tú la asignas y se la entregas al {% if tipo == 'colegio' %}colegio{% else %}profesor{% endif %}.
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -167,37 +177,34 @@
 
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- MODAL: Mostrar contraseña                                                   -->
+<!-- MODAL: Resetear contraseña                                                  -->
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div class="modal fade" id="modalPassword" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<div class="modal fade" id="modalReset" tabindex="-1">
     <div class="modal-dialog modal-sm">
         <div class="modal-content">
             <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title" id="modalPasswordTitulo">
-                    <i class="fas fa-key me-2"></i>Contraseña
-                </h5>
+                <h5 class="modal-title"><i class="fas fa-key me-2"></i>Resetear contraseña</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body text-center">
-                <p class="mb-1 text-muted" style="font-size:0.85rem;">
-                    Usuario: <strong id="modalPasswordUsername"></strong>
+            <div class="modal-body">
+                <input type="hidden" id="reset_perfil_id">
+                <p class="mb-2 text-muted" style="font-size:0.85rem;">
+                    Usuario: <strong id="reset_username"></strong>
                 </p>
-                <div class="alert alert-warning py-2 mb-3" style="font-size:0.82rem;">
-                    <i class="fas fa-exclamation-triangle me-1"></i>
-                    Copia esta contraseña ahora. <strong>No se podrá recuperar.</strong>
-                </div>
-                <div class="input-group mb-3">
-                    <input type="text" id="modalPasswordValor" class="form-control password-field text-center fw-bold fs-5" readonly>
-                    <button class="btn btn-outline-secondary" type="button" onclick="copiarPassword()" title="Copiar">
-                        <i class="fas fa-copy"></i>
+                <label class="form-label fw-bold">Nueva contraseña</label>
+                <div class="input-group">
+                    <input type="text" id="reset_password" class="form-control password-field"
+                           placeholder="Escribe la nueva contraseña" autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button"
+                            onclick="togglePassVis('reset_password')" title="Mostrar/ocultar">
+                        <i class="fas fa-eye"></i>
                     </button>
                 </div>
-                <div id="modalPasswordCopiadoMsg" class="text-success d-none" style="font-size:0.82rem;">
-                    <i class="fas fa-check me-1"></i> Contraseña copiada al portapapeles
-                </div>
             </div>
-            <div class="modal-footer justify-content-center">
-                <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="location.reload()">
-                    <i class="fas fa-check me-1"></i> Listo, la copié
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="submitReset()">
+                    <i class="fas fa-save me-1"></i> Guardar
                 </button>
             </div>
         </div>
@@ -288,19 +295,27 @@ const TIPO = '{{ tipo }}';
     render();
 })();
 
+// Mostrar/ocultar el valor de un campo de contraseña (input type text↔password).
+function togglePassVis(id) {
+    const inp = document.getElementById(id);
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
 // ── Crear ───────────────────────────────────────────────────────────────────
 function abrirCrear() {
     document.getElementById('crear_username').value = '';
+    document.getElementById('crear_password').value = '';
     document.getElementById('crear_entidad_id').value = '';
     new bootstrap.Modal(document.getElementById('modalCrear')).show();
 }
 
 function submitCrear() {
     const username = document.getElementById('crear_username').value.trim();
+    const password = document.getElementById('crear_password').value;
     const entidadId = document.getElementById('crear_entidad_id').value;
 
-    if (!username || !entidadId) {
-        alert('Completa todos los campos.');
+    if (!username || !entidadId || !password.trim()) {
+        alert('Completa todos los campos, incluida la contraseña.');
         return;
     }
 
@@ -308,17 +323,14 @@ function submitCrear() {
     body.append('csrfmiddlewaretoken', CSRF);
     body.append('tipo', TIPO);
     body.append('username', username);
+    body.append('password', password);
     body.append(TIPO === 'colegio' ? 'colegio_id' : 'profesor_id', entidadId);
 
     fetch('/usuarios/ajax/crear/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
-            if (data.ok) {
-                bootstrap.Modal.getInstance(document.getElementById('modalCrear')).hide();
-                mostrarModalPassword(`Usuario creado: ${data.nombre_destino}`, data.username, data.password_inicial);
-            } else {
-                alert(data.error || 'Error al crear el usuario.');
-            }
+            if (data.ok) location.reload();
+            else alert(data.error || 'Error al crear el usuario.');
         })
         .catch(() => alert('Error de conexión.'));
 }
@@ -354,17 +366,27 @@ function submitEditar() {
 
 // ── Resetear contraseña ─────────────────────────────────────────────────────
 function resetearPassword(perfilId, username) {
-    if (!confirm(`¿Resetear la contraseña de "${username}"?\nSe generará una nueva contraseña aleatoria.`)) return;
+    document.getElementById('reset_perfil_id').value = perfilId;
+    document.getElementById('reset_username').textContent = username;
+    document.getElementById('reset_password').value = '';
+    new bootstrap.Modal(document.getElementById('modalReset')).show();
+}
+
+function submitReset() {
+    const perfilId = document.getElementById('reset_perfil_id').value;
+    const password = document.getElementById('reset_password').value;
+    if (!password.trim()) { alert('Escribe la nueva contraseña.'); return; }
 
     const body = new FormData();
     body.append('csrfmiddlewaretoken', CSRF);
     body.append('tipo', TIPO);
     body.append('perfil_id', perfilId);
+    body.append('password', password);
 
     fetch('/usuarios/ajax/resetear-password/', { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
-            if (data.ok) mostrarModalPassword('Contraseña reseteada', data.username, data.nueva_password);
+            if (data.ok) location.reload();
             else alert(data.error || 'Error al resetear.');
         })
         .catch(() => alert('Error de conexión.'));
@@ -388,20 +410,5 @@ function confirmarEliminar(perfilId, username) {
         .catch(() => alert('Error de conexión.'));
 }
 
-// ── Modal contraseña ────────────────────────────────────────────────────────
-function mostrarModalPassword(titulo, username, password) {
-    document.getElementById('modalPasswordTitulo').innerHTML = `<i class="fas fa-key me-2"></i>${titulo}`;
-    document.getElementById('modalPasswordUsername').textContent = username;
-    document.getElementById('modalPasswordValor').value = password;
-    document.getElementById('modalPasswordCopiadoMsg').classList.add('d-none');
-    new bootstrap.Modal(document.getElementById('modalPassword')).show();
-}
-
-function copiarPassword() {
-    const val = document.getElementById('modalPasswordValor').value;
-    navigator.clipboard.writeText(val).then(() => {
-        document.getElementById('modalPasswordCopiadoMsg').classList.remove('d-none');
-    });
-}
 </script>
 {% endblock %}

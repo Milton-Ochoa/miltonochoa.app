@@ -45,6 +45,24 @@ class ControlAccesoMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    def _redir_cambio_password(self, request):
+        """Redirige a la página de cambio obligatorio si el usuario es un empleado con
+        `debe_cambiar_password=True` (y no está ya en ella). None si no aplica.
+
+        Solo los empleados de área tienen `PerfilEmpleado`; superusuarios y perfiles de
+        colegio/profesor no lo tienen → no se les fuerza nada.
+        """
+        from usuarios.models import PerfilEmpleado  # import diferido: evita circular import
+        debe = (PerfilEmpleado.objects
+                .filter(user=request.user, debe_cambiar_password=True)
+                .exists())
+        if not debe:
+            return None
+        destino = reverse('cambiar_password', urlconf=request.urlconf)
+        if request.path == destino:
+            return None
+        return redirect(destino)
+
     def __call__(self, request):
         # Apex: las vistas se protegen con decoradores. Este control es por área.
         if getattr(request, 'area', None) is None:
@@ -64,6 +82,12 @@ class ControlAccesoMiddleware:
             login_apex = url_apex('login', request)
             next_abs = request.build_absolute_uri()
             return redirect(f'{login_apex}?{urlencode({"next": next_abs})}')
+
+        # Empleado de área con clave genérica pendiente de cambio: bloquea todo el área
+        # hasta que elija su propia contraseña (salvo la propia página de cambio).
+        redir_cambio = self._redir_cambio_password(request)
+        if redir_cambio is not None:
+            return redir_cambio
 
         # Bandera por defecto para las plantillas (la rama de financiera la sube a True).
         request.es_personal_financiera = False
