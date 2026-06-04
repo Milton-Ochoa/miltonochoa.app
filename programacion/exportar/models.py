@@ -1,5 +1,8 @@
+import os
+
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils.text import slugify
 from programacion.configuracion.models import Profesor, ColegioAnio
 
 
@@ -44,3 +47,45 @@ class PagoRealizado(models.Model):
 
     def __str__(self):
         return f"{self.profesor} | {self.colegio} | {self.fecha} | ${self.valor:,}"
+
+
+def _pago_soporte_upload_to(instance, filename):
+    """Ruta/nombre limpio del soporte de un pago: ``pagos/pago-<docente>-<fecha><ext>``.
+
+    Espejo de ``viaticos._soporte_upload_to``: usa el nombre corto del docente y la
+    fecha de la clase para un nombre legible y estable. Con ``file_overwrite=False``
+    (S3) o el sufijo de FileSystemStorage, varios soportes del mismo pago reciben un
+    sufijo único automático.
+    """
+    pago = instance.pago
+    slug = slugify(pago.profesor.nombre_corto) or str(pago.pk)
+    fecha = pago.fecha.isoformat() if pago.fecha else 'sin-fecha'
+    ext = os.path.splitext(filename)[1].lower()
+    return f'pagos/pago-{slug}-{fecha}{ext}'
+
+
+class SoportePagoProfesor(models.Model):
+    """Comprobante de un pago liquidado a un profesor (FK a `PagoRealizado`).
+
+    Espejo de `viaticos.SoportePago`: varios archivos por pago e historial de quién
+    subió qué y cuándo. Lo sube/elimina **financiera**; programación lo ve en solo
+    lectura. El `FileField` usa el backend de `STORAGES['default']` (disco en dev,
+    Supabase Storage/S3 en prod); la descarga la proxia una vista protegida.
+    """
+
+    pago = models.ForeignKey(PagoRealizado, on_delete=models.CASCADE,
+                             related_name='soportes')
+    archivo = models.FileField(upload_to=_pago_soporte_upload_to)
+    nombre_original = models.CharField(max_length=255, blank=True)
+    subido_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='soportes_pago')
+    subido_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'prog_pagos_soportes'
+        ordering = ['-subido_en']
+        verbose_name = 'Soporte de pago a profesor'
+        verbose_name_plural = 'Soportes de pago a profesor'
+
+    def __str__(self):
+        return f'Soporte de pago #{self.pago_id} ({self.nombre_original or self.archivo.name})'
