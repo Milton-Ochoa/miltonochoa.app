@@ -287,14 +287,15 @@
   var URL_EXTRA = "{% url 'pagos_agregar_extra' 0 %}";
   var formValor = document.getElementById('formEditarValor');
   var formExtra = document.getElementById('formExtra');
-  var modalValor = new bootstrap.Modal(document.getElementById('modalEditarValor'));
-  var modalExtra = new bootstrap.Modal(document.getElementById('modalExtra'));
 
+  // bootstrap se carga al final del body (después de este bloque): instanciar el modal
+  // de forma diferida dentro del click, no al cargar, para no romper la asignación de
+  // listeners si `bootstrap` aún no está definido.
   document.querySelectorAll('.btn-editar-valor').forEach(function (b) {
     b.addEventListener('click', function () {
       formValor.action = URL_VALOR.replace('/0/', '/' + b.dataset.pago + '/');
       document.getElementById('inputEditarValor').value = b.dataset.valor;
-      modalValor.show();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditarValor')).show();
     });
   });
   document.querySelectorAll('.btn-agregar-extra').forEach(function (b) {
@@ -302,7 +303,7 @@
       formExtra.action = URL_EXTRA.replace('/0/', '/' + b.dataset.pago + '/');
       document.getElementById('extraDocente').textContent = '· ' + (b.dataset.docente || '');
       formExtra.reset();
-      modalExtra.show();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalExtra')).show();
     });
   });
 })();

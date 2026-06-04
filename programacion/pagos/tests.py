@@ -192,6 +192,14 @@ class RevisionProgramacionTest(TestCase):
         self.assertEqual(LotePagos.objects.count(), 1)
         self.assertEqual(PagoRealizado.objects.count(), 1)
 
+    def test_pagina_borrador_renderiza_controles_de_edicion(self):
+        self._preparar()
+        r = self.client.get(f'/pagos/?semana={self.semana}&tab=pendiente')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'btn-editar-valor')   # editar valor
+        self.assertContains(r, 'btn-agregar-extra')  # agregar costo extra
+        self.assertContains(r, 'modalEditarValor')
+
     def test_editar_valor_sobrescribe_base(self):
         pago = self._preparar()
         self.client.post(f'/pagos/{pago.pk}/valor/',
