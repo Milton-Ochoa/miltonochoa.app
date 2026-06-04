@@ -20,8 +20,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from core.areas import es_personal_financiera
-from programacion.exportar.models import PagoRealizado, SoportePagoProfesor
-from programacion.exportar.views import (
+from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
+from programacion.pagos.views import (
     construir_contexto_pagos, filas_pagos_por_tab,
     _generar_excel_pagos, _semana_label,
 )

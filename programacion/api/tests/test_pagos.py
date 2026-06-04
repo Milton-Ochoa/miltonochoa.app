@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from programacion.exportar.models import PagoRealizado
+from programacion.pagos.models import PagoRealizado
 
 
 def _setup():

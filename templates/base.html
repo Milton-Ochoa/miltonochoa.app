@@ -116,12 +116,12 @@
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
 
-        <div class="collapse {% if request.resolver_match.url_name == 'exportar' or request.resolver_match.url_name == 'exportar_pagos' %}show{% endif %}" id="collapseExportar">
+        <div class="collapse {% if request.resolver_match.url_name == 'exportar' or request.resolver_match.url_name == 'pagos_lista' %}show{% endif %}" id="collapseExportar">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'exportar' %}" class="{% if request.resolver_match.url_name == 'exportar' %}active{% endif %}">
                     <i class="fas fa-calendar-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Horarios
                 </a>
-                <a href="{% url 'exportar_pagos' %}" class="{% if request.resolver_match.url_name == 'exportar_pagos' %}active{% endif %}">
+                <a href="{% url 'pagos_lista' %}" class="{% if request.resolver_match.url_name == 'pagos_lista' %}active{% endif %}">
                     <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Pagos
                 </a>
             </div>

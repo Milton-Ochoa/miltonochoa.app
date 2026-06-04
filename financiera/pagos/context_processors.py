@@ -13,6 +13,6 @@ def pagos_pendientes(request):
         return {}
     if not getattr(request, 'es_personal_financiera', False):
         return {}
-    from programacion.exportar.views import construir_contexto_pagos
+    from programacion.pagos.views import construir_contexto_pagos
     ctx = construir_contexto_pagos({})
     return {'pagos_pendientes_count': len(ctx['filas_pendientes'])}

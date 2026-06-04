@@ -14,7 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_PROGRAMACION
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from programacion.exportar.models import PagoRealizado, SoportePagoProfesor
+from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
 
 # Soportes en disco local aislado en tmp: NUNCA tocar Supabase (igual que viáticos).
 _STORAGE_LOCAL = {

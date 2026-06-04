@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     'programacion.informes',
     'programacion.auditoria',
     'programacion.exportar',
+    'programacion.pagos',
     'programacion.pendientes',
     'programacion.api',
     'programacion.viaticos',

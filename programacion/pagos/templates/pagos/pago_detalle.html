@@ -3,7 +3,7 @@
 {% block breadcrumbs %}
 <ol class="breadcrumb header-breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'exportar_pagos' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado">Pagos</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado">Pagos</a></li>
     <li class="breadcrumb-item active">Pago #{{ pago.pk }}</li>
 </ol>
 {% endblock %}
@@ -23,7 +23,7 @@
             <i class="fas fa-money-check-alt me-1"></i> Pago #{{ pago.pk }}
             <span class="badge bg-success ms-2">Pagado</span>
         </h5>
-        <a href="{% url 'exportar_pagos' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
+        <a href="{% url 'pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
            class="btn btn-outline-secondary btn-sm">Volver</a>
     </div>
 

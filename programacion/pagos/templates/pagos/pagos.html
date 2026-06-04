@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block header_title %}Exportar Pagos{% endblock %}
+{% block header_title %}Pagos{% endblock %}
 {% block breadcrumbs %}
 <ol class="breadcrumb header-breadcrumb">
     <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
@@ -182,7 +182,7 @@
 </div>
 
 <script>
-const URL_PAGOS    = "{% url 'exportar_pagos' %}";
+const URL_PAGOS    = "{% url 'pagos_lista' %}";
 const TAB_ACTUAL   = "{{ tab }}";
 
 // ── Filtro ────────────────────────────────────────────────────
