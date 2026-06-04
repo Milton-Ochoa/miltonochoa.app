@@ -33,13 +33,18 @@
   <div class="table-responsive">
     <table class="table table-sm align-middle">
       <thead class="table-dark">
-        <tr><th>Usuario</th><th class="text-end" style="width:160px;">Acciones</th></tr>
+        <tr><th>Usuario</th><th>Correo</th><th class="text-end" style="width:180px;">Acciones</th></tr>
       </thead>
       <tbody>
         {% for u in usuarios_etiqueta %}
         <tr id="fila-area-{{ u.id }}">
           <td class="fw-semibold">{{ u.username }}</td>
+          <td class="text-muted small">{{ u.email|default:"—" }}</td>
           <td class="text-end">
+            <button class="btn btn-outline-warning btn-sm" title="Editar correo"
+                    onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
+              <i class="fas fa-envelope"></i>
+            </button>
             <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
                     onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
               <i class="fas fa-key"></i>
@@ -51,7 +56,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="2" class="text-center text-muted py-4">Aún no hay usuarios de programación.</td></tr>
+        <tr><td colspan="3" class="text-center text-muted py-4">Aún no hay usuarios de programación.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -79,13 +84,18 @@
   <div class="table-responsive">
     <table class="table table-sm align-middle">
       <thead class="table-dark">
-        <tr><th>Usuario</th><th class="text-end" style="width:160px;">Acciones</th></tr>
+        <tr><th>Usuario</th><th>Correo</th><th class="text-end" style="width:180px;">Acciones</th></tr>
       </thead>
       <tbody>
         {% for u in usuarios_etiqueta_financiera %}
         <tr id="fila-area-{{ u.id }}">
           <td class="fw-semibold">{{ u.username }}</td>
+          <td class="text-muted small">{{ u.email|default:"—" }}</td>
           <td class="text-end">
+            <button class="btn btn-outline-warning btn-sm" title="Editar correo"
+                    onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
+              <i class="fas fa-envelope"></i>
+            </button>
             <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
                     onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
               <i class="fas fa-key"></i>
@@ -97,7 +107,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="2" class="text-center text-muted py-4">Aún no hay usuarios de financiera.</td></tr>
+        <tr><td colspan="3" class="text-center text-muted py-4">Aún no hay usuarios de financiera.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -118,9 +128,24 @@
           <label class="form-label fw-bold">Nombre de usuario</label>
           <input type="text" id="crear_area_username" class="form-control" placeholder="Ej: coord_programacion" autocomplete="off">
         </div>
-        <div class="alert alert-info py-2 mb-0" style="font-size:0.88rem;">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Correo</label>
+          <input type="email" id="crear_area_email" class="form-control" placeholder="empleado@ejemplo.com" autocomplete="off">
+          <div class="form-text" style="font-size:0.8rem;">Obligatorio: lo usa "Olvidé mi contraseña".</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-bold">Contraseña genérica</label>
+          <div class="input-group">
+            <input type="text" id="crear_area_password" class="form-control" style="font-family:monospace;"
+                   placeholder="Escribe la contraseña inicial" autocomplete="off">
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePassVisArea('crear_area_password')" title="Mostrar/ocultar">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="alert alert-info py-2 mb-0" style="font-size:0.85rem;">
           <i class="fas fa-info-circle me-1"></i>
-          La contraseña se generará automáticamente y se mostrará <strong>una sola vez</strong>.
+          El empleado deberá <strong>cambiarla en su primer ingreso</strong>.
         </div>
       </div>
       <div class="modal-footer">
@@ -133,34 +158,52 @@
   </div>
 </div>
 
-<!-- MODAL: Mostrar contraseña -->
-<div class="modal fade" id="modalPasswordArea" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<!-- MODAL: Resetear contraseña -->
+<div class="modal fade" id="modalResetArea" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header bg-dark text-white">
-        <h5 class="modal-title" id="modalPasswordAreaTitulo"><i class="fas fa-key me-2"></i>Contraseña</h5>
+        <h5 class="modal-title"><i class="fas fa-key me-2"></i>Resetear contraseña</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body text-center">
-        <p class="mb-1 text-muted" style="font-size:0.85rem;">Usuario: <strong id="modalPasswordAreaUsername"></strong></p>
-        <div class="alert alert-warning py-2 mb-3" style="font-size:0.82rem;">
-          <i class="fas fa-exclamation-triangle me-1"></i>
-          Copia esta contraseña ahora. <strong>No se podrá recuperar.</strong>
-        </div>
-        <div class="input-group mb-3">
-          <input type="text" id="modalPasswordAreaValor" class="form-control text-center fw-bold fs-5"
-                 style="font-family:monospace; letter-spacing:0.05em;" readonly>
-          <button class="btn btn-outline-secondary" type="button" onclick="copiarPasswordArea()" title="Copiar">
-            <i class="fas fa-copy"></i>
+      <div class="modal-body">
+        <input type="hidden" id="reset_area_user_id">
+        <p class="mb-2 text-muted" style="font-size:0.85rem;">Usuario: <strong id="reset_area_username"></strong></p>
+        <label class="form-label fw-bold">Nueva contraseña genérica</label>
+        <div class="input-group">
+          <input type="text" id="reset_area_password" class="form-control" style="font-family:monospace;"
+                 placeholder="Escribe la nueva contraseña" autocomplete="off">
+          <button class="btn btn-outline-secondary" type="button" onclick="togglePassVisArea('reset_area_password')" title="Mostrar/ocultar">
+            <i class="fas fa-eye"></i>
           </button>
         </div>
-        <div id="modalPasswordAreaCopiadoMsg" class="text-success d-none" style="font-size:0.82rem;">
-          <i class="fas fa-check me-1"></i> Copiada al portapapeles
-        </div>
+        <div class="form-text" style="font-size:0.8rem;">El empleado deberá cambiarla en su próximo ingreso.</div>
       </div>
-      <div class="modal-footer justify-content-center">
-        <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="location.reload()">
-          <i class="fas fa-check me-1"></i> Listo, la copié
-        </button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="submitResetArea()"><i class="fas fa-save me-1"></i>Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Editar correo -->
+<div class="modal fade" id="modalEditarArea" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-envelope me-2"></i>Editar correo</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editar_area_user_id">
+        <p class="mb-2 text-muted" style="font-size:0.85rem;">Usuario: <strong id="editar_area_username"></strong></p>
+        <label class="form-label fw-bold">Correo</label>
+        <input type="email" id="editar_area_email" class="form-control" placeholder="empleado@ejemplo.com" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-warning" onclick="submitEditarArea()"><i class="fas fa-save me-1"></i>Guardar</button>
       </div>
     </div>
   </div>
@@ -181,32 +224,69 @@ function _post(url, datos) {
 let _areaCrear = 'programacion';
 const _AREA_LABELS = { programacion: 'Programación', financiera: 'Financiera' };
 
+function togglePassVisArea(id) {
+    const inp = document.getElementById(id);
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
 function abrirCrearArea(area) {
     _areaCrear = area || 'programacion';
     document.getElementById('modalCrearAreaTitulo').innerHTML =
         `<i class="fas fa-plus me-2"></i>Nuevo usuario de ${_AREA_LABELS[_areaCrear] || ''}`;
     document.getElementById('crear_area_username').value = '';
+    document.getElementById('crear_area_email').value = '';
+    document.getElementById('crear_area_password').value = '';
     new bootstrap.Modal(document.getElementById('modalCrearArea')).show();
 }
 
 function submitCrearArea() {
     const username = document.getElementById('crear_area_username').value.trim();
+    const email = document.getElementById('crear_area_email').value.trim();
+    const password = document.getElementById('crear_area_password').value;
     if (!username) { alert('Escribe un nombre de usuario.'); return; }
-    _post('/usuarios/ajax/area/crear/', { username, area: _areaCrear })
+    if (!email) { alert('Escribe el correo.'); return; }
+    if (!password.trim()) { alert('Escribe la contraseña genérica.'); return; }
+    _post('/usuarios/ajax/area/crear/', { username, email, password, area: _areaCrear })
         .then(data => {
-            if (data.ok) {
-                bootstrap.Modal.getInstance(document.getElementById('modalCrearArea')).hide();
-                mostrarPasswordArea(`Usuario creado: ${data.username}`, data.username, data.password_inicial);
-            } else { alert(data.error || 'Error al crear el usuario.'); }
+            if (data.ok) location.reload();
+            else alert(data.error || 'Error al crear el usuario.');
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function editarArea(userId, username, email) {
+    document.getElementById('editar_area_user_id').value = userId;
+    document.getElementById('editar_area_username').textContent = username;
+    document.getElementById('editar_area_email').value = email || '';
+    new bootstrap.Modal(document.getElementById('modalEditarArea')).show();
+}
+
+function submitEditarArea() {
+    const user_id = document.getElementById('editar_area_user_id').value;
+    const email = document.getElementById('editar_area_email').value.trim();
+    if (!email) { alert('Escribe el correo.'); return; }
+    _post('/usuarios/ajax/area/editar/', { user_id, email })
+        .then(data => {
+            if (data.ok) location.reload();
+            else alert(data.error || 'Error al editar.');
         })
         .catch(() => alert('Error de conexión.'));
 }
 
 function resetearArea(userId, username) {
-    if (!confirm(`¿Resetear la contraseña de "${username}"?`)) return;
-    _post('/usuarios/ajax/area/resetear/', { user_id: userId })
+    document.getElementById('reset_area_user_id').value = userId;
+    document.getElementById('reset_area_username').textContent = username;
+    document.getElementById('reset_area_password').value = '';
+    new bootstrap.Modal(document.getElementById('modalResetArea')).show();
+}
+
+function submitResetArea() {
+    const user_id = document.getElementById('reset_area_user_id').value;
+    const password = document.getElementById('reset_area_password').value;
+    if (!password.trim()) { alert('Escribe la nueva contraseña.'); return; }
+    _post('/usuarios/ajax/area/resetear/', { user_id, password })
         .then(data => {
-            if (data.ok) mostrarPasswordArea('Contraseña reseteada', data.username, data.nueva_password);
+            if (data.ok) location.reload();
             else alert(data.error || 'Error al resetear.');
         })
         .catch(() => alert('Error de conexión.'));
@@ -220,21 +300,6 @@ function eliminarArea(userId, username) {
             else alert(data.error || 'Error al eliminar.');
         })
         .catch(() => alert('Error de conexión.'));
-}
-
-function mostrarPasswordArea(titulo, username, password) {
-    document.getElementById('modalPasswordAreaTitulo').innerHTML = `<i class="fas fa-key me-2"></i>${titulo}`;
-    document.getElementById('modalPasswordAreaUsername').textContent = username;
-    document.getElementById('modalPasswordAreaValor').value = password;
-    document.getElementById('modalPasswordAreaCopiadoMsg').classList.add('d-none');
-    new bootstrap.Modal(document.getElementById('modalPasswordArea')).show();
-}
-
-function copiarPasswordArea() {
-    const val = document.getElementById('modalPasswordAreaValor').value;
-    navigator.clipboard.writeText(val).then(() => {
-        document.getElementById('modalPasswordAreaCopiadoMsg').classList.remove('d-none');
-    });
 }
 </script>
 {% endblock %}
