@@ -24,12 +24,32 @@
             {% endif %}
         </a>
 
-        {# ── Pagos a profesores ── (badge = filas pendientes de la semana, Fase 3) #}
-        <a href="{% url 'fin_pagos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
-            <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos a profesores
-            {% if pagos_pendientes_count %}
-            <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count }}</span>
-            {% endif %}
+        {# ── Pagos (desplegable) ── Profesores (funcional) + Monitores (aún no).
+           El badge del padre = filas de pago pendientes de la semana (context processor). #}
+        <a href="#collapsePagosFin" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="pagos_fin"
+           aria-expanded="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}true{% else %}false{% endif %}">
+            <span>
+                <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos
+                {% if pagos_pendientes_count %}
+                <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count }}</span>
+                {% endif %}
+            </span>
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
+        <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}show{% endif %}" id="collapsePagosFin">
+            <div class="collapse-inner py-1 bg-dark">
+                <a href="{% url 'fin_pagos_lista' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
+                    <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
+                </a>
+                {# Monitores: aún no implementado → ítem inerte (sin href), gris, con aviso. #}
+                <a class="text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+                   style="cursor: not-allowed; opacity: .55;">
+                    <i class="fas fa-user-graduate" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
+                    <span class="badge bg-secondary ms-auto" style="font-size:0.6rem;">Pronto</span>
+                </a>
+            </div>
+        </div>
         {% endif %}
 {% endblock %}

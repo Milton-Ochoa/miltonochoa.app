@@ -48,10 +48,13 @@
             <span><i class="fas fa-chart-line icon-main text-primary"></i> Reportes</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' %}show{% endif %}" id="collapseReportes">
+        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}show{% endif %}" id="collapseReportes">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'lista_informes' %}" class="{% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
                     <i class="fas fa-file-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Informes
+                </a>
+                <a href="{% url 'pagos_lista' %}" class="{% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
+                    <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Pagos
                 </a>
                 <a href="{% url 'lista_alertas' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'lista_alertas' %}active{% endif %}">
                     <i class="fas fa-shield-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
@@ -116,13 +119,10 @@
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
 
-        <div class="collapse {% if request.resolver_match.url_name == 'exportar' or request.resolver_match.url_name == 'pagos_lista' %}show{% endif %}" id="collapseExportar">
+        <div class="collapse {% if request.resolver_match.url_name == 'exportar' %}show{% endif %}" id="collapseExportar">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'exportar' %}" class="{% if request.resolver_match.url_name == 'exportar' %}active{% endif %}">
                     <i class="fas fa-calendar-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Horarios
-                </a>
-                <a href="{% url 'pagos_lista' %}" class="{% if request.resolver_match.url_name == 'pagos_lista' %}active{% endif %}">
-                    <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Pagos
                 </a>
             </div>
         </div>
