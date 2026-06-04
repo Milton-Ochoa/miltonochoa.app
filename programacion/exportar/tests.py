@@ -2,6 +2,8 @@
 Tests — app: exportar
 Cobertura mínima de la página de exportación tras Calendario A/B (Fase 4):
 el selector de colegios desambigua periodos con `periodo_label`.
+
+(Los tests de pagos se movieron a `programacion/pagos/tests.py` al extraer esa sub-app.)
 """
 from django.test import TestCase, Client
 from django.contrib.auth.models import User

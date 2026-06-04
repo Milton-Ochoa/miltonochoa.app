@@ -17,7 +17,6 @@ Gate: superusuario o miembro del grupo `area:financiera`
 el decorador es la segunda barrera por-vista.
 """
 import io
-import os
 from datetime import datetime
 
 from django.contrib import messages
@@ -34,6 +33,7 @@ from openpyxl.utils import get_column_letter
 from core.areas import es_personal_financiera
 from programacion.viaticos.forms import SolicitudViaticoForm
 from programacion.viaticos.models import GastoViatico, SolicitudViatico, SoportePago
+from programacion.viaticos.soportes import validar_soporte
 from programacion.viaticos.views import _contexto_form, _parsear_gastos, _responder_soporte
 
 solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
@@ -42,20 +42,6 @@ solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
 # DEVUELTA queda fuera a propósito: pertenece a programación hasta que la reenvíe;
 # PAGADA es terminal. (Ver matriz de permisos arriba.)
 EDITABLES_FINANCIERA = {SolicitudViatico.Estado.ENVIADA, SolicitudViatico.Estado.APROBADA}
-
-# Restricciones del soporte de pago (solo se sube en PAGADA).
-SOPORTE_EXTENSIONES = {'.pdf', '.jpg', '.jpeg', '.png'}
-SOPORTE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
-
-
-def _validar_soporte(archivo):
-    """Valida extensión y tamaño de un soporte; devuelve un mensaje de error o None."""
-    ext = os.path.splitext(archivo.name)[1].lower()
-    if ext not in SOPORTE_EXTENSIONES:
-        return f'Tipo de archivo no permitido ({ext or "sin extensión"}). Usa PDF, JPG o PNG.'
-    if archivo.size > SOPORTE_MAX_BYTES:
-        return 'El archivo supera el tamaño máximo de 10 MB.'
-    return None
 
 
 @solo_financiera
@@ -195,7 +181,7 @@ def fin_viaticos_subir_soporte(request, pk):
         messages.error(request, 'Selecciona un archivo para subir.')
         return redirect('fin_viaticos_detalle', pk=solicitud.pk)
 
-    error = _validar_soporte(archivo)
+    error = validar_soporte(archivo)
     if error:
         messages.error(request, error)
         return redirect('fin_viaticos_detalle', pk=solicitud.pk)

@@ -23,6 +23,7 @@ urlpatterns = [
     path('informes/', include('programacion.informes.urls')),
     path('auditoria/', include('programacion.auditoria.urls')),
     path('exportar/', include('programacion.exportar.urls')),
+    path('pagos/', include('programacion.pagos.urls')),
     path('historial/', historial_global, name='historial_global'),
     path('buscar/', ajax_busqueda_global, name='ajax_busqueda_global'),
     path('pendientes/', include('programacion.pendientes.urls')),

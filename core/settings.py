@@ -91,10 +91,12 @@ INSTALLED_APPS = [
     'programacion.informes',
     'programacion.auditoria',
     'programacion.exportar',
+    'programacion.pagos',
     'programacion.pendientes',
     'programacion.api',
     'programacion.viaticos',
     'financiera.viaticos',
+    'financiera.pagos',
 ]
 
 MIDDLEWARE = [
@@ -128,6 +130,8 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'programacion.auditoria.context_processors.alertas_vigentes',
                 'financiera.viaticos.context_processors.viaticos_pendientes',
+                'financiera.pagos.context_processors.pagos_pendientes',
+                'programacion.pagos.context_processors.pagos_por_revisar',
             ],
         },
     },

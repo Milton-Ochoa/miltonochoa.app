@@ -1,0 +1,100 @@
+{% comment %}
+  Filtrado por columna (atributos data-*) + paginación inline (mismo patrón que viáticos)
+  + botón "Aplicar" del rango de fechas. Compartido por programación y financiera.
+  Requiere la global `URL_PAGOS` (definida por cada página antes de incluir este parcial).
+{% endcomment %}
+<script>
+(function () {
+    var TAB_ACTUAL = "{{ tab }}";
+
+    // ── Aplicar rango de fechas (recarga con nuevo querystring) ──
+    var btnAplicar = document.getElementById('btnAplicar');
+    if (btnAplicar) {
+        btnAplicar.addEventListener('click', function () {
+            var fi = document.getElementById('inputDesde').value;
+            var ff = document.getElementById('inputHasta').value;
+            if (fi && ff) {
+                window.location.href = URL_PAGOS + '?semana=' + fi + '&hasta=' + ff + '&tab=' + TAB_ACTUAL;
+            }
+        });
+    }
+
+    // ── Filtrado por columna + paginación ──
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaPagos tr.fila-pago'));
+    var ctrl   = document.getElementById('paginaControlesPagos');
+    var cont   = document.getElementById('contadorVisiblesPagos');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        if (cont) cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        if (!ctrl) return;
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+
+    render();
+})();
+</script>

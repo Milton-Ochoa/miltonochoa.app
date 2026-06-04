@@ -641,6 +641,21 @@
     });
 </script>
 
+{% comment %}
+  Mensajes de Django como toast (abajo-derecha, auto-cierre). Solo en programación; en
+  financiera se iteran (consumen) sin mostrarse —allí no debe aparecer ninguna notificación—.
+  En el apex (sin request.area) no se tocan, para no consumir los del login.
+{% endcomment %}
+{% if messages and request.area %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  {% for message in messages %}{% if request.area == 'programacion' %}
+  showBootstrapToast("{{ message|escapejs }}", "{% if 'error' in message.tags %}danger{% elif 'warning' in message.tags %}warning{% elif 'success' in message.tags %}success{% else %}info{% endif %}");
+  {% endif %}{% endfor %}
+});
+</script>
+{% endif %}
+
 <script>
     const sidebar = document.getElementById('sidebarMenu');
 
@@ -751,6 +766,21 @@
     })();
 </script>
 
+<script>
+    // ── Atajo universal: Ctrl/Cmd + Shift + S → colapsar/expandir sidebar ──
+    // Chrome compartido por todas las áreas (programación, financiera, …); por eso
+    // va aquí, fuera del bloque gated por `es_personal_programacion`.
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+            const toggle = document.getElementById('sidebarToggle');
+            if (toggle) {
+                e.preventDefault();
+                toggle.click();
+            }
+        }
+    });
+</script>
+
 {% if request.es_personal_programacion %}
 <script>
     // ── Búsqueda: limpiar resultados al cerrar el modal ──
@@ -768,20 +798,16 @@
         });
     }
 
-    // ── Atajos de teclado ──
+    // ── Atajos de teclado (solo programación: búsqueda global + ayuda) ──
+    // El toggle de sidebar (Ctrl+Shift+S) es chrome universal y vive fuera de este
+    // bloque para que funcione también en financiera y demás áreas.
     document.addEventListener('keydown', function(e) {
         const enInput = e.target.matches('input, textarea, select, [contenteditable]');
 
         // Ctrl/Cmd + Shift + F → búsqueda global
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
             e.preventDefault();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('modalBusqueda')).show();
-        }
-
-        // Ctrl/Cmd + Shift + S → toggle sidebar
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
-            e.preventDefault();
-            document.getElementById('sidebarToggle').click();
         }
 
         // ? → modal atajos (no en inputs)
