@@ -1,14 +1,18 @@
 """
-Pagos semanales a profesores (programación, **solo lectura**).
+Pagos semanales a profesores — **revisión en programación** antes de financiera.
 
 Calcula la liquidación semanal por fila `(profesor, colegio, día)` a partir de las
-clases dictadas, la muestra en pestañas pendiente/realizado y la exporta a Excel.
-**Marcar el pago y subir/eliminar soportes es de financiera** (financiera/pagos):
-aquí solo se ve el listado y el detalle de un pago con sus comprobantes.
+clases dictadas. Programación **prepara** el borrador de la semana (materializa las
+filas en un `LotePagos` BORRADOR), las **revisa** (edita el valor base, excluye filas,
+agrega costos extra del desglose) y las **envía** a financiera (BORRADOR→ENVIADO).
+**Financiera solo ve las filas de lotes ENVIADO**, ve el desglose, marca el pago y
+sube/elimina soportes (financiera/pagos).
 
 Los helpers de cálculo (`construir_contexto_pagos`, `filas_pagos_por_tab`,
-`_generar_excel_pagos`, `_semana_label`) son **compartidos**: financiera los importa
-para reusar exactamente el mismo cálculo (BD única, sin duplicar lógica).
+`_generar_excel_pagos`, `_semana_label`) son **compartidos**: financiera los importa con
+`modo='financiera'` para reusar exactamente el mismo cálculo (BD única, sin duplicar).
+`_build_filas_pagos` (cálculo puro desde clases) alimenta la materialización;
+`_filas_desde_lote` lee las filas ya persistidas (con su desglose).
 """
 import io
 from datetime import date, datetime, timedelta
@@ -16,6 +20,7 @@ from datetime import date, datetime, timedelta
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse
 from django.db.models import Count
+from django.utils import timezone
 from django.contrib.auth.decorators import user_passes_test
 from core.areas import es_personal_programacion
 from openpyxl import Workbook
@@ -23,7 +28,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from programacion.colegios.models import Clase
-from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
+from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.viaticos.views import _responder_soporte
 
 
@@ -124,15 +129,181 @@ def _build_filas_pagos(fecha_inicio, fecha_fin):
     return filas
 
 
+def _semana_de(get):
+    """Resuelve la semana **canónica** (lunes, viernes) desde `get` (`?semana=`).
+
+    Siempre se ancla al **lunes** de la semana elegida (o de hoy si no hay `?semana=`);
+    el viernes es lunes+4. El lote se llavea con este par canónico, así la navegación es
+    semanal y la llave del lote es estable aunque el usuario teclee fechas raras."""
+    base = date.today()
+    semana_str = get.get('semana', '')
+    if semana_str:
+        try:
+            base = datetime.strptime(semana_str, '%Y-%m-%d').date()
+        except ValueError:
+            base = date.today()
+    lunes = base - timedelta(days=base.weekday())
+    return lunes, lunes + timedelta(days=4)
+
+
+def _fila_desde_pago(p):
+    """Construye el dict de fila (misma forma que `_build_filas_pagos`) desde una
+    `PagoRealizado` persistida, añadiendo el desglose y el estado de pago.
+
+    `valor_total` = total (valor base —posiblemente editado— + extras), para que la
+    tabla/Excel sigan mostrando el monto final en la columna VALOR."""
+    nombre   = p.profesor.nombre or ''
+    apellido = p.profesor.apellido or ''
+    pn = nombre.split()[0] if nombre else ''
+    pa = apellido.split()[0] if apellido else ''
+    nombre_corto = f"{pn} {pa}".strip()
+
+    banco      = p.profesor.banco or ''
+    tipo_raw   = p.profesor.tipo_cuenta or ''
+    tipo_cuenta = 'Ahorros a la mano' if banco == 'Daviplata' else tipo_raw
+
+    extras = [{'id': e.id, 'concepto': e.concepto, 'valor': e.valor} for e in p.extras.all()]
+    total_extras = sum(e['valor'] for e in extras)
+    valor_base = p.valor_base
+
+    return {
+        'fecha':        p.fecha,
+        'profesor_id':  p.profesor_id,
+        'colegio_id':   p.colegio_id,
+        'docente':      nombre_corto,
+        'documento':    p.profesor.documento or '',
+        'num_cuenta':   p.profesor.cuenta_bancaria or '',
+        'tipo_cuenta':  tipo_cuenta,
+        'banco':        banco,
+        'colegio':      p.colegio.colegio.nombre or '',
+        'codigo':       p.colegio.colegio.codigo or '',
+        'horas':        p.horas,
+        'valor_hora':   p.colegio.valor_hora or 0,
+        'valor_base':   valor_base,
+        'extras':       extras,
+        'total_extras': total_extras,
+        'valor_total':  valor_base + total_extras,
+        'excluida':     p.excluida,
+        'pago_id':      p.id,
+        'fecha_pago':   p.fecha_pago,
+        'marcado_por':  ((p.marcado_por.get_full_name() or p.marcado_por.username)
+                         if p.marcado_por else '—'),
+        'n_soportes':   getattr(p, 'n_soportes', p.soportes.count()),
+    }
+
+
+def _filas_desde_lote(lote):
+    """Filas persistidas de un lote (incluye las **excluidas**, marcadas con `excluida`,
+    para que programación pueda re-incluirlas). El llamador filtra excluidas si toca."""
+    pagos = (
+        PagoRealizado.objects
+        .filter(lote=lote)
+        .select_related('profesor', 'colegio__colegio', 'marcado_por')
+        .prefetch_related('extras')
+        .annotate(n_soportes=Count('soportes'))
+        .order_by('fecha', 'profesor__nombre')
+    )
+    return [_fila_desde_pago(p) for p in pagos]
+
+
+def preparar_lote_semana(inicio, fin, user=None):
+    """Materializa (idempotente) el borrador de la semana canónica (lunes–viernes).
+
+    Crea el `LotePagos` si no existe. Si está ENVIADO, no toca nada (bloqueado). Si está
+    BORRADOR, sincroniza las filas con el cálculo desde clases:
+    - crea filas para clases nuevas;
+    - refresca `horas`/`valor` SOLO de filas sin override, no excluidas y no pagadas;
+    - elimina filas **autogeneradas** (sin override, sin extras, no excluidas, no pagadas)
+      cuya clase ya no existe (cancelada).
+
+    Nunca resucita excluidas ni pisa valores editados. Adopta al lote filas existentes con
+    la misma tripleta (p. ej. históricas `lote=NULL`), respetando el unique
+    `(profesor, colegio, fecha)`."""
+    lote, _ = LotePagos.objects.get_or_create(fecha_inicio=inicio, fecha_fin=fin)
+    if lote.estado == LotePagos.Estado.ENVIADO:
+        return lote
+
+    calc = {(f['profesor_id'], f['colegio_id'], f['fecha']): f
+            for f in _build_filas_pagos(inicio, fin)}
+    existentes = {
+        (p.profesor_id, p.colegio_id, p.fecha): p
+        for p in PagoRealizado.objects
+            .filter(fecha__gte=inicio, fecha__lte=fin)
+            .prefetch_related('extras')
+    }
+
+    for key, f in calc.items():
+        p = existentes.get(key)
+        if p is None:
+            PagoRealizado.objects.create(
+                lote=lote,
+                profesor_id=f['profesor_id'], colegio_id=f['colegio_id'], fecha=f['fecha'],
+                horas=f['horas'], valor=f['valor_total'],
+            )
+            continue
+        cambios = []
+        if p.lote_id != lote.id:
+            p.lote = lote
+            cambios.append('lote')
+        if (p.valor_base_editado is None and not p.excluida and p.fecha_pago is None
+                and (p.horas != f['horas'] or p.valor != f['valor_total'])):
+            p.horas = f['horas']
+            p.valor = f['valor_total']
+            cambios += ['horas', 'valor']
+        if cambios:
+            p.save(update_fields=cambios)
+
+    # Limpiar filas autogeneradas de ESTE lote que ya no salen en el cálculo.
+    for key, p in existentes.items():
+        if key in calc or p.lote_id != lote.id:
+            continue
+        if (p.valor_base_editado is None and not p.excluida and p.fecha_pago is None
+                and not p.extras.all()):
+            p.delete()
+
+    return lote
+
+
+def enviar_lote(lote, user):
+    """BORRADOR → ENVIADO. A partir de aquí financiera lo ve y programación no edita."""
+    lote.estado = LotePagos.Estado.ENVIADO
+    lote.enviado_en = timezone.now()
+    lote.enviado_por = user
+    lote.save(update_fields=['estado', 'enviado_en', 'enviado_por', 'actualizado_en'])
+
+
+def desenviar_lote(lote):
+    """ENVIADO → BORRADOR, **solo si ninguna fila está pagada**. Devuelve True si lo hizo."""
+    if lote.filas.filter(fecha_pago__isnull=False).exists():
+        return False
+    lote.estado = LotePagos.Estado.BORRADOR
+    lote.enviado_en = None
+    lote.enviado_por = None
+    lote.save(update_fields=['estado', 'enviado_en', 'enviado_por', 'actualizado_en'])
+    return True
+
+
+def _desglose_texto(f):
+    """Texto del desglose de una fila para el Excel: ``Base: $X; Concepto: $Y``.
+    Vacío si la fila no tiene costos extra (la columna VALOR ya muestra el total)."""
+    extras = f.get('extras') or []
+    if not extras:
+        return ''
+    partes = [f"Base: ${f.get('valor_base', f['valor_total']):,}"]
+    partes += [f"{e['concepto']}: ${e['valor']:,}" for e in extras]
+    return '; '.join(partes)
+
+
 def _generar_excel_pagos(filas, semana_label):
-    """Genera el Excel de pagos con el formato de la imagen."""
+    """Genera el Excel de pagos. Una fila por pago `(profesor, colegio, día)` con el monto
+    final en VALOR; la columna DESGLOSE detalla base + costos extra cuando los hay."""
     wb = Workbook()
     ws = wb.active
     ws.title = 'Pagos'
 
-    NUM_COLS = 9
+    NUM_COLS = 10
     COLS = ['FECHA', 'DOCENTE', 'DOCUMENTO', 'N° DE CUENTA',
-            'TIPO DE CUENTA', 'BANCO', 'COLEGIO', 'CODIGO', 'VALOR']
+            'TIPO DE CUENTA', 'BANCO', 'COLEGIO', 'CODIGO', 'VALOR', 'DESGLOSE']
 
     HEADER_FILL  = 'FF1F3864'  # azul oscuro
     SUBHDR_FILL  = 'FFD6E4F0'  # azul claro
@@ -187,6 +358,7 @@ def _generar_excel_pagos(filas, semana_label):
         cell_val.fill = PatternFill('solid', fgColor=fill_row)
         cell_val.border = borde
         cell_val.number_format = '"$"#,##0'
+        _celda(i, 10, _desglose_texto(f), fill=fill_row, h='left')
         ws.row_dimensions[i].height = 18
 
     # Fila TOTAL
@@ -201,10 +373,11 @@ def _generar_excel_pagos(filas, semana_label):
     cell_t.fill = PatternFill('solid', fgColor=TOTAL_FILL)
     cell_t.border = borde
     cell_t.number_format = '"$"#,##0'
+    _celda(total_row, 10, '', fill=TOTAL_FILL)
     ws.row_dimensions[total_row].height = 22
 
     # Anchos de columna
-    anchos = [12, 22, 14, 18, 18, 16, 30, 10, 14]
+    anchos = [12, 22, 14, 18, 18, 16, 30, 10, 14, 40]
     for ci, ancho in enumerate(anchos, start=1):
         ws.column_dimensions[get_column_letter(ci)].width = ancho
 
@@ -214,90 +387,122 @@ def _generar_excel_pagos(filas, semana_label):
     return buf.getvalue()
 
 
-def construir_contexto_pagos(get):
+def _enriquecer_preview(filas):
+    """Da a las filas calculadas (sin lote) las mismas claves que `_fila_desde_pago`,
+    para que plantilla/Excel funcionen igual antes de preparar la semana."""
+    for f in filas:
+        f.setdefault('valor_base', f['valor_total'])
+        f.setdefault('extras', [])
+        f.setdefault('total_extras', 0)
+        f.setdefault('excluida', False)
+        f.setdefault('pago_id', None)
+        f.setdefault('fecha_pago', None)
+        f.setdefault('marcado_por', '—')
+        f.setdefault('n_soportes', 0)
+    return filas
+
+
+def _filas_semana(get, *, modo):
+    """Filas de la semana según el modo, junto al lote y el rango canónico.
+
+    - `programacion`: si hay lote → sus filas (incl. excluidas, marcadas); si no →
+      preview calculado desde clases (estado "sin preparar").
+    - `financiera`: **solo** las filas de un lote ENVIADO (sin excluidas); si no, vacío.
+
+    Devuelve `(lunes, viernes, lote, filas)`."""
+    lunes, viernes = _semana_de(get)
+    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
+
+    if modo == 'financiera':
+        filas = ([f for f in _filas_desde_lote(lote) if not f['excluida']]
+                 if (lote and lote.enviado) else [])
+    else:
+        filas = (_filas_desde_lote(lote) if lote
+                 else _enriquecer_preview(_build_filas_pagos(lunes, viernes)))
+    return lunes, viernes, lote, filas
+
+
+def _split_por_pago(filas):
+    """Parte filas en (pendientes, realizadas) por `fecha_pago`; las excluidas, que nunca
+    se pagan, caen en pendientes. Devuelve también los totales (sin contar excluidas)."""
+    pendientes = [f for f in filas if f['fecha_pago'] is None]
+    realizadas = [f for f in filas if f['fecha_pago'] is not None]
+    return pendientes, realizadas
+
+
+def _suma_valor(filas):
+    return sum(f['valor_total'] for f in filas if not f['excluida'])
+
+
+def construir_contexto_pagos(get, *, modo='programacion'):
     """Arma el contexto de la página semanal de pagos (tabs pendiente/realizado).
 
-    Compartido por la vista de **programación** (solo lectura) y la de **financiera**
-    (marcar + soportes), para no duplicar el cálculo de la semana. `get` es un
-    `request.GET` (o dict-like con `.get`). Enriquece cada fila realizada con
-    `pago_id`, `fecha_pago`, `marcado_por` y `n_soportes` (para el icono de soporte).
-    """
-    hoy = date.today()
-    lunes   = hoy - timedelta(days=hoy.weekday())
-    viernes = lunes + timedelta(days=4)
-    ayer    = hoy - timedelta(days=1)
-
-    semana_str = get.get('semana', '')
-    hasta_str  = get.get('hasta', '')
-    if semana_str:
-        try:
-            lunes = datetime.strptime(semana_str, '%Y-%m-%d').date()
-            viernes = (datetime.strptime(hasta_str, '%Y-%m-%d').date()
-                       if hasta_str else lunes + timedelta(days=4))
-        except ValueError:
-            pass
-    # Clamp: no permitir fechas futuras
-    viernes = min(viernes, ayer)
-    lunes   = min(lunes, ayer)
-
+    Compartido por **programación** (revisión/edición) y **financiera** (marcar+soportes).
+    `modo` decide la fuente: programación ve el borrador o el preview; financiera **solo**
+    los lotes ENVIADO. Mantiene las claves históricas (`filas_pendientes`, `filas_realizadas`,
+    `filas`, `total_*`, `semana_label`, …); en `programacion` añade el estado del lote y los
+    flags de acción (`puede_preparar/editar/enviar/desenviar`, `hay_cambios_sin_preparar`)."""
+    lunes, viernes, lote, filas = _filas_semana(get, modo=modo)
     tab = get.get('tab', 'pendiente')
 
-    pagados_keys = set(
-        PagoRealizado.objects
-        .filter(fecha__gte=lunes, fecha__lte=viernes)
-        .values_list('profesor_id', 'colegio_id', 'fecha')
-    )
-
-    todas_filas = _build_filas_pagos(lunes, viernes)
-    filas_pendientes, filas_realizadas = [], []
-    for f in todas_filas:
-        key = (f['profesor_id'], f['colegio_id'], f['fecha'])
-        (filas_realizadas if key in pagados_keys else filas_pendientes).append(f)
-
-    # Pagos realizados enriquecidos con fecha_pago, marcado_por y nº de soportes.
-    pagos_db = {
-        (p.profesor_id, p.colegio_id, p.fecha): p
-        for p in PagoRealizado.objects
-            .filter(fecha__gte=lunes, fecha__lte=viernes)
-            .select_related('marcado_por')
-            .annotate(n_soportes=Count('soportes'))
-    }
-    for f in filas_realizadas:
-        pago = pagos_db.get((f['profesor_id'], f['colegio_id'], f['fecha']))
-        f['fecha_pago']  = pago.fecha_pago if pago else None
-        f['marcado_por'] = (pago.marcado_por.get_full_name() or pago.marcado_por.username) if pago and pago.marcado_por else '—'
-        f['pago_id']     = pago.id if pago else None
-        f['n_soportes']  = pago.n_soportes if pago else 0
-
+    filas_pendientes, filas_realizadas = _split_por_pago(filas)
     filas_tab = filas_pendientes if tab == 'pendiente' else filas_realizadas
-    return {
+
+    ctx = {
         'fecha_inicio':     lunes.isoformat(),
         'fecha_fin':        viernes.isoformat(),
-        'fecha_max':        ayer.isoformat(),
+        'fecha_max':        date.today().isoformat(),
         'semana_label':     _semana_label(lunes, viernes),
         'tab':              tab,
         'filas_pendientes': filas_pendientes,
         'filas_realizadas': filas_realizadas,
         'filas':            filas_tab,
-        'total_valor':      sum(f['valor_total'] for f in filas_tab),
-        'total_pendiente':  sum(f['valor_total'] for f in filas_pendientes),
-        'total_realizado':  sum(f['valor_total'] for f in filas_realizadas),
+        'total_valor':      _suma_valor(filas_tab),
+        'total_pendiente':  _suma_valor(filas_pendientes),
+        'total_realizado':  _suma_valor(filas_realizadas),
     }
 
+    if modo == 'programacion':
+        estado_lote = lote.estado if lote else 'SIN_PREPARAR'
+        filas_a_enviar = [f for f in filas if not f['excluida']]
+        # ¿Aparecen clases nuevas que aún no están en el borrador? (solo en BORRADOR)
+        hay_cambios = False
+        if lote and lote.estado == LotePagos.Estado.BORRADOR:
+            calc_keys = {(f['profesor_id'], f['colegio_id'], f['fecha'])
+                         for f in _build_filas_pagos(lunes, viernes)}
+            lote_keys = {(f['profesor_id'], f['colegio_id'], f['fecha']) for f in filas}
+            hay_cambios = bool(calc_keys - lote_keys)
+        ctx.update({
+            'estado_lote':              estado_lote,
+            'lote_id':                  lote.id if lote else None,
+            'enviado_en':               lote.enviado_en if lote else None,
+            'puede_preparar':           estado_lote in ('SIN_PREPARAR', 'BORRADOR'),
+            'puede_editar':             estado_lote == 'BORRADOR',
+            'puede_enviar':             estado_lote == 'BORRADOR' and len(filas_a_enviar) > 0,
+            'puede_desenviar':          bool(lote and lote.enviado
+                                             and not any(f['fecha_pago'] for f in filas)),
+            'hay_cambios_sin_preparar': hay_cambios,
+        })
+    return ctx
 
-def filas_pagos_por_tab(fecha_inicio, fecha_fin, tab):
-    """Devuelve las filas de pago del rango filtradas por el tab activo
-    (`'realizado'` = ya tienen `PagoRealizado`; cualquier otro = pendientes).
-    Compartido por la descarga de Excel de programación y de financiera."""
-    pagados_keys = set(
-        PagoRealizado.objects
-        .filter(fecha__gte=fecha_inicio, fecha__lte=fecha_fin)
-        .values_list('profesor_id', 'colegio_id', 'fecha')
-    )
-    todas = _build_filas_pagos(fecha_inicio, fecha_fin)
+
+def filas_pagos_por_tab(fecha_inicio, fecha_fin, tab, *, modo='programacion'):
+    """Filas de la semana (de `fecha_inicio`) filtradas por tab, para el Excel. Excluye
+    siempre las filas excluidas. Mismo `modo` que `construir_contexto_pagos`."""
+    lunes = fecha_inicio - timedelta(days=fecha_inicio.weekday())
+    lote = LotePagos.objects.filter(
+        fecha_inicio=lunes, fecha_fin=lunes + timedelta(days=4)).first()
+
+    if modo == 'financiera':
+        todas = ([f for f in _filas_desde_lote(lote) if not f['excluida']]
+                 if (lote and lote.enviado) else [])
+    elif lote:
+        todas = [f for f in _filas_desde_lote(lote) if not f['excluida']]
+    else:
+        todas = _enriquecer_preview(_build_filas_pagos(lunes, lunes + timedelta(days=4)))
+
     es_realizado = tab == 'realizado'
-    return [f for f in todas
-            if ((f['profesor_id'], f['colegio_id'], f['fecha']) in pagados_keys) == es_realizado]
+    return [f for f in todas if (f['fecha_pago'] is not None) == es_realizado]
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
@@ -308,7 +513,8 @@ def pagos_lista(request):
     viernes = lunes + timedelta(days=4)
 
     if request.method == 'GET':
-        return render(request, 'pagos/pagos.html', construir_contexto_pagos(request.GET))
+        return render(request, 'pagos/pagos.html',
+                      construir_contexto_pagos(request.GET, modo='programacion'))
 
     # POST: descarga Excel del tab activo
     fi_str = request.POST.get('fecha_inicio', '')
@@ -320,7 +526,7 @@ def pagos_lista(request):
     except ValueError:
         fi, ff = lunes, viernes
 
-    filas = filas_pagos_por_tab(fi, ff, tab)
+    filas = filas_pagos_por_tab(fi, ff, tab, modo='programacion')
     semana_label = _semana_label(fi, ff)
     excel_bytes  = _generar_excel_pagos(filas, semana_label)
 

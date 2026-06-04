@@ -36,7 +36,8 @@ def fin_pagos_lista(request):
     """Tabla semanal de pagos (tabs pendiente/realizado). Mismo cálculo que
     programación (reutiliza `construir_contexto_pagos`), dibujado en el chrome
     financiera con las acciones de marcar/soporte."""
-    return render(request, 'financiera/pagos.html', construir_contexto_pagos(request.GET))
+    return render(request, 'financiera/pagos.html',
+                  construir_contexto_pagos(request.GET, modo='financiera'))
 
 
 @solo_financiera
@@ -93,7 +94,7 @@ def fin_pagos_exportar(request):
         ff = fi + timedelta(days=4)
 
     tab = request.POST.get('tab', 'pendiente')
-    filas = filas_pagos_por_tab(fi, ff, tab)
+    filas = filas_pagos_por_tab(fi, ff, tab, modo='financiera')
     excel_bytes = _generar_excel_pagos(filas, _semana_label(fi, ff))
 
     sufijo = 'Realizados' if tab == 'realizado' else 'Pendientes'

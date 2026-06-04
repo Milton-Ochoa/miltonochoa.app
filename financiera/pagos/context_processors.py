@@ -14,5 +14,6 @@ def pagos_pendientes(request):
     if not getattr(request, 'es_personal_financiera', False):
         return {}
     from programacion.pagos.views import construir_contexto_pagos
-    ctx = construir_contexto_pagos({})
+    # modo='financiera' → solo cuenta filas de lotes ENVIADO (lo que financiera realmente ve).
+    ctx = construir_contexto_pagos({}, modo='financiera')
     return {'pagos_pendientes_count': len(ctx['filas_pendientes'])}

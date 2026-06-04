@@ -74,6 +74,93 @@ class LotePagosModelTest(TestCase):
         self.assertTrue(lote.enviado)
 
 
+class PrepararLoteTest(TestCase):
+    """Materialización idempotente del borrador semanal desde las clases."""
+
+    def setUp(self):
+        from programacion.colegios.models import Bloque, Clase, Grado
+        from datetime import time
+        self.colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(colegio=self.colegio, anio=2025, valor_hora=40000)
+        self.prof = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.grado = Grado.objects.create(nombre='11-1')
+        self.bloque = Bloque.objects.create(
+            colegio=self.ca, grado=self.grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        # Una clase de 2 h el martes de la semana 10–14 mar 2025.
+        self.clase = Clase.objects.create(
+            colegio=self.ca, bloque=self.bloque, profesor=self.prof, fecha=date(2025, 3, 11))
+        self.inicio, self.fin = date(2025, 3, 10), date(2025, 3, 14)
+
+    def test_preparar_crea_lote_y_filas(self):
+        from programacion.pagos.views import preparar_lote_semana
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        self.assertEqual(lote.estado, LotePagos.Estado.BORRADOR)
+        fila = PagoRealizado.objects.get(lote=lote)
+        self.assertEqual(fila.horas, 2)
+        self.assertEqual(fila.valor, 80000)  # 2 h × 40000
+
+    def test_preparar_es_idempotente_y_respeta_override_y_excluida(self):
+        from programacion.pagos.views import preparar_lote_semana
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        fila = PagoRealizado.objects.get(lote=lote)
+        fila.valor_base_editado = 99000
+        fila.excluida = True
+        fila.save()
+        # Re-preparar no debe pisar el override ni resucitar exclusión.
+        preparar_lote_semana(self.inicio, self.fin)
+        fila.refresh_from_db()
+        self.assertEqual(fila.valor_base_editado, 99000)
+        self.assertTrue(fila.excluida)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+
+    def test_preparar_elimina_autogenerada_si_se_cancela_la_clase(self):
+        from programacion.pagos.views import preparar_lote_semana
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+        self.clase.cancelada = True
+        self.clase.save()
+        preparar_lote_semana(self.inicio, self.fin)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 0)
+
+    def test_lote_enviado_no_se_remateriliza(self):
+        from programacion.pagos.views import preparar_lote_semana, enviar_lote
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        enviar_lote(lote, None)
+        # Agregar otra clase y re-preparar: el lote enviado queda intacto.
+        from programacion.colegios.models import Clase
+        Clase.objects.create(colegio=self.ca, bloque=self.bloque, profesor=self.prof,
+                             fecha=date(2025, 3, 12))
+        preparar_lote_semana(self.inicio, self.fin)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+
+    def test_financiera_solo_ve_lotes_enviados(self):
+        from programacion.pagos.views import (
+            preparar_lote_semana, enviar_lote, construir_contexto_pagos)
+        get = {'semana': '2025-03-10', 'tab': 'pendiente'}
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        # BORRADOR → financiera no ve nada.
+        ctx = construir_contexto_pagos(get, modo='financiera')
+        self.assertEqual(len(ctx['filas_pendientes']), 0)
+        # ENVIADO → financiera ve la fila.
+        enviar_lote(lote, None)
+        ctx = construir_contexto_pagos(get, modo='financiera')
+        self.assertEqual(len(ctx['filas_pendientes']), 1)
+
+    def test_desenviar_bloqueado_si_hay_pago(self):
+        from django.utils import timezone
+        from programacion.pagos.views import preparar_lote_semana, enviar_lote, desenviar_lote
+        lote = preparar_lote_semana(self.inicio, self.fin)
+        enviar_lote(lote, None)
+        fila = PagoRealizado.objects.get(lote=lote)
+        fila.fecha_pago = timezone.now()
+        fila.save()
+        self.assertFalse(desenviar_lote(lote))
+        fila.fecha_pago = None
+        fila.save()
+        self.assertTrue(desenviar_lote(lote))
+
+
 class SoportePagoProfesorModelTest(TestCase):
     """El comprobante de pago se ata a un `PagoRealizado` y construye una ruta limpia."""
 
