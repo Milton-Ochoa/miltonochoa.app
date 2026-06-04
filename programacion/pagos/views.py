@@ -316,10 +316,21 @@ def _generar_excel_pagos(filas, semana_label):
             cell.number_format = fmt
         return cell
 
+    def _bordear_combinada(r1, c1, r2, c2, fill=None):
+        """Aplica borde (y relleno) a TODAS las celdas de un rango combinado. openpyxl solo
+        dibuja el borde de la celda superior-izquierda al combinar; sin esto el contorno del
+        bloque combinado queda incompleto en Excel."""
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                cell = ws.cell(r, c)
+                cell.border = borde
+                if fill:
+                    cell.fill = PatternFill('solid', fgColor=fill)
+
     # Fila 1: título semana
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NUM_COLS)
-    _celda(1, 1, semana_label, bold=True, fill='FFD9E1F2', color='FF1F3864',
-           borde_=False)
+    _celda(1, 1, semana_label, bold=True, fill='FFD9E1F2', color='FF1F3864')
+    _bordear_combinada(1, 1, 1, NUM_COLS, fill='FFD9E1F2')
     ws.row_dimensions[1].height = 20
 
     # Fila 2: cabeceras
@@ -357,6 +368,7 @@ def _generar_excel_pagos(filas, semana_label):
     ws.merge_cells(start_row=total_row, start_column=1,
                    end_row=total_row, end_column=8)
     _celda(total_row, 1, 'TOTAL', bold=True, fill=TOTAL_FILL, h='right')
+    _bordear_combinada(total_row, 1, total_row, 8, fill=TOTAL_FILL)
     total_val = sum(f['valor_total'] for f in filas)
     cell_t = ws.cell(total_row, 9, total_val)
     cell_t.font = Font(name='Arial', size=10, bold=True)

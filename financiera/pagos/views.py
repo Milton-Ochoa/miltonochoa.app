@@ -11,8 +11,6 @@ storage antes para no dejar huérfanos).
 
 Gate: superusuario o grupo `area:financiera` (`core.areas.es_personal_financiera`).
 """
-from datetime import date, datetime, timedelta
-
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse, JsonResponse
@@ -24,7 +22,7 @@ from core.areas import es_personal_financiera
 from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.pagos.views import (
     construir_contexto_pagos, filas_pagos_por_tab,
-    _generar_excel_pagos, _semana_label,
+    _generar_excel_pagos, _label_rango, _parse_fecha,
 )
 from programacion.viaticos.soportes import validar_soporte
 from programacion.viaticos.views import _responder_soporte
@@ -80,21 +78,19 @@ def fin_pagos_marcar(request):
 @solo_financiera
 @require_POST
 def fin_pagos_exportar(request):
-    """Descarga el `.xlsx` del tab activo (reusa el generador de programación)."""
-    try:
-        fi = datetime.strptime(request.POST.get('fecha_inicio', ''), '%Y-%m-%d').date()
-        ff = datetime.strptime(request.POST.get('fecha_fin', ''), '%Y-%m-%d').date()
-    except ValueError:
-        hoy = date.today()
-        fi = hoy - timedelta(days=hoy.weekday())
-        ff = fi + timedelta(days=4)
+    """Descarga el `.xlsx` del tab activo (reusa el generador de programación).
+
+    Rango opcional: si no llega filtro de fecha, se exporta **todo** el backlog del tab
+    (no la semana actual), igual que en programación."""
+    fi = _parse_fecha(request.POST.get('fecha_inicio', ''))
+    ff = _parse_fecha(request.POST.get('fecha_fin', ''))
 
     tab = request.POST.get('tab', 'pendiente')
     filas = filas_pagos_por_tab(fi, ff, tab, modo='financiera')
-    excel_bytes = _generar_excel_pagos(filas, _semana_label(fi, ff))
+    excel_bytes = _generar_excel_pagos(filas, _label_rango(fi, ff))
 
     sufijo = 'Realizados' if tab == 'realizado' else 'Pendientes'
-    label = f"{fi.strftime('%Y%m%d')}_{ff.strftime('%Y%m%d')}"
+    label = f"{fi.strftime('%Y%m%d')}_{ff.strftime('%Y%m%d')}" if fi and ff else 'todos'
     response = HttpResponse(
         excel_bytes,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
