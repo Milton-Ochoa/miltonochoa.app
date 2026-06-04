@@ -73,7 +73,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | 🏛️ **Apex** | `miltonochoa.app` | ✅ Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos, viáticos y API REST. |
-| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio + gestión de solicitudes de viáticos (devolver / aprobar / pagar / editar, con badge de pendientes). Acceso por grupo `area:financiera`. |
+| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio, gestión de **viáticos** (devolver / aprobar / pagar / editar + soportes) y **pagos a profesores** (marcar pago + soportes), con badge de pendientes y exportación a Excel. Acceso por grupo `area:financiera`. |
 | 🚚 **Logística** | `logistica.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* (sidebar, header, footer,
@@ -196,6 +196,9 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **8 sub-
 - Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha.
 - Registro `PagoRealizado` **inmutable** con valor desnormalizado (preserva tarifa histórica).
 - Constraint `unique_together (profesor, colegio, fecha)` impide doble liquidación.
+- **Gestión en el área financiera** (`financiera.pagos`): financiera marca el pago
+  (PENDIENTE→PAGADA) y, por pago, sube/elimina el **soporte** (comprobante,
+  `SoportePagoProfesor`); programación calcula y ve en **solo lectura**. Sin emails.
 
 ### 📊 Exportación Excel
 
@@ -273,9 +276,11 @@ AAMO/
 │   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
 │
 ├── 💰 financiera/            # ÁREA financiera (servida en financiera.miltonochoa.app)
-│   ├── urls.py               #   router del área (raíz /)
-│   └── 💵 viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
-│                             #   (sin modelos: importa los de programacion.viaticos)
+│   ├── urls.py               #   router del área (raíz /): viaticos + pagos
+│   ├── ✈️  viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
+│   │                         #   (sin modelos: importa los de programacion.viaticos)
+│   └── 💵 pagos/             #   Pagos a profesores: marcar pago + soportes + Excel
+│                             #   (sin modelos: usa programacion.exportar/PagoRealizado)
 ├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
 │
 ├── 🎨 templates/             # Globales: base_chrome.html (chrome compartido), base.html
