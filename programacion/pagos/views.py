@@ -132,23 +132,6 @@ def _build_filas_pagos(fecha_inicio, fecha_fin):
     return filas
 
 
-def _semana_de(get):
-    """Resuelve la semana **canónica** (lunes, viernes) desde `get` (`?semana=`).
-
-    Siempre se ancla al **lunes** de la semana elegida (o de hoy si no hay `?semana=`);
-    el viernes es lunes+4. El lote se llavea con este par canónico, así la navegación es
-    semanal y la llave del lote es estable aunque el usuario teclee fechas raras."""
-    base = date.today()
-    semana_str = get.get('semana', '')
-    if semana_str:
-        try:
-            base = datetime.strptime(semana_str, '%Y-%m-%d').date()
-        except ValueError:
-            base = date.today()
-    lunes = base - timedelta(days=base.weekday())
-    return lunes, lunes + timedelta(days=4)
-
-
 def _fila_desde_pago(p):
     """Construye el dict de fila (misma forma que `_build_filas_pagos`) desde una
     `PagoRealizado` persistida, añadiendo el desglose y el estado de pago.
@@ -269,22 +252,26 @@ def preparar_lote_semana(inicio, fin, user=None):
 
 
 def enviar_lote(lote, user):
-    """BORRADOR → ENVIADO. A partir de aquí financiera lo ve y programación no edita."""
+    """BORRADOR → ENVIADO. A partir de aquí financiera lo ve y programación no edita.
+    El envío es **definitivo** (no hay reabrir)."""
     lote.estado = LotePagos.Estado.ENVIADO
     lote.enviado_en = timezone.now()
     lote.enviado_por = user
     lote.save(update_fields=['estado', 'enviado_en', 'enviado_por', 'actualizado_en'])
 
 
-def desenviar_lote(lote):
-    """ENVIADO → BORRADOR, **solo si ninguna fila está pagada**. Devuelve True si lo hizo."""
-    if lote.filas.filter(fecha_pago__isnull=False).exists():
-        return False
-    lote.estado = LotePagos.Estado.BORRADOR
-    lote.enviado_en = None
-    lote.enviado_por = None
-    lote.save(update_fields=['estado', 'enviado_en', 'enviado_por', 'actualizado_en'])
-    return True
+def preparar_pendientes(user=None):
+    """Materializa el **backlog completo**: prepara (idempotente) todas las semanas con
+    clases hasta hoy cuyo lote no esté ENVIADO. Así la lista muestra todo lo pendiente por
+    enviar sin que el usuario tenga que preparar semana por semana. Devuelve nº de semanas."""
+    hoy = date.today()
+    fechas = (Clase.objects
+              .filter(fecha__lte=hoy, cancelada=False, es_evento=False)
+              .values_list('fecha', flat=True).distinct())
+    lunes_set = {f - timedelta(days=f.weekday()) for f in fechas}
+    for lunes in lunes_set:
+        preparar_lote_semana(lunes, lunes + timedelta(days=4), user)
+    return len(lunes_set)
 
 
 def _desglose_texto(f):
@@ -391,72 +378,81 @@ def _generar_excel_pagos(filas, semana_label):
     return buf.getvalue()
 
 
-def _enriquecer_preview(filas):
-    """Da a las filas calculadas (sin lote) las mismas claves que `_fila_desde_pago`,
-    para que plantilla/Excel funcionen igual antes de preparar la semana."""
-    for f in filas:
-        f.setdefault('valor_base', f['valor_total'])
-        f.setdefault('extras', [])
-        f.setdefault('total_extras', 0)
-        f.setdefault('excluida', False)
-        f.setdefault('pago_id', None)
-        f.setdefault('fecha_pago', None)
-        f.setdefault('marcado_por', '—')
-        f.setdefault('n_soportes', 0)
-    return filas
+def _parse_fecha(s):
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
 
 
-def _filas_semana(get, *, modo):
-    """Filas de la semana según el modo, junto al lote y el rango canónico.
+def _rango_de(get):
+    """Rango de fechas del filtro (o `(None, None)` si no se aplicó ninguno).
 
-    - `programacion`: si hay lote → sus filas (incl. excluidas, marcadas); si no →
-      preview calculado desde clases (estado "sin preparar").
-    - `financiera`: **solo** las filas de un lote ENVIADO (sin excluidas); si no, vacío.
-
-    Devuelve `(lunes, viernes, lote, filas)`."""
-    lunes, viernes = _semana_de(get)
-    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
-
-    if modo == 'financiera':
-        filas = ([f for f in _filas_desde_lote(lote) if not f['excluida']]
-                 if (lote and lote.enviado) else [])
-    else:
-        filas = (_filas_desde_lote(lote) if lote
-                 else _enriquecer_preview(_build_filas_pagos(lunes, viernes)))
-    return lunes, viernes, lote, filas
+    El filtro de la barra manda `semana` (=desde) y `hasta`. Si no llegan, no se restringe
+    por fecha → se muestra **todo** el backlog (todos los pendientes)."""
+    return _parse_fecha(get.get('semana') or get.get('desde')), _parse_fecha(get.get('hasta'))
 
 
-def _split_por_pago(filas):
-    """Parte filas en (pendientes, realizadas) por `fecha_pago`; las excluidas, que nunca
-    se pagan, caen en pendientes. Devuelve también los totales (sin contar excluidas)."""
-    pendientes = [f for f in filas if f['fecha_pago'] is None]
-    realizadas = [f for f in filas if f['fecha_pago'] is not None]
-    return pendientes, realizadas
+def _filas_rango(estado, desde, hasta):
+    """Filas persistidas (`PagoRealizado`) cuyo lote está en `estado`, opcionalmente
+    acotadas por fecha. Mantiene el desglose vía `_fila_desde_pago`."""
+    qs = (PagoRealizado.objects
+          .filter(lote__estado=estado)
+          .select_related('profesor', 'colegio__colegio', 'marcado_por')
+          .prefetch_related('extras')
+          .annotate(n_soportes=Count('soportes'))
+          .order_by('fecha', 'profesor__nombre'))
+    if desde:
+        qs = qs.filter(fecha__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha__lte=hasta)
+    return [_fila_desde_pago(p) for p in qs]
 
 
 def _suma_valor(filas):
     return sum(f['valor_total'] for f in filas if not f['excluida'])
 
 
-def construir_contexto_pagos(get, *, modo='programacion'):
-    """Arma el contexto de la página semanal de pagos (tabs pendiente/realizado).
+def _label_rango(desde, hasta):
+    if desde and hasta:
+        return _semana_label(desde, hasta)
+    if desde:
+        return f'Desde el {desde.day} de {MESES_ES_LARGO[desde.month]} de {desde.year}'
+    if hasta:
+        return f'Hasta el {hasta.day} de {MESES_ES_LARGO[hasta.month]} de {hasta.year}'
+    return 'Todos los registros'
 
-    Compartido por **programación** (revisión/edición) y **financiera** (marcar+soportes).
-    `modo` decide la fuente: programación ve el borrador o el preview; financiera **solo**
-    los lotes ENVIADO. Mantiene las claves históricas (`filas_pendientes`, `filas_realizadas`,
-    `filas`, `total_*`, `semana_label`, …); en `programacion` añade el estado del lote y los
-    flags de acción (`puede_preparar/editar/enviar/desenviar`, `hay_cambios_sin_preparar`)."""
-    lunes, viernes, lote, filas = _filas_semana(get, modo=modo)
+
+def construir_contexto_pagos(get, *, modo='programacion'):
+    """Arma el contexto de la página de pagos como **backlog** (todas las semanas).
+
+    Sin filtro de fechas → muestra todo lo pendiente; con filtro (`semana`/`hasta`) acota.
+    - `programacion`: pestaña *pendiente* = filas por **enviar** (lote BORRADOR, incluye las
+      excluidas para poder re-incluirlas); pestaña *realizado* = filas ya **enviadas** (lote
+      ENVIADO; muestran si financiera ya las pagó).
+    - `financiera`: **solo** lotes ENVIADO (sin excluidas), partidas por pago (`fecha_pago`):
+      pendiente = por pagar; realizado = pagadas.
+    Mantiene las claves históricas (`filas_pendientes`, `filas_realizadas`, `filas`, `total_*`)."""
+    desde, hasta = _rango_de(get)
     tab = get.get('tab', 'pendiente')
 
-    filas_pendientes, filas_realizadas = _split_por_pago(filas)
+    if modo == 'financiera':
+        enviadas = [f for f in _filas_rango(LotePagos.Estado.ENVIADO, desde, hasta)
+                    if not f['excluida']]
+        filas_pendientes = [f for f in enviadas if f['fecha_pago'] is None]
+        filas_realizadas = [f for f in enviadas if f['fecha_pago'] is not None]
+    else:
+        filas_pendientes = _filas_rango(LotePagos.Estado.BORRADOR, desde, hasta)   # por enviar
+        filas_realizadas = _filas_rango(LotePagos.Estado.ENVIADO, desde, hasta)    # enviadas
+
     filas_tab = filas_pendientes if tab == 'pendiente' else filas_realizadas
 
     ctx = {
-        'fecha_inicio':     lunes.isoformat(),
-        'fecha_fin':        viernes.isoformat(),
+        'fecha_inicio':     desde.isoformat() if desde else '',
+        'fecha_fin':        hasta.isoformat() if hasta else '',
         'fecha_max':        date.today().isoformat(),
-        'semana_label':     _semana_label(lunes, viernes),
+        'semana_label':     _label_rango(desde, hasta),
+        'filtro_aplicado':  bool(desde or hasta),
         'tab':              tab,
         'filas_pendientes': filas_pendientes,
         'filas_realizadas': filas_realizadas,
@@ -464,98 +460,92 @@ def construir_contexto_pagos(get, *, modo='programacion'):
         'total_valor':      _suma_valor(filas_tab),
         'total_pendiente':  _suma_valor(filas_pendientes),
         'total_realizado':  _suma_valor(filas_realizadas),
+        # Detalle (horas/valor-hora/extras) por pago para el modal (i)/desglose. Ambas áreas.
+        'detalles_pagos':   _detalles_pagos(filas_pendientes + filas_realizadas),
     }
-
     if modo == 'programacion':
-        estado_lote = lote.estado if lote else 'SIN_PREPARAR'
-        filas_a_enviar = [f for f in filas if not f['excluida']]
-        # ¿Aparecen clases nuevas que aún no están en el borrador? (solo en BORRADOR)
-        hay_cambios = False
-        if lote and lote.estado == LotePagos.Estado.BORRADOR:
-            calc_keys = {(f['profesor_id'], f['colegio_id'], f['fecha'])
-                         for f in _build_filas_pagos(lunes, viernes)}
-            lote_keys = {(f['profesor_id'], f['colegio_id'], f['fecha']) for f in filas}
-            hay_cambios = bool(calc_keys - lote_keys)
+        por_enviar = [f for f in filas_pendientes if not f['excluida']]
         ctx.update({
-            'estado_lote':              estado_lote,
-            'lote_id':                  lote.id if lote else None,
-            'enviado_en':               lote.enviado_en if lote else None,
-            'puede_preparar':           estado_lote in ('SIN_PREPARAR', 'BORRADOR'),
-            'puede_editar':             estado_lote == 'BORRADOR',
-            'puede_enviar':             estado_lote == 'BORRADOR' and len(filas_a_enviar) > 0,
-            'puede_desenviar':          bool(lote and lote.enviado
-                                             and not any(f['fecha_pago'] for f in filas)),
-            'hay_cambios_sin_preparar': hay_cambios,
+            'tab_label_pendiente': 'Por enviar',
+            'tab_label_realizado': 'Enviados',
+            'puede_enviar':        len(por_enviar) > 0,
+            'total_por_enviar':    len(por_enviar),
         })
     return ctx
 
 
+def _detalles_pagos(filas):
+    """Mapa `pago_id → {docente, horas, valor_hora, valor_base, extras, total}` para el
+    modal de detalle/gestión (se serializa con `json_script`)."""
+    return {
+        f['pago_id']: {
+            'docente':    f['docente'],
+            'horas':      f['horas'],
+            'valor_hora': f['valor_hora'],
+            'valor_base': f['valor_base'],
+            'total':      f['valor_total'],
+            'extras':     f['extras'],
+            'editable':   f['fecha_pago'] is None and not f['excluida'],
+        }
+        for f in filas if f['pago_id']
+    }
+
+
 def filas_pagos_por_tab(fecha_inicio, fecha_fin, tab, *, modo='programacion'):
-    """Filas de la semana (de `fecha_inicio`) filtradas por tab, para el Excel. Excluye
+    """Filas para el Excel del tab, como backlog acotado al rango (vacío = todo). Excluye
     siempre las filas excluidas. Mismo `modo` que `construir_contexto_pagos`."""
-    lunes = fecha_inicio - timedelta(days=fecha_inicio.weekday())
-    lote = LotePagos.objects.filter(
-        fecha_inicio=lunes, fecha_fin=lunes + timedelta(days=4)).first()
-
-    if modo == 'financiera':
-        todas = ([f for f in _filas_desde_lote(lote) if not f['excluida']]
-                 if (lote and lote.enviado) else [])
-    elif lote:
-        todas = [f for f in _filas_desde_lote(lote) if not f['excluida']]
-    else:
-        todas = _enriquecer_preview(_build_filas_pagos(lunes, lunes + timedelta(days=4)))
-
-    es_realizado = tab == 'realizado'
-    return [f for f in todas if (f['fecha_pago'] is not None) == es_realizado]
+    get = {'tab': tab}
+    if fecha_inicio:
+        get['semana'] = fecha_inicio.isoformat() if hasattr(fecha_inicio, 'isoformat') else fecha_inicio
+    if fecha_fin:
+        get['hasta'] = fecha_fin.isoformat() if hasattr(fecha_fin, 'isoformat') else fecha_fin
+    ctx = construir_contexto_pagos(get, modo=modo)
+    return [f for f in ctx['filas'] if not f['excluida']]
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
 def pagos_lista(request):
-    """GET: página de pagos (tabs pendiente/realizado). POST: descarga Excel."""
-    hoy = date.today()
-    lunes   = hoy - timedelta(days=hoy.weekday())
-    viernes = lunes + timedelta(days=4)
-
+    """GET: página de pagos (backlog, tabs por enviar/enviados). POST: descarga Excel."""
     if request.method == 'GET':
         return render(request, 'pagos/pagos.html',
                       construir_contexto_pagos(request.GET, modo='programacion'))
 
-    # POST: descarga Excel del tab activo
-    fi_str = request.POST.get('fecha_inicio', '')
-    ff_str = request.POST.get('fecha_fin', '')
-    tab    = request.POST.get('tab', 'pendiente')
-    try:
-        fi = datetime.strptime(fi_str, '%Y-%m-%d').date()
-        ff = datetime.strptime(ff_str, '%Y-%m-%d').date()
-    except ValueError:
-        fi, ff = lunes, viernes
+    # POST: descarga Excel del tab activo (rango opcional; vacío = todo el backlog).
+    fi = _parse_fecha(request.POST.get('fecha_inicio', ''))
+    ff = _parse_fecha(request.POST.get('fecha_fin', ''))
+    tab = request.POST.get('tab', 'pendiente')
 
     filas = filas_pagos_por_tab(fi, ff, tab, modo='programacion')
-    semana_label = _semana_label(fi, ff)
-    excel_bytes  = _generar_excel_pagos(filas, semana_label)
+    excel_bytes = _generar_excel_pagos(filas, _label_rango(fi, ff))
 
-    sufijo = 'Realizados' if tab == 'realizado' else 'Pendientes'
-    label  = f"{fi.strftime('%Y%m%d')}_{ff.strftime('%Y%m%d')}"
+    sufijo = 'Enviados' if tab == 'realizado' else 'PorEnviar'
+    rango = f"{fi.strftime('%Y%m%d')}_{ff.strftime('%Y%m%d')}" if fi and ff else 'todos'
     response = HttpResponse(
         excel_bytes,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-    response['Content-Disposition'] = (
-        f'attachment; filename="Pagos_{sufijo}_{label}.xlsx"'
-    )
+    response['Content-Disposition'] = f'attachment; filename="Pagos_{sufijo}_{rango}.xlsx"'
     return response
 
 
 # ══════════════════════════════════════════════════════════════
-# REVISIÓN (programación): preparar · editar valor · excluir · extras · enviar
+# REVISIÓN (programación): preparar pendientes · excluir · extras · enviar
 # ══════════════════════════════════════════════════════════════
-# Programación revisa el borrador de la semana y lo envía a financiera. Todas las
-# acciones son POST + redirect a la lista (la página re-renderiza con datos frescos);
-# editar/excluir/extras exigen que la semana esté en BORRADOR.
+# Programación revisa el backlog (todas las semanas) y lo envía a financiera. Todas las
+# acciones son POST + redirect a la lista (re-renderiza con datos frescos); excluir/extras
+# exigen que la fila esté en BORRADOR. El envío es definitivo (no hay reabrir).
 
-def _volver_a_lista(semana, tab='pendiente'):
-    """Redirige a la lista conservando semana y pestaña activa."""
-    return redirect(f"{reverse('pagos_lista')}?semana={semana}&tab={tab}")
+def _volver_a_lista(request):
+    """Redirige a la lista conservando el filtro de fechas (si lo hay) y la pestaña."""
+    tab = request.POST.get('tab', 'pendiente')
+    semana = request.POST.get('semana', '')
+    hasta = request.POST.get('hasta', '')
+    q = f'?tab={tab}'
+    if semana:
+        q += f'&semana={semana}'
+    if hasta:
+        q += f'&hasta={hasta}'
+    return redirect(reverse('pagos_lista') + q)
 
 
 def _pago_editable(pago):
@@ -565,68 +555,36 @@ def _pago_editable(pago):
 
 @user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
-def pagos_preparar_semana(request):
-    """Materializa (o re-sincroniza) el borrador de la semana desde las clases."""
-    semana = request.POST.get('semana', '')
-    lunes, viernes = _semana_de({'semana': semana})
-    preparar_lote_semana(lunes, viernes, request.user)
-    messages.success(request, 'Borrador de la semana preparado para revisión.')
-    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
+def pagos_preparar(request):
+    """Prepara el backlog: materializa todas las semanas con clases hasta hoy no enviadas."""
+    n = preparar_pendientes(request.user)
+    messages.success(request, f'Pendientes preparados ({n} semana(s)).')
+    return _volver_a_lista(request)
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
-def pagos_enviar_semana(request):
-    """Envía la semana a financiera (BORRADOR→ENVIADO). Bloquea edición posterior."""
-    semana = request.POST.get('semana', '')
-    lunes, viernes = _semana_de({'semana': semana})
-    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
-    if not lote:
-        messages.error(request, 'Primero prepara el borrador de la semana.')
-    elif lote.estado != LotePagos.Estado.BORRADOR:
-        messages.info(request, 'Esta semana ya fue enviada a financiera.')
-    elif not lote.filas.filter(excluida=False).exists():
-        messages.error(request, 'No hay filas para enviar (todas están excluidas o vacías).')
-    else:
+def pagos_enviar(request):
+    """Envía a financiera **todo lo visible** (lotes BORRADOR con filas no excluidas dentro
+    del rango filtrado, o todo si no hay filtro). El envío es definitivo."""
+    desde, hasta = _rango_de(request.POST)
+    qs = PagoRealizado.objects.filter(
+        lote__estado=LotePagos.Estado.BORRADOR, excluida=False)
+    if desde:
+        qs = qs.filter(fecha__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha__lte=hasta)
+    lote_ids = set(qs.values_list('lote_id', flat=True))
+    lotes = LotePagos.objects.filter(id__in=lote_ids, estado=LotePagos.Estado.BORRADOR)
+    n = 0
+    for lote in lotes:
         enviar_lote(lote, request.user)
-        messages.success(request, 'Semana enviada a financiera.')
-    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
-
-
-@user_passes_test(es_personal_programacion, login_url='login')
-@require_POST
-def pagos_desenviar_semana(request):
-    """Reabre la semana (ENVIADO→BORRADOR) solo si ninguna fila está pagada."""
-    semana = request.POST.get('semana', '')
-    lunes, viernes = _semana_de({'semana': semana})
-    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
-    if not lote or not lote.enviado:
-        messages.error(request, 'La semana no está enviada.')
-    elif desenviar_lote(lote):
-        messages.success(request, 'Semana reabierta para edición.')
+        n += 1
+    if n:
+        messages.success(request, f'Enviado a financiera ({n} semana(s)).')
     else:
-        messages.error(request, 'No se puede reabrir: financiera ya pagó alguna fila.')
-    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
-
-
-@user_passes_test(es_personal_programacion, login_url='login')
-@require_POST
-def pagos_editar_valor(request, pago_id):
-    """Sobrescribe el valor base de una fila (o lo restaura al calculado si llega vacío)."""
-    pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
-    semana = request.POST.get('semana', pago.fecha.isoformat())
-    if not _pago_editable(pago):
-        messages.error(request, 'La semana no es editable.')
-        return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
-    raw = (request.POST.get('valor', '') or '').strip().replace(',', '.')
-    try:
-        pago.valor_base_editado = None if raw == '' else int(float(raw))
-    except (ValueError, TypeError):
-        messages.error(request, 'Valor inválido.')
-        return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
-    pago.save(update_fields=['valor_base_editado'])
-    messages.success(request, 'Valor actualizado.')
-    return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+        messages.error(request, 'No hay pagos pendientes por enviar.')
+    return _volver_a_lista(request)
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
@@ -634,14 +592,13 @@ def pagos_editar_valor(request, pago_id):
 def pagos_excluir_fila(request, pago_id):
     """Excluye o vuelve a incluir una fila del envío a financiera (toggle)."""
     pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
-    semana = request.POST.get('semana', pago.fecha.isoformat())
     if not _pago_editable(pago):
-        messages.error(request, 'La semana no es editable.')
+        messages.error(request, 'Esta fila ya no es editable.')
     else:
         pago.excluida = not pago.excluida
         pago.save(update_fields=['excluida'])
-        messages.success(request, 'Fila excluida.' if pago.excluida else 'Fila incluida.')
-    return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+        messages.success(request, 'Fila excluida del envío.' if pago.excluida else 'Fila incluida.')
+    return _volver_a_lista(request)
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
@@ -649,11 +606,9 @@ def pagos_excluir_fila(request, pago_id):
 def pagos_agregar_extra(request, pago_id):
     """Agrega un costo extra (concepto + valor) al desglose de una fila."""
     pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
-    semana = request.POST.get('semana', pago.fecha.isoformat())
-    tab = request.POST.get('tab', 'pendiente')
     if not _pago_editable(pago):
-        messages.error(request, 'La semana no es editable.')
-        return _volver_a_lista(semana, tab)
+        messages.error(request, 'Esta fila ya no es editable.')
+        return _volver_a_lista(request)
     concepto = (request.POST.get('concepto', '') or '').strip()
     raw = (request.POST.get('valor', '') or '').strip().replace('.', '').replace(',', '')
     try:
@@ -662,11 +617,10 @@ def pagos_agregar_extra(request, pago_id):
         valor = 0
     if not concepto or valor <= 0:
         messages.error(request, 'Indica un concepto y un valor mayor que cero.')
-        return _volver_a_lista(semana, tab)
-    siguiente = (pago.extras.count())
-    ExtraPago.objects.create(pago=pago, concepto=concepto, valor=valor, orden=siguiente)
+        return _volver_a_lista(request)
+    ExtraPago.objects.create(pago=pago, concepto=concepto, valor=valor, orden=pago.extras.count())
     messages.success(request, 'Costo extra agregado.')
-    return _volver_a_lista(semana, tab)
+    return _volver_a_lista(request)
 
 
 @user_passes_test(es_personal_programacion, login_url='login')
@@ -674,14 +628,12 @@ def pagos_agregar_extra(request, pago_id):
 def pagos_eliminar_extra(request, extra_id):
     """Elimina un costo extra del desglose."""
     extra = get_object_or_404(ExtraPago.objects.select_related('pago__lote'), pk=extra_id)
-    semana = request.POST.get('semana', extra.pago.fecha.isoformat())
-    tab = request.POST.get('tab', 'pendiente')
     if not _pago_editable(extra.pago):
-        messages.error(request, 'La semana no es editable.')
+        messages.error(request, 'Esta fila ya no es editable.')
     else:
         extra.delete()
         messages.success(request, 'Costo extra eliminado.')
-    return _volver_a_lista(semana, tab)
+    return _volver_a_lista(request)
 
 
 # ══════════════════════════════════════════════════════════════

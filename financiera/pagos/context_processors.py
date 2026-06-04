@@ -13,7 +13,9 @@ def pagos_pendientes(request):
         return {}
     if not getattr(request, 'es_personal_financiera', False):
         return {}
-    from programacion.pagos.views import construir_contexto_pagos
-    # modo='financiera' → solo cuenta filas de lotes ENVIADO (lo que financiera realmente ve).
-    ctx = construir_contexto_pagos({}, modo='financiera')
-    return {'pagos_pendientes_count': len(ctx['filas_pendientes'])}
+    from programacion.pagos.models import LotePagos, PagoRealizado
+    # Filas enviadas (lote ENVIADO), no excluidas y aún no pagadas = pendientes por pagar.
+    n = (PagoRealizado.objects
+         .filter(lote__estado=LotePagos.Estado.ENVIADO, excluida=False, fecha_pago__isnull=True)
+         .count())
+    return {'pagos_pendientes_count': n}

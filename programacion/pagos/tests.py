@@ -147,22 +147,17 @@ class PrepararLoteTest(TestCase):
         ctx = construir_contexto_pagos(get, modo='financiera')
         self.assertEqual(len(ctx['filas_pendientes']), 1)
 
-    def test_desenviar_bloqueado_si_hay_pago(self):
-        from django.utils import timezone
-        from programacion.pagos.views import preparar_lote_semana, enviar_lote, desenviar_lote
-        lote = preparar_lote_semana(self.inicio, self.fin)
-        enviar_lote(lote, None)
-        fila = PagoRealizado.objects.get(lote=lote)
-        fila.fecha_pago = timezone.now()
-        fila.save()
-        self.assertFalse(desenviar_lote(lote))
-        fila.fecha_pago = None
-        fila.save()
-        self.assertTrue(desenviar_lote(lote))
+    def test_preparar_pendientes_materializa_backlog(self):
+        from programacion.pagos.views import preparar_pendientes
+        # No depende de la semana: prepara todas las semanas con clases hasta hoy.
+        n = preparar_pendientes(None)
+        self.assertGreaterEqual(n, 1)
+        self.assertEqual(PagoRealizado.objects.filter(
+            lote__estado=LotePagos.Estado.BORRADOR).count(), 1)
 
 
 class RevisionProgramacionTest(TestCase):
-    """Flujo de revisión por HTTP: preparar → editar/excluir/extra → enviar → reabrir."""
+    """Flujo de revisión por HTTP (backlog): preparar → excluir/extra → enviar (definitivo)."""
 
     def setUp(self):
         from programacion.colegios.models import Bloque, Clase, Grado
@@ -183,68 +178,59 @@ class RevisionProgramacionTest(TestCase):
         self.semana = '2025-03-10'
 
     def _preparar(self):
-        self.client.post('/pagos/preparar/', {'semana': self.semana, 'tab': 'pendiente'})
+        self.client.post('/pagos/preparar/', {'tab': 'pendiente'})
         return PagoRealizado.objects.get()
 
     def test_preparar_crea_borrador(self):
-        r = self.client.post('/pagos/preparar/', {'semana': self.semana, 'tab': 'pendiente'})
+        r = self.client.post('/pagos/preparar/', {'tab': 'pendiente'})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(LotePagos.objects.count(), 1)
         self.assertEqual(PagoRealizado.objects.count(), 1)
 
-    def test_pagina_borrador_renderiza_controles_de_edicion(self):
+    def test_pagina_backlog_renderiza_controles(self):
         self._preparar()
-        r = self.client.get(f'/pagos/?semana={self.semana}&tab=pendiente')
+        r = self.client.get('/pagos/?tab=pendiente')
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'btn-editar-valor')   # editar valor
-        self.assertContains(r, 'btn-agregar-extra')  # agregar costo extra
-        self.assertContains(r, 'modalEditarValor')
-
-    def test_editar_valor_sobrescribe_base(self):
-        pago = self._preparar()
-        self.client.post(f'/pagos/{pago.pk}/valor/',
-                         {'valor': '95000', 'semana': self.semana, 'tab': 'pendiente'})
-        pago.refresh_from_db()
-        self.assertEqual(pago.valor_base, 95000)
+        self.assertContains(r, 'btn-detalle')   # modal (i) de detalle
+        self.assertContains(r, 'btn-extras')    # gestión de costos extra
+        self.assertContains(r, 'modalExtras')
+        self.assertNotContains(r, 'btn-editar-valor')  # editar valor base retirado
 
     def test_excluir_saca_la_fila_del_envio(self):
         pago = self._preparar()
-        self.client.post(f'/pagos/{pago.pk}/excluir/',
-                         {'semana': self.semana, 'tab': 'pendiente'})
+        self.client.post(f'/pagos/{pago.pk}/excluir/', {'tab': 'pendiente'})
         pago.refresh_from_db()
         self.assertTrue(pago.excluida)
 
     def test_agregar_extra_suma_al_total(self):
         pago = self._preparar()
         self.client.post(f'/pagos/{pago.pk}/extra/',
-                         {'concepto': 'Desplazamiento', 'valor': '15000',
-                          'semana': self.semana, 'tab': 'pendiente'})
+                         {'concepto': 'Desplazamiento', 'valor': '15000', 'tab': 'pendiente'})
         pago.refresh_from_db()
         self.assertEqual(pago.total_extras, 15000)
         self.assertEqual(pago.total, 95000)  # 80000 + 15000
 
     def test_enviar_bloquea_edicion(self):
         pago = self._preparar()
-        self.client.post('/pagos/enviar/', {'semana': self.semana, 'tab': 'pendiente'})
+        self.client.post('/pagos/enviar/', {'tab': 'pendiente'})
         pago.refresh_from_db()
         self.assertEqual(pago.lote.estado, LotePagos.Estado.ENVIADO)
-        # Editar tras enviar no cambia nada.
-        self.client.post(f'/pagos/{pago.pk}/valor/',
-                         {'valor': '1', 'semana': self.semana, 'tab': 'pendiente'})
+        # Agregar un extra tras enviar no debe hacer nada (fila ya no editable).
+        self.client.post(f'/pagos/{pago.pk}/extra/',
+                         {'concepto': 'Tarde', 'valor': '1', 'tab': 'pendiente'})
         pago.refresh_from_db()
-        self.assertIsNone(pago.valor_base_editado)
+        self.assertEqual(pago.extras.count(), 0)
 
-    def test_reabrir_devuelve_a_borrador_si_no_hay_pagos(self):
-        pago = self._preparar()
-        self.client.post('/pagos/enviar/', {'semana': self.semana, 'tab': 'pendiente'})
-        self.client.post('/pagos/reabrir/', {'semana': self.semana, 'tab': 'pendiente'})
-        pago.refresh_from_db()
-        self.assertEqual(pago.lote.estado, LotePagos.Estado.BORRADOR)
+    def test_enviar_es_definitivo_sin_reabrir(self):
+        # La ruta de reabrir ya no existe (404).
+        self._preparar()
+        self.client.post('/pagos/enviar/', {'tab': 'pendiente'})
+        r = self.client.post('/pagos/reabrir/', {'tab': 'pendiente'})
+        self.assertEqual(r.status_code, 404)
 
 
 class BadgePagosProgramacionTest(TestCase):
-    """El badge del menú Pagos cuenta filas pendientes de revisar/enviar de la semana
-    actual y se apaga al enviar."""
+    """El badge del menú Pagos cuenta filas por enviar (lote BORRADOR) y se apaga al enviar."""
 
     def setUp(self):
         from programacion.colegios.models import Bloque, Clase, Grado
@@ -265,12 +251,15 @@ class BadgePagosProgramacionTest(TestCase):
 
     def test_badge_pendiente_y_se_apaga_al_enviar(self):
         from programacion.pagos.views import preparar_lote_semana, enviar_lote
-        r = self.client.get('/pagos/')
-        self.assertEqual(r.context['pagos_por_revisar_count'], 1)
-        lote = preparar_lote_semana(self.lunes, self.lunes + timedelta(days=4))
-        enviar_lote(lote, None)
+        # Antes de preparar no hay filas materializadas → 0.
         r = self.client.get('/pagos/')
         self.assertEqual(r.context['pagos_por_revisar_count'], 0)
+        lote = preparar_lote_semana(self.lunes, self.lunes + timedelta(days=4))
+        r = self.client.get('/pagos/')
+        self.assertEqual(r.context['pagos_por_revisar_count'], 1)  # BORRADOR por enviar
+        enviar_lote(lote, None)
+        r = self.client.get('/pagos/')
+        self.assertEqual(r.context['pagos_por_revisar_count'], 0)  # ya enviado
 
 
 class SoportePagoProfesorModelTest(TestCase):

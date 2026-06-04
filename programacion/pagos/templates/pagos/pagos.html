@@ -8,11 +8,10 @@
 {% endblock %}
 
 {% comment %}
-  Revisión semanal en programación (estilo viáticos): se prepara el borrador de la
-  semana, se editan valores/excluyen filas/agregan costos extra (desglose) y se ENVÍA a
-  financiera. Mientras el lote está en BORRADOR la pestaña Pendientes trae los controles
-  de edición; en ENVIADO queda en solo lectura y financiera lo ve. Las filas Realizadas
-  (pagadas por financiera) enlazan al detalle.
+  Backlog de pagos en programación: por defecto muestra TODO lo pendiente por enviar (todas
+  las semanas); el filtro de fechas solo acota al darle Aplicar. Se "Prepara pendientes"
+  (materializa el backlog) y se "Envía a financiera" (todo lo visible). Por fila se ve el
+  detalle (i), se gestionan costos extra y se excluye del envío. El envío es definitivo.
 {% endcomment %}
 
 {% block header_center %}
@@ -24,65 +23,36 @@
 
 {% block content %}
 {% include 'pagos/_estilos_tabla.html' %}
+{{ detalles_pagos|json_script:"pagos-data" }}
 
 <div class="container-fluid py-3">
 
-  {# ── Banner de estado del lote + acciones de la semana ── #}
-  <div class="card shadow-sm mb-3">
-    <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div>
-        {% if estado_lote == 'SIN_PREPARAR' %}
-          <span class="badge bg-secondary me-1">Sin preparar</span>
-          <span class="text-muted small">{{ semana_label }} — prepárala para revisar y enviar a financiera.</span>
-        {% elif estado_lote == 'BORRADOR' %}
-          <span class="badge bg-warning text-dark me-1">Borrador</span>
-          <span class="text-muted small">{{ semana_label }} — en revisión por programación (financiera aún no la ve).</span>
-          {% if hay_cambios_sin_preparar %}
-          <div class="text-danger small mt-1">
-            <i class="fas fa-exclamation-triangle me-1"></i>Hay clases nuevas no incluidas. Vuelve a preparar para añadirlas.
-          </div>
-          {% endif %}
-        {% elif estado_lote == 'ENVIADO' %}
-          <span class="badge bg-success me-1">Enviado</span>
-          <span class="text-muted small">{{ semana_label }} — enviado a financiera{% if enviado_en %} el {{ enviado_en|date:"d/m/Y H:i" }}{% endif %}.</span>
-        {% endif %}
-      </div>
-      <div class="d-flex gap-2">
-        {% if estado_lote == 'SIN_PREPARAR' %}
-          <form method="post" action="{% url 'pagos_preparar_semana' %}" class="m-0">
-            {% csrf_token %}
-            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-            <input type="hidden" name="tab" value="{{ tab }}">
-            <button class="btn btn-primary btn-sm"><i class="fas fa-clipboard-check me-1"></i>Preparar borrador</button>
-          </form>
-        {% elif estado_lote == 'BORRADOR' %}
-          <form method="post" action="{% url 'pagos_preparar_semana' %}" class="m-0">
-            {% csrf_token %}
-            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-            <input type="hidden" name="tab" value="{{ tab }}">
-            <button class="btn btn-outline-secondary btn-sm" title="Re-sincronizar con las clases">
-              <i class="fas fa-sync me-1"></i>Re-preparar
-            </button>
-          </form>
-          <form method="post" action="{% url 'pagos_enviar_semana' %}" class="m-0"
-                onsubmit="return confirm('¿Enviar esta semana a financiera? No podrás editarla después.');">
-            {% csrf_token %}
-            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-            <input type="hidden" name="tab" value="{{ tab }}">
-            <button class="btn btn-success btn-sm" {% if not puede_enviar %}disabled{% endif %}>
-              <i class="fas fa-paper-plane me-1"></i>Enviar a financiera
-            </button>
-          </form>
-        {% elif estado_lote == 'ENVIADO' and puede_desenviar %}
-          <form method="post" action="{% url 'pagos_desenviar_semana' %}" class="m-0"
-                onsubmit="return confirm('¿Reabrir la semana para edición? Financiera dejará de verla.');">
-            {% csrf_token %}
-            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-            <input type="hidden" name="tab" value="{{ tab }}">
-            <button class="btn btn-outline-warning btn-sm"><i class="fas fa-lock-open me-1"></i>Reabrir</button>
-          </form>
-        {% endif %}
-      </div>
+  {# ── Barra de acciones del backlog ── #}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="text-muted small">
+      <i class="fas fa-layer-group me-1"></i>
+      Revisa los pagos pendientes por enviar; cuando estén listos, envíalos a financiera.
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" action="{% url 'pagos_preparar' %}" class="m-0">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+        <button class="btn btn-outline-secondary btn-sm" title="Materializar/actualizar los pendientes desde las clases">
+          <i class="fas fa-sync me-1"></i>Preparar pendientes
+        </button>
+      </form>
+      <form method="post" action="{% url 'pagos_enviar' %}" class="m-0"
+            onsubmit="return confirm('¿Enviar a financiera todo lo visible? El envío es definitivo.');">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+        <button class="btn btn-success btn-sm fw-bold" {% if not puede_enviar %}disabled{% endif %}>
+          <i class="fas fa-paper-plane me-1"></i>Enviar a financiera{% if total_por_enviar %} ({{ total_por_enviar }}){% endif %}
+        </button>
+      </form>
     </div>
   </div>
 
@@ -105,10 +75,9 @@
             <th>Código</th>
             <th class="text-end">Valor</th>
             {% if tab == 'realizado' %}
-            <th>Pagado</th>
-            <th>Por</th>
+            <th>Estado</th>
             <th class="text-center">Ver</th>
-            {% elif puede_editar %}
+            {% else %}
             <th class="text-center">Acciones</th>
             {% endif %}
           </tr>
@@ -122,11 +91,7 @@
             <th><input type="text" data-filtro="colegio"></th>
             <th><input type="text" data-filtro="codigo"></th>
             <th></th>
-            {% if tab == 'realizado' %}
-            <th></th><th></th><th></th>
-            {% elif puede_editar %}
-            <th></th>
-            {% endif %}
+            {% if tab == 'realizado' %}<th></th><th></th>{% else %}<th></th>{% endif %}
           </tr>
         </thead>
         <tbody id="cuerpoTablaPagos">
@@ -151,50 +116,35 @@
             <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
             <td>{{ f.codigo }}</td>
-            <td class="text-end">
-              {% if f.valor_total or f.extras %}
-                <span class="fw-bold">${{ f.valor_total|floatformat:"0" }}</span>
-                {% if f.editado or f.extras %}
-                <div class="small text-muted">
-                  Base ${{ f.valor_base|floatformat:"0" }}{% if f.editado %} <i class="fas fa-pen text-warning" title="Valor editado"></i>{% endif %}
-                  {% for e in f.extras %}
-                  <div>+ {{ e.concepto }}: ${{ e.valor|floatformat:"0" }}
-                    {% if puede_editar and not f.fecha_pago %}
-                    <form method="post" action="{% url 'pagos_eliminar_extra' e.id %}" class="d-inline m-0">
-                      {% csrf_token %}
-                      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-                      <input type="hidden" name="tab" value="{{ tab }}">
-                      <button class="btn btn-link btn-sm p-0 text-danger align-baseline" title="Quitar costo extra">&times;</button>
-                    </form>
-                    {% endif %}
-                  </div>
-                  {% endfor %}
-                </div>
-                {% endif %}
-              {% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
+            <td class="text-end fw-bold">
+              {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
-            <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
-            <td class="text-muted small">{{ f.marcado_por }}</td>
-            <td class="text-center">
+            <td class="small text-nowrap">
+              {% if f.fecha_pago %}<span class="badge bg-success">Pagado</span> <span class="text-muted">{{ f.fecha_pago|date:"d/m/Y" }}</span>
+              {% else %}<span class="badge bg-info text-dark">Enviado</span>{% endif %}
+            </td>
+            <td class="text-center text-nowrap">
+              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-detalle" data-pago="{{ f.pago_id }}" title="Ver detalle">
+                <i class="fas fa-info-circle"></i>
+              </button>
               <a href="{% url 'pago_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver soporte">
                 <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
               </a>
             </td>
-            {% elif puede_editar %}
+            {% else %}
             <td class="text-center text-nowrap">
-              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-editar-valor"
-                      data-pago="{{ f.pago_id }}" data-valor="{{ f.valor_base }}" title="Editar valor">
-                <i class="fas fa-pen"></i>
+              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-detalle" data-pago="{{ f.pago_id }}" title="Ver detalle del valor">
+                <i class="fas fa-info-circle"></i>
               </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 btn-agregar-extra"
-                      data-pago="{{ f.pago_id }}" data-docente="{{ f.docente }}" title="Agregar costo extra">
-                <i class="fas fa-plus"></i>
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 btn-extras" data-pago="{{ f.pago_id }}" title="Costos extra">
+                <i class="fas fa-coins"></i>{% if f.extras %} <span class="badge bg-info text-dark">{{ f.extras|length }}</span>{% endif %}
               </button>
               <form method="post" action="{% url 'pagos_excluir_fila' f.pago_id %}" class="d-inline m-0">
                 {% csrf_token %}
-                <input type="hidden" name="semana" value="{{ fecha_inicio }}">
                 <input type="hidden" name="tab" value="{{ tab }}">
+                <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+                <input type="hidden" name="hasta" value="{{ fecha_fin }}">
                 {% if f.excluida %}
                 <button class="btn btn-outline-success btn-sm py-0 px-2" title="Incluir de nuevo"><i class="fas fa-undo"></i></button>
                 {% else %}
@@ -206,11 +156,10 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="{% if tab == 'realizado' %}12{% elif puede_editar %}10{% else %}9{% endif %}" class="text-center text-muted py-4">
+            <td colspan="{% if tab == 'realizado' %}11{% else %}10{% endif %}" class="text-center text-muted py-4">
               <i class="fas fa-info-circle me-1"></i>
-              {% if tab == 'realizado' %}No hay pagos realizados en este período.
-              {% elif estado_lote == 'SIN_PREPARAR' %}Aún no hay borrador. Prepara la semana para verla aquí.
-              {% else %}No hay pagos pendientes en este período.{% endif %}
+              {% if tab == 'realizado' %}No hay pagos enviados{% if filtro_aplicado %} en el rango{% endif %}.
+              {% else %}No hay pagos pendientes por enviar{% if filtro_aplicado %} en el rango{% endif %}. Usa “Preparar pendientes”.{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -221,7 +170,7 @@
     <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
       <small class="text-muted">
         Mostrando <span id="contadorVisiblesPagos">0</span> de {{ filas|length }}
-        · Total del periodo: <strong>${{ total_valor|floatformat:"0" }}</strong>
+        · Total: <strong>${{ total_valor|floatformat:"0" }}</strong>
       </small>
       <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesPagos"></ul></nav>
     </div>
@@ -231,85 +180,101 @@
 {# ── Modal: exportar a Excel ── #}
 {% include 'pagos/_modal_exportar.html' with export_url='pagos_lista' %}
 
-{% if puede_editar %}
-{# ── Modal: editar valor base ── #}
-<div class="modal fade" id="modalEditarValor" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="post" id="formEditarValor" class="modal-content">
-      {% csrf_token %}
-      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-      <input type="hidden" name="tab" value="{{ tab }}">
-      <div class="modal-header"><h5 class="modal-title">Editar valor</h5>
+{# ── Modal: detalle del valor (solo lectura) ── #}
+<div class="modal fade" id="modalDetalle" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Detalle del valor <span id="detDocente" class="text-muted fs-6"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <label class="form-label">Valor base (COP)</label>
-        <input type="number" name="valor" id="inputEditarValor" class="form-control" min="0" step="1">
-        <div class="form-text">Sobrescribe el valor calculado de las horas. Déjalo vacío para volver al calculado.</div>
+        <table class="table table-sm mb-0">
+          <tbody id="detCuerpo"></tbody>
+        </table>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar</button>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
 
-{# ── Modal: agregar costo extra ── #}
-<div class="modal fade" id="modalExtra" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="post" id="formExtra" class="modal-content">
-      {% csrf_token %}
-      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-      <input type="hidden" name="tab" value="{{ tab }}">
-      <div class="modal-header"><h5 class="modal-title">Costo extra <span id="extraDocente" class="text-muted fs-6"></span></h5>
+{# ── Modal: gestión de costos extra (agregar / eliminar) ── #}
+<div class="modal fade" id="modalExtras" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Costos extra <span id="extDocente" class="text-muted fs-6"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label">Concepto</label>
-          <input type="text" name="concepto" class="form-control" placeholder="p. ej. Desplazamiento" maxlength="200" required>
-        </div>
-        <div>
-          <label class="form-label">Valor (COP)</label>
-          <input type="number" name="valor" class="form-control" min="1" step="1" required>
-        </div>
+        <div id="extLista" class="mb-3"></div>
+        <form method="post" id="formExtra" class="d-flex gap-2 align-items-end border-top pt-3">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+          <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+          <div class="flex-grow-1">
+            <label class="form-label small mb-1">Concepto</label>
+            <input type="text" name="concepto" class="form-control form-control-sm" placeholder="p. ej. Desplazamiento" maxlength="200" required>
+          </div>
+          <div style="width:130px;">
+            <label class="form-label small mb-1">Valor (COP)</label>
+            <input type="number" name="valor" class="form-control form-control-sm" min="1" step="1" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Agregar</button>
+        </form>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Agregar</button>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
+
+<script>const URL_PAGOS = "{% url 'pagos_lista' %}";</script>
+{% include 'pagos/_tabla_js.html' %}
 
 <script>
 (function () {
-  var URL_VALOR = "{% url 'pagos_editar_valor' 0 %}";
-  var URL_EXTRA = "{% url 'pagos_agregar_extra' 0 %}";
-  var formValor = document.getElementById('formEditarValor');
-  var formExtra = document.getElementById('formExtra');
+  const DATA = JSON.parse(document.getElementById('pagos-data').textContent || '{}');
+  const CSRF = "{{ csrf_token }}";
+  const TAB = "{{ tab }}", FI = "{{ fecha_inicio }}", FF = "{{ fecha_fin }}";
+  const URL_EXTRA_ADD = "{% url 'pagos_agregar_extra' 0 %}";
+  const URL_EXTRA_DEL = "{% url 'pagos_eliminar_extra' 0 %}";
+  const fmt = n => '$' + Number(n || 0).toLocaleString('es-CO');
 
-  // bootstrap se carga al final del body (después de este bloque): instanciar el modal
-  // de forma diferida dentro del click, no al cargar, para no romper la asignación de
-  // listeners si `bootstrap` aún no está definido.
-  document.querySelectorAll('.btn-editar-valor').forEach(function (b) {
+  // ── Modal detalle (solo lectura) ──
+  document.querySelectorAll('.btn-detalle').forEach(function (b) {
     b.addEventListener('click', function () {
-      formValor.action = URL_VALOR.replace('/0/', '/' + b.dataset.pago + '/');
-      document.getElementById('inputEditarValor').value = b.dataset.valor;
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditarValor')).show();
+      const d = DATA[b.dataset.pago]; if (!d) return;
+      document.getElementById('detDocente').textContent = '· ' + (d.docente || '');
+      let html = '<tr><td>Horas</td><td class="text-end">' + (d.horas || 0) + '</td></tr>'
+               + '<tr><td>Valor por hora</td><td class="text-end">' + fmt(d.valor_hora) + '</td></tr>'
+               + '<tr><td>Pago por horas</td><td class="text-end">' + fmt(d.valor_base) + '</td></tr>';
+      (d.extras || []).forEach(e => { html += '<tr><td>' + e.concepto + '</td><td class="text-end">' + fmt(e.valor) + '</td></tr>'; });
+      html += '<tr class="fw-bold border-top"><td>Total</td><td class="text-end">' + fmt(d.total) + '</td></tr>';
+      document.getElementById('detCuerpo').innerHTML = html;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDetalle')).show();
     });
   });
-  document.querySelectorAll('.btn-agregar-extra').forEach(function (b) {
+
+  // ── Modal gestión de extras (agregar / eliminar) ──
+  document.querySelectorAll('.btn-extras').forEach(function (b) {
     b.addEventListener('click', function () {
-      formExtra.action = URL_EXTRA.replace('/0/', '/' + b.dataset.pago + '/');
-      document.getElementById('extraDocente').textContent = '· ' + (b.dataset.docente || '');
-      formExtra.reset();
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalExtra')).show();
+      const pago = b.dataset.pago, d = DATA[pago]; if (!d) return;
+      document.getElementById('extDocente').textContent = '· ' + (d.docente || '');
+      const lista = document.getElementById('extLista');
+      if (!d.extras || !d.extras.length) {
+        lista.innerHTML = '<p class="text-muted small mb-0">Aún no hay costos extra.</p>';
+      } else {
+        lista.innerHTML = d.extras.map(e =>
+          `<div class="d-flex justify-content-between align-items-center border-bottom py-1">
+             <span>${e.concepto}: <strong>${fmt(e.valor)}</strong></span>
+             <form method="post" action="${URL_EXTRA_DEL.replace('/0/', '/' + e.id + '/')}" class="m-0">
+               <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}">
+               <input type="hidden" name="tab" value="${TAB}">
+               <input type="hidden" name="semana" value="${FI}">
+               <input type="hidden" name="hasta" value="${FF}">
+               <button class="btn btn-outline-danger btn-sm py-0 px-2" title="Eliminar"><i class="fas fa-trash"></i></button>
+             </form>
+           </div>`).join('');
+      }
+      document.getElementById('formExtra').action = URL_EXTRA_ADD.replace('/0/', '/' + pago + '/');
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalExtras')).show();
     });
   });
 })();
 </script>
-{% endif %}
-
-<script>const URL_PAGOS = "{% url 'pagos_lista' %}";</script>
-{% include 'pagos/_tabla_js.html' %}
 {% endblock %}

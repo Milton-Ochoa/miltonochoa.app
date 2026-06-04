@@ -17,19 +17,9 @@
 
 {% block content %}
 {% include 'pagos/_estilos_tabla.html' %}
+{{ detalles_pagos|json_script:"pagos-data" }}
 
 <div class="container-fluid py-3">
-
-  {% if messages %}
-  <div class="mb-3">
-    {% for message in messages %}
-    <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
-      {{ message }}
-      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 
   {# ── Tabla estilo viáticos: cabecera con pestañas + filtro de fechas ── #}
   <div class="card shadow-sm">
@@ -90,16 +80,8 @@
             <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
             <td>{{ f.codigo }}</td>
-            <td class="text-end">
-              {% if f.valor_total or f.extras %}
-                <span class="fw-bold">${{ f.valor_total|floatformat:"0" }}</span>
-                {% if f.extras %}
-                <div class="small text-muted">
-                  Base ${{ f.valor_base|floatformat:"0" }}
-                  {% for e in f.extras %}<div>+ {{ e.concepto }}: ${{ e.valor|floatformat:"0" }}</div>{% endfor %}
-                </div>
-                {% endif %}
-              {% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
+            <td class="text-end fw-bold">
+              {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
             <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
@@ -157,11 +139,14 @@
       </div>
       <div class="modal-body">
         <p class="mb-2">¿Marcar el siguiente pago como <strong>realizado</strong>?</p>
-        <table class="table table-sm table-bordered mb-3">
-          <tr><th class="text-muted" style="width:110px">Docente</th><td id="mDocenteNombre"></td></tr>
+        <table class="table table-sm table-bordered mb-2">
+          <tr><th class="text-muted" style="width:130px">Docente</th><td id="mDocenteNombre"></td></tr>
           <tr><th class="text-muted">Fecha</th><td id="mFechaLabel"></td></tr>
           <tr><th class="text-muted">Colegio</th><td id="mColegioNombre"></td></tr>
-          <tr><th class="text-muted">Valor</th><td id="mValor" class="fw-bold text-success"></td></tr>
+        </table>
+        <p class="fw-semibold mb-1 small text-muted">Desglose</p>
+        <table class="table table-sm mb-3">
+          <tbody id="mDesglose"></tbody>
         </table>
         <div class="alert alert-warning py-2 mb-3">
           <i class="fas fa-exclamation-triangle me-1"></i>
@@ -226,6 +211,8 @@ const FECHA_INICIO = "{{ fecha_inicio }}";
 const FECHA_FIN    = "{{ fecha_fin }}";
 
 let _pendiente = {};
+const PAGOS_DATA = JSON.parse(document.getElementById('pagos-data').textContent || '{}');
+const _fmtCop = n => '$' + Number(n || 0).toLocaleString('es-CO');
 
 // ── Modal: Marcar ─────────────────────────────────────────────
 function abrirMarcar(pagoId, docente, colegio, fechaLabel, valor) {
@@ -233,9 +220,14 @@ function abrirMarcar(pagoId, docente, colegio, fechaLabel, valor) {
     document.getElementById('mDocenteNombre').textContent = docente;
     document.getElementById('mFechaLabel').textContent    = fechaLabel;
     document.getElementById('mColegioNombre').textContent = colegio;
-    document.getElementById('mValor').textContent = valor > 0
-        ? '$' + Number(valor).toLocaleString('es-CO')
-        : 'Sin tarifa configurada';
+    // Desglose: horas, valor por hora, costos extra y total.
+    const d = PAGOS_DATA[pagoId] || {};
+    let html = '<tr><td>Horas</td><td class="text-end">' + (d.horas || 0) + '</td></tr>'
+             + '<tr><td>Valor por hora</td><td class="text-end">' + _fmtCop(d.valor_hora) + '</td></tr>'
+             + '<tr><td>Pago por horas</td><td class="text-end">' + _fmtCop(d.valor_base) + '</td></tr>';
+    (d.extras || []).forEach(e => { html += '<tr><td>' + e.concepto + '</td><td class="text-end">' + _fmtCop(e.valor) + '</td></tr>'; });
+    html += '<tr class="fw-bold border-top"><td>Total</td><td class="text-end text-success">' + _fmtCop(d.total != null ? d.total : valor) + '</td></tr>';
+    document.getElementById('mDesglose').innerHTML = html;
     document.getElementById('checkConfirmar').checked = false;
     document.getElementById('btnConfirmarMarcar').disabled = true;
     new bootstrap.Modal(document.getElementById('modalMarcar')).show();

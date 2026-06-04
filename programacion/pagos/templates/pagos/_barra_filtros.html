@@ -12,14 +12,14 @@
     <li class="nav-item">
       <a class="nav-link {% if tab == 'pendiente' %}active{% endif %}"
          href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=pendiente">
-        <i class="fas fa-clock me-1"></i> Pendientes
+        <i class="fas fa-clock me-1"></i> {{ tab_label_pendiente|default:'Pendientes' }}
         <span class="badge {% if tab == 'pendiente' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{ filas_pendientes|length }}</span>
       </a>
     </li>
     <li class="nav-item">
       <a class="nav-link {% if tab == 'realizado' %}active{% endif %}"
          href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=realizado">
-        <i class="fas fa-check-circle me-1"></i> Realizados
+        <i class="fas fa-check-circle me-1"></i> {{ tab_label_realizado|default:'Realizados' }}
         <span class="badge {% if tab == 'realizado' %}bg-light text-dark{% else %}bg-success{% endif %} ms-1">{{ filas_realizadas|length }}</span>
       </a>
     </li>
