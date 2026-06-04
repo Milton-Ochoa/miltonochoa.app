@@ -981,6 +981,12 @@ Datos para JS: inyectados como constantes JSON desde Django.
                             if (t2.showToast && typeof showBootstrapToast !== 'undefined') {
                                 showBootstrapToast(t2.showToast.msg, 'success');
                             }
+                            // La columna nueva no existía en el DOM, pero igual puede
+                            // disparar renumeración de la materia → ofrecer el modal.
+                            if (t2.recalcular && t2.recalcular.length > 0) {
+                                _pendientesRecalcular = t2.recalcular;
+                                mostrarModalRecalcular(t2.recalcular);
+                            }
                         } catch(e) {}
                     }
                     refrescarTabla(fecha);
