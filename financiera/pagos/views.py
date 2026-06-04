@@ -65,9 +65,11 @@ def fin_pagos_marcar(request):
         deleted, _ = pagos.delete()
         return JsonResponse({'ok': True, 'accion': 'desmarcado', 'deleted': deleted})
 
+    # Tolerar coma decimal (locale es): el front debería mandar punto (|unlocalize),
+    # pero normalizamos por si acaso para no rechazar el marcado.
     try:
-        horas = float(request.POST.get('horas', 0))
-        valor = int(request.POST.get('valor', 0))
+        horas = float(request.POST.get('horas', '0').replace(',', '.'))
+        valor = int(float(request.POST.get('valor', '0').replace(',', '.')))
     except (ValueError, TypeError):
         return JsonResponse({'ok': False, 'error': 'Valor/horas inválidos'}, status=400)
 

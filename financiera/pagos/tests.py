@@ -73,6 +73,18 @@ class FinPagosTest(TestCase):
         self.assertEqual(pago.valor, 80000)
         self.assertEqual(pago.marcado_por, self.finan)
 
+    def test_marcar_acepta_horas_con_coma_decimal(self):
+        # El locale es renderiza floats con coma; la vista debe normalizarla.
+        self._login_financiera()
+        r = self.client.post('/pagos/marcar/', {
+            'accion': 'marcar', 'profesor_id': self.profesor.id,
+            'colegio_id': self.colegio_anio.id, 'fecha': '2025-03-14',
+            'horas': '2,5', 'valor': '80000',
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()['ok'])
+        self.assertEqual(PagoRealizado.objects.get().horas, 2.5)
+
     def test_marcar_es_idempotente(self):
         self._login_financiera()
         datos = {

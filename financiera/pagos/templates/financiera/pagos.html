@@ -1,4 +1,5 @@
 {% extends 'base_financiera.html' %}
+{% load l10n %}
 {% block header_title %}Pagos a profesores{% endblock %}
 
 {% comment %}
@@ -158,8 +159,8 @@
                         '{{ f.docente|escapejs }}',
                         '{{ f.colegio|escapejs }}',
                         '{{ f.fecha|date:'d/m/Y' }}',
-                        '{{ f.valor_total }}',
-                        '{{ f.horas }}'
+                        '{{ f.valor_total|unlocalize }}',
+                        '{{ f.horas|unlocalize }}'
                       )">
                 <i class="fas fa-check"></i>
               </button>
