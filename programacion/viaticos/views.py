@@ -17,6 +17,7 @@ from core.areas import es_personal_programacion
 from programacion.configuracion.models import Colegio, Profesor
 from .forms import SolicitudViaticoForm
 from .models import GastoViatico, SolicitudViatico, SoportePago
+from .notificaciones import notificar_solicitud_enviada
 
 # Superusuario o staff del área (grupo area:programacion). Mismo predicado que
 # el resto del área; los gestores de colegio/profesor NO pasan → no ven viáticos.
@@ -100,6 +101,8 @@ def crear_viatico(request):
                 GastoViatico.objects.bulk_create(
                     GastoViatico(solicitud=solicitud, **g) for g in gastos
                 )
+                # Avisar a financiera solo si la transacción se confirma (no en rollback).
+                transaction.on_commit(lambda: notificar_solicitud_enviada(solicitud, request))
             messages.success(request, 'Solicitud de viáticos enviada.')
             return redirect('viaticos_detalle', pk=solicitud.pk)
 
@@ -138,6 +141,10 @@ def editar_viatico(request, pk):
                 GastoViatico.objects.bulk_create(
                     GastoViatico(solicitud=solicitud, **g) for g in gastos
                 )
+                # Solo el reenvío (DEVUELTA→ENVIADA) vuelve a requerir revisión; una
+                # edición que no cambia de estado no debe notificar.
+                if reenviar:
+                    transaction.on_commit(lambda: notificar_solicitud_enviada(solicitud, request))
             messages.success(request, 'Solicitud reenviada.' if reenviar else 'Solicitud actualizada.')
             return redirect('viaticos_detalle', pk=solicitud.pk)
 
