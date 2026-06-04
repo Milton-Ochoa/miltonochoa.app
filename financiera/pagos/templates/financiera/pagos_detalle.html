@@ -43,8 +43,22 @@
                 <div class="col-md-3"><span class="text-muted small d-block">Periodo</span>{{ pago.colegio.periodo_label }}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Fecha de la clase</span>{{ pago.fecha|date:"d/m/Y" }}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Horas</span>{{ pago.horas|floatformat:"-2" }}</div>
-                <div class="col-md-3"><span class="text-muted small d-block">Valor pagado</span><strong class="text-success">${{ pago.valor|floatformat:"0" }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Total</span><strong class="text-success">${{ pago.total|floatformat:"0" }}</strong></div>
             </div>
+
+            {# ── Desglose: base + costos extra que agregó programación ── #}
+            <hr>
+            <span class="text-muted small d-block mb-1">Desglose</span>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr><td>Pago por horas</td><td class="text-end">${{ pago.valor_base|floatformat:"0" }}</td></tr>
+                    {% for e in pago.extras.all %}
+                    <tr><td>{{ e.concepto }}</td><td class="text-end">${{ e.valor|floatformat:"0" }}</td></tr>
+                    {% endfor %}
+                    <tr class="fw-bold border-top"><td>Total</td><td class="text-end">${{ pago.total|floatformat:"0" }}</td></tr>
+                </tbody>
+            </table>
+
             <hr>
             <div class="row g-3">
                 <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>

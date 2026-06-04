@@ -90,8 +90,16 @@
             <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
             <td>{{ f.codigo }}</td>
-            <td class="text-end fw-bold">
-              {% if f.valor_total %}${{ f.valor_total|floatformat:"0" }}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
+            <td class="text-end">
+              {% if f.valor_total or f.extras %}
+                <span class="fw-bold">${{ f.valor_total|floatformat:"0" }}</span>
+                {% if f.extras %}
+                <div class="small text-muted">
+                  Base ${{ f.valor_base|floatformat:"0" }}
+                  {% for e in f.extras %}<div>+ {{ e.concepto }}: ${{ e.valor|floatformat:"0" }}</div>{% endfor %}
+                </div>
+                {% endif %}
+              {% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
             <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
@@ -101,14 +109,14 @@
                 <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
               </a>
               <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" title="Desmarcar pago"
-                      onclick="abrirDesmarcar('{{ f.profesor_id }}','{{ f.colegio_id }}','{{ f.fecha|date:'Y-m-d' }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}')">
+                      onclick="abrirDesmarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}')">
                 <i class="fas fa-undo"></i>
               </button>
             </td>
             {% else %}
             <td class="text-center">
               <button type="button" class="btn btn-outline-success btn-sm py-0 px-2" title="Marcar como pagado"
-                      onclick="abrirMarcar('{{ f.profesor_id }}','{{ f.colegio_id }}','{{ f.fecha|date:'Y-m-d' }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}','{{ f.valor_total|unlocalize }}','{{ f.horas|unlocalize }}')">
+                      onclick="abrirMarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}','{{ f.valor_total|unlocalize }}')">
                 <i class="fas fa-check"></i>
               </button>
             </td>
@@ -220,8 +228,8 @@ const FECHA_FIN    = "{{ fecha_fin }}";
 let _pendiente = {};
 
 // ── Modal: Marcar ─────────────────────────────────────────────
-function abrirMarcar(profId, colId, fecha, docente, colegio, fechaLabel, valor, horas) {
-    _pendiente = { accion: 'marcar', profId, colId, fecha, horas, valor };
+function abrirMarcar(pagoId, docente, colegio, fechaLabel, valor) {
+    _pendiente = { accion: 'marcar', pagoId };
     document.getElementById('mDocenteNombre').textContent = docente;
     document.getElementById('mFechaLabel').textContent    = fechaLabel;
     document.getElementById('mColegioNombre').textContent = colegio;
@@ -241,9 +249,7 @@ document.getElementById('btnConfirmarMarcar').addEventListener('click', async fu
     this.disabled = true;
     this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
     const body = new URLSearchParams({
-        accion: 'marcar', profesor_id: _pendiente.profId, colegio_id: _pendiente.colId,
-        fecha: _pendiente.fecha, horas: _pendiente.horas, valor: _pendiente.valor,
-        csrfmiddlewaretoken: CSRF_TOKEN,
+        accion: 'marcar', pago_id: _pendiente.pagoId, csrfmiddlewaretoken: CSRF_TOKEN,
     });
     try {
         const res  = await fetch(URL_MARCAR, { method: 'POST', body });
@@ -262,8 +268,8 @@ document.getElementById('btnConfirmarMarcar').addEventListener('click', async fu
 });
 
 // ── Modal: Desmarcar ──────────────────────────────────────────
-function abrirDesmarcar(profId, colId, fecha, docente, colegio, fechaLabel) {
-    _pendiente = { accion: 'desmarcar', profId, colId, fecha };
+function abrirDesmarcar(pagoId, docente, colegio, fechaLabel) {
+    _pendiente = { accion: 'desmarcar', pagoId };
     document.getElementById('dDocenteNombre').textContent = docente;
     document.getElementById('dFechaLabel').textContent    = fechaLabel;
     document.getElementById('dColegioNombre').textContent = colegio;
@@ -280,8 +286,7 @@ document.getElementById('btnConfirmarDesmarcar').addEventListener('click', async
     this.disabled = true;
     this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Revirtiendo...';
     const body = new URLSearchParams({
-        accion: 'desmarcar', profesor_id: _pendiente.profId, colegio_id: _pendiente.colId,
-        fecha: _pendiente.fecha, csrfmiddlewaretoken: CSRF_TOKEN,
+        accion: 'desmarcar', pago_id: _pendiente.pagoId, csrfmiddlewaretoken: CSRF_TOKEN,
     });
     try {
         const res  = await fetch(URL_MARCAR, { method: 'POST', body });

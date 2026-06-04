@@ -1,8 +1,9 @@
-"""Tests del área financiera — pagos de clases a profesores (Fase 2).
+"""Tests del área financiera — pagos de clases a profesores.
 
-Acceso por subdominio, marcar/desmarcar (crea/borra `PagoRealizado`) y la descarga
-de Excel. El cálculo semanal (clases → filas) lo cubren los tests de programación;
-aquí se valida la gestión propia de financiera y su gate de área.
+Financiera **solo gestiona filas de lotes ENVIADO** por programación: marca el pago
+(fija `fecha_pago`/`marcado_por`), lo desmarca (limpia esos campos y borra soportes, sin
+borrar la fila) y sube/elimina soportes. El cálculo semanal y la materialización los
+cubren los tests de programación; aquí se valida la gestión propia y el gate de área.
 """
 import shutil
 import tempfile
@@ -11,10 +12,11 @@ from datetime import date
 from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User, Group
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_PROGRAMACION
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
+from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 
 # Soportes en disco local aislado en tmp: NUNCA tocar Supabase (igual que viáticos).
 _STORAGE_LOCAL = {
@@ -22,6 +24,15 @@ _STORAGE_LOCAL = {
     'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
 }
 _MEDIA_TMP_PAGOS = tempfile.mkdtemp()
+
+
+def _crear_pago(colegio_anio, profesor, *, estado=LotePagos.Estado.ENVIADO, fecha=date(2025, 3, 14)):
+    """Crea un lote en el estado dado con una fila base lista para financiera."""
+    lote = LotePagos.objects.create(
+        fecha_inicio=date(2025, 3, 10), fecha_fin=date(2025, 3, 14), estado=estado)
+    return PagoRealizado.objects.create(
+        lote=lote, profesor=profesor, colegio=colegio_anio,
+        fecha=fecha, horas=2, valor=80000)
 
 
 class FinPagosTest(TestCase):
@@ -56,69 +67,58 @@ class FinPagosTest(TestCase):
         r = self.client.get('/pagos/')
         self.assertNotEqual(r.status_code, 200)  # middleware lo saca del subdominio
 
-    # ── Marcar / desmarcar ────────────────────────────────────
-    def test_marcar_crea_pago(self):
+    def test_lista_solo_muestra_lotes_enviados(self):
         self._login_financiera()
-        r = self.client.post('/pagos/marcar/', {
-            'accion': 'marcar',
-            'profesor_id': self.profesor.id,
-            'colegio_id': self.colegio_anio.id,
-            'fecha': '2025-03-14',
-            'horas': '2',
-            'valor': '80000',
-        })
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json()['ok'])
-        pago = PagoRealizado.objects.get(profesor=self.profesor, colegio=self.colegio_anio)
-        self.assertEqual(pago.valor, 80000)
-        self.assertEqual(pago.marcado_por, self.finan)
+        # Lote en BORRADOR → financiera no lo ve.
+        _crear_pago(self.colegio_anio, self.profesor, estado=LotePagos.Estado.BORRADOR)
+        r = self.client.get('/pagos/?semana=2025-03-10&tab=pendiente')
+        self.assertNotContains(r, 'Pérez')
 
-    def test_marcar_acepta_horas_con_coma_decimal(self):
-        # El locale es renderiza floats con coma; la vista debe normalizarla.
+    # ── Marcar / desmarcar ────────────────────────────────────
+    def test_marcar_fija_fecha_pago(self):
         self._login_financiera()
-        r = self.client.post('/pagos/marcar/', {
-            'accion': 'marcar', 'profesor_id': self.profesor.id,
-            'colegio_id': self.colegio_anio.id, 'fecha': '2025-03-14',
-            'horas': '2,5', 'valor': '80000',
-        })
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        r = self.client.post('/pagos/marcar/', {'accion': 'marcar', 'pago_id': pago.id})
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()['ok'])
-        self.assertEqual(PagoRealizado.objects.get().horas, 2.5)
+        pago.refresh_from_db()
+        self.assertIsNotNone(pago.fecha_pago)
+        self.assertEqual(pago.marcado_por, self.finan)
 
     def test_marcar_es_idempotente(self):
         self._login_financiera()
-        datos = {
-            'accion': 'marcar', 'profesor_id': self.profesor.id,
-            'colegio_id': self.colegio_anio.id, 'fecha': '2025-03-14',
-            'horas': '2', 'valor': '80000',
-        }
-        self.client.post('/pagos/marcar/', datos)
-        self.client.post('/pagos/marcar/', datos)  # segundo no duplica
-        self.assertEqual(PagoRealizado.objects.count(), 1)
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        self.client.post('/pagos/marcar/', {'accion': 'marcar', 'pago_id': pago.id})
+        self.client.post('/pagos/marcar/', {'accion': 'marcar', 'pago_id': pago.id})
+        self.assertEqual(PagoRealizado.objects.count(), 1)  # no duplica filas
 
-    def test_desmarcar_borra_pago(self):
+    def test_marcar_rechaza_lote_no_enviado(self):
         self._login_financiera()
-        PagoRealizado.objects.create(
-            profesor=self.profesor, colegio=self.colegio_anio,
-            fecha=date(2025, 3, 14), horas=2, valor=80000)
-        r = self.client.post('/pagos/marcar/', {
-            'accion': 'desmarcar',
-            'profesor_id': self.profesor.id,
-            'colegio_id': self.colegio_anio.id,
-            'fecha': '2025-03-14',
-        })
+        pago = _crear_pago(self.colegio_anio, self.profesor, estado=LotePagos.Estado.BORRADOR)
+        r = self.client.post('/pagos/marcar/', {'accion': 'marcar', 'pago_id': pago.id})
+        self.assertEqual(r.status_code, 400)
+        pago.refresh_from_db()
+        self.assertIsNone(pago.fecha_pago)
+
+    def test_desmarcar_limpia_pero_conserva_fila(self):
+        self._login_financiera()
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        pago.fecha_pago = timezone.now()
+        pago.marcado_por = self.finan
+        pago.save()
+        r = self.client.post('/pagos/marcar/', {'accion': 'desmarcar', 'pago_id': pago.id})
         self.assertTrue(r.json()['ok'])
-        self.assertEqual(PagoRealizado.objects.count(), 0)
+        pago.refresh_from_db()
+        self.assertIsNone(pago.fecha_pago)               # ya no pagada
+        self.assertEqual(PagoRealizado.objects.count(), 1)  # la fila sigue
 
     def test_marcar_requiere_financiera(self):
-        # Sin login → no debe crear nada (redirige a login/apex).
-        r = self.client.post('/pagos/marcar/', {
-            'accion': 'marcar', 'profesor_id': self.profesor.id,
-            'colegio_id': self.colegio_anio.id, 'fecha': '2025-03-14',
-            'horas': '2', 'valor': '80000',
-        })
+        # Sin login → no debe marcar (redirige a login/apex).
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        r = self.client.post('/pagos/marcar/', {'accion': 'marcar', 'pago_id': pago.id})
         self.assertNotEqual(r.status_code, 200)
-        self.assertEqual(PagoRealizado.objects.count(), 0)
+        pago.refresh_from_db()
+        self.assertIsNone(pago.fecha_pago)
 
     # ── Exportar ──────────────────────────────────────────────
     def test_exportar_devuelve_xlsx(self):
@@ -131,14 +131,15 @@ class FinPagosTest(TestCase):
         self.assertIn('attachment', r['Content-Disposition'])
 
     # ── Detalle ───────────────────────────────────────────────
-    def test_detalle_muestra_datos_del_pago(self):
+    def test_detalle_muestra_datos_y_desglose(self):
         self._login_financiera()
-        pago = PagoRealizado.objects.create(
-            profesor=self.profesor, colegio=self.colegio_anio,
-            fecha=date(2025, 3, 14), horas=2, valor=80000)
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        from programacion.pagos.models import ExtraPago
+        ExtraPago.objects.create(pago=pago, concepto='Desplazamiento', valor=15000)
         r = self.client.get(f'/pagos/{pago.pk}/')
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Colegio Central')
+        self.assertContains(r, 'Desplazamiento')  # el desglose
         self.assertContains(r, 'Soporte de pago')
 
 
@@ -162,9 +163,7 @@ class FinPagosSoporteTest(TestCase):
             nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
         colegio_anio = ColegioAnio.objects.create(colegio=colegio, anio=2025)
         profesor = Profesor.objects.create(nombre='Ana', apellido='Pérez')
-        self.pago = PagoRealizado.objects.create(
-            profesor=profesor, colegio=colegio_anio,
-            fecha=date(2025, 3, 14), horas=2, valor=80000)
+        self.pago = _crear_pago(colegio_anio, profesor)
 
     def _archivo(self, nombre='comprobante.pdf', contenido=b'%PDF-1.4 fake'):
         return SimpleUploadedFile(nombre, contenido, content_type='application/pdf')
@@ -196,15 +195,14 @@ class FinPagosSoporteTest(TestCase):
         r = self.client.get(f'/pagos/soporte/{soporte.pk}/descargar/')
         self.assertEqual(r.status_code, 200)
 
-    def test_desmarcar_borra_soporte_y_archivo(self):
-        # Subir un soporte y luego desmarcar el pago: la fila y el archivo se van.
+    def test_desmarcar_borra_soporte_pero_conserva_fila(self):
+        # Subir un soporte y luego desmarcar: el archivo y el soporte se van; la fila queda.
+        self.pago.fecha_pago = timezone.now()
+        self.pago.save()
         self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
         self.assertEqual(SoportePagoProfesor.objects.count(), 1)
-        self.client.post('/pagos/marcar/', {
-            'accion': 'desmarcar',
-            'profesor_id': self.pago.profesor_id,
-            'colegio_id': self.pago.colegio_id,
-            'fecha': '2025-03-14',
-        })
-        self.assertEqual(PagoRealizado.objects.count(), 0)
+        self.client.post('/pagos/marcar/', {'accion': 'desmarcar', 'pago_id': self.pago.id})
+        self.pago.refresh_from_db()
+        self.assertIsNone(self.pago.fecha_pago)
+        self.assertEqual(PagoRealizado.objects.count(), 1)
         self.assertEqual(SoportePagoProfesor.objects.count(), 0)

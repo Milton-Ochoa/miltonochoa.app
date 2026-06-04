@@ -17,10 +17,11 @@ from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from core.areas import es_personal_financiera
-from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
+from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.pagos.views import (
     construir_contexto_pagos, filas_pagos_por_tab,
     _generar_excel_pagos, _semana_label,
@@ -43,42 +44,37 @@ def fin_pagos_lista(request):
 @solo_financiera
 @require_POST
 def fin_pagos_marcar(request):
-    """Marca/desmarca una fila `(profesor, colegio, fecha)` como pago realizado.
+    """Marca/desmarca una fila enviada como pago realizado, fijando/limpiando `fecha_pago`.
 
-    `get_or_create` respeta el unique `(profesor, colegio, fecha)` (idempotente).
-    `desmarcar` borra el `PagoRealizado`; antes elimina del storage los archivos de
-    sus soportes para no dejarlos huérfanos (el CASCADE solo borra las filas)."""
-    accion = request.POST.get('accion', 'marcar')
+    La fila ya existe (la materializó y envió programación): financiera solo registra el
+    pago, no crea filas. Solo se gestiona si pertenece a un lote ENVIADO. `desmarcar`
+    limpia `fecha_pago`/`marcado_por` y borra los soportes (archivos en storage + filas),
+    pero **conserva la fila** (sigue siendo parte del lote enviado)."""
     try:
-        profesor_id = int(request.POST.get('profesor_id', ''))
-        colegio_id  = int(request.POST.get('colegio_id', ''))
-        fecha_obj   = datetime.strptime(request.POST.get('fecha', ''), '%Y-%m-%d').date()
+        pago_id = int(request.POST.get('pago_id', ''))
     except (ValueError, TypeError):
         return JsonResponse({'ok': False, 'error': 'Datos inválidos'}, status=400)
 
-    if accion == 'desmarcar':
-        pagos = (PagoRealizado.objects
-                 .filter(profesor_id=profesor_id, colegio_id=colegio_id, fecha=fecha_obj)
-                 .prefetch_related('soportes'))
-        for pago in pagos:
-            for soporte in pago.soportes.all():
-                soporte.archivo.delete(save=False)
-        deleted, _ = pagos.delete()
-        return JsonResponse({'ok': True, 'accion': 'desmarcado', 'deleted': deleted})
+    pago = get_object_or_404(
+        PagoRealizado.objects.select_related('lote').prefetch_related('soportes'),
+        pk=pago_id)
+    if not pago.lote or pago.lote.estado != LotePagos.Estado.ENVIADO:
+        return JsonResponse(
+            {'ok': False, 'error': 'El pago no está disponible para financiera.'}, status=400)
 
-    # Tolerar coma decimal (locale es): el front debería mandar punto (|unlocalize),
-    # pero normalizamos por si acaso para no rechazar el marcado.
-    try:
-        horas = float(request.POST.get('horas', '0').replace(',', '.'))
-        valor = int(float(request.POST.get('valor', '0').replace(',', '.')))
-    except (ValueError, TypeError):
-        return JsonResponse({'ok': False, 'error': 'Valor/horas inválidos'}, status=400)
+    if request.POST.get('accion', 'marcar') == 'desmarcar':
+        for soporte in pago.soportes.all():
+            soporte.archivo.delete(save=False)
+        pago.soportes.all().delete()
+        pago.fecha_pago = None
+        pago.marcado_por = None
+        pago.save(update_fields=['fecha_pago', 'marcado_por'])
+        return JsonResponse({'ok': True, 'accion': 'desmarcado', 'id': pago.id})
 
-    pago, created = PagoRealizado.objects.get_or_create(
-        profesor_id=profesor_id, colegio_id=colegio_id, fecha=fecha_obj,
-        defaults={'horas': horas, 'valor': valor, 'marcado_por': request.user},
-    )
-    return JsonResponse({'ok': True, 'accion': 'marcado', 'created': created, 'id': pago.id})
+    pago.fecha_pago = timezone.now()
+    pago.marcado_por = request.user
+    pago.save(update_fields=['fecha_pago', 'marcado_por'])
+    return JsonResponse({'ok': True, 'accion': 'marcado', 'id': pago.id})
 
 
 @solo_financiera
