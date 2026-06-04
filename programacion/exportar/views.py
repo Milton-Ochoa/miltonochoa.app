@@ -15,7 +15,7 @@ import zipfile
 from datetime import date, datetime
 from collections import defaultdict
 
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.db.models import Count
 from django.contrib.auth.decorators import user_passes_test
@@ -27,7 +27,8 @@ from openpyxl.utils import get_column_letter
 from programacion.configuracion.models import Profesor, NombreLibro, Unidad, ColegioAnio
 from programacion.colegios.models import Clase, Asignacion, ClaseParticular, Bloque
 from programacion.colegios.utils import extraer_numero_grado, ordenar_grados
-from programacion.exportar.models import PagoRealizado
+from programacion.exportar.models import PagoRealizado, SoportePagoProfesor
+from programacion.viaticos.views import _responder_soporte
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1104,53 +1105,29 @@ def exportar_pagos_view(request):
     return response
 
 
+# ══════════════════════════════════════════════════════════════
+# DETALLE DE PAGO — SOLO LECTURA (el comprobante lo gestiona financiera)
+# ══════════════════════════════════════════════════════════════
+# Marcar el pago y subir/eliminar soportes es responsabilidad de financiera
+# (financiera/pagos). Programación solo calcula, ve el listado y consulta los
+# comprobantes adjuntos en solo lectura.
+
 @user_passes_test(es_personal_programacion, login_url='login')
-def ajax_marcar_pago(request):
-    """
-    Marca o desmarca una fila (profesor, colegio, fecha) como pago realizado.
-
-    get_or_create respeta el constraint único (profesor, colegio, fecha) sin lanzar
-    IntegrityError si el mismo pago se marca dos veces (idempotente).
-    La acción 'desmarcar' elimina el registro para revertir el marcado.
-    """
-    if request.method != 'POST':
-        return JsonResponse({'ok': False, 'error': 'Método no permitido'}, status=405)
-
-    accion      = request.POST.get('accion', 'marcar')  # 'marcar' | 'desmarcar'
-    profesor_id = request.POST.get('profesor_id', '')
-    colegio_id  = request.POST.get('colegio_id', '')
-    fecha_str   = request.POST.get('fecha', '')
-
-    try:
-        profesor_id = int(profesor_id)
-        colegio_id  = int(colegio_id)
-        fecha_obj   = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-    except (ValueError, TypeError):
-        return JsonResponse({'ok': False, 'error': 'Datos inválidos'}, status=400)
-
-    if accion == 'desmarcar':
-        deleted, _ = PagoRealizado.objects.filter(
-            profesor_id=profesor_id,
-            colegio_id=colegio_id,
-            fecha=fecha_obj,
-        ).delete()
-        return JsonResponse({'ok': True, 'accion': 'desmarcado', 'deleted': deleted})
-
-    # marcar
-    try:
-        horas = float(request.POST.get('horas', 0))
-        valor = int(request.POST.get('valor', 0))
-    except (ValueError, TypeError):
-        return JsonResponse({'ok': False, 'error': 'Valor/horas inválidos'}, status=400)
-
-    pago, created = PagoRealizado.objects.get_or_create(
-        profesor_id=profesor_id,
-        colegio_id=colegio_id,
-        fecha=fecha_obj,
-        defaults={
-            'horas':       horas,
-            'valor':       valor,
-            'marcado_por': request.user,
-        },
+def pagos_detalle(request, pago_id):
+    """Detalle de solo lectura de un pago realizado: datos del docente/colegio y
+    los soportes adjuntos (ver/descargar, sin subir ni eliminar)."""
+    pago = get_object_or_404(
+        PagoRealizado.objects
+        .select_related('profesor', 'colegio__colegio', 'marcado_por')
+        .prefetch_related('soportes', 'soportes__subido_por'),
+        pk=pago_id,
     )
-    return JsonResponse({'ok': True, 'accion': 'marcado', 'created': created, 'id': pago.id})
+    return render(request, 'exportar/pago_detalle.html', {'pago': pago})
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+def soporte_descargar(request, soporte_id):
+    """Ver (`?inline=1`) o descargar un soporte de pago desde programación
+    (solo lectura). Mismo proxy server-side que financiera; difiere en el gate."""
+    soporte = get_object_or_404(SoportePagoProfesor, pk=soporte_id)
+    return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')

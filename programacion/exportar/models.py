@@ -10,8 +10,9 @@ class PagoRealizado(models.Model):
     """Registro inmutable de un pago liquidado a un profesor por un día de clases.
 
     El constraint único (profesor, colegio, fecha) garantiza que la misma clase
-    no se marque como pagada dos veces. El endpoint ajax_marcar_pago usa
-    get_or_create para respetar este constraint sin lanzar excepción.
+    no se marque como pagada dos veces. Lo crea financiera (financiera/pagos) con
+    get_or_create, respetando ese constraint sin lanzar excepción; programación lo
+    ve en solo lectura.
 
     El campo 'valor' se calcula en la vista como horas × ColegioAnio.valor_hora
     y se guarda desnormalizado para preservar el valor histórico aunque cambie

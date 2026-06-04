@@ -64,3 +64,42 @@ class SoportePagoProfesorModelTest(TestCase):
         soporte = SoportePagoProfesor(pago=self.pago)
         ruta = _pago_soporte_upload_to(soporte, 'Recibo Original.PDF')
         self.assertEqual(ruta, 'pagos/pago-ana-perez-2025-03-14.pdf')
+
+
+class PagosProgramacionSoloLecturaTest(TestCase):
+    """Programación ve el detalle del pago y sus soportes, pero NO puede marcar
+    (esa acción se movió a financiera) ni subir comprobantes."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_prog', password='pass123')
+        self.client.login(username='admin_prog', password='pass123')
+
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        colegio_anio = ColegioAnio.objects.create(colegio=colegio, anio=2025)
+        profesor = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.pago = PagoRealizado.objects.create(
+            profesor=profesor, colegio=colegio_anio,
+            fecha=date(2025, 3, 14), horas=2, valor=80000)
+
+    def test_detalle_solo_lectura_accesible(self):
+        r = self.client.get(f'/exportar/pagos/{self.pago.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Soporte de pago')
+        # Programación no muestra formulario de subida (lo gestiona financiera).
+        self.assertNotContains(r, 'enctype="multipart/form-data"')
+
+    def test_pagina_pagos_es_solo_lectura(self):
+        r = self.client.get('/exportar/pagos/')
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, 'Marcar como pagado')
+
+    def test_endpoint_marcar_ya_no_existe(self):
+        # La ruta de marcar se retiró de programación (404).
+        r = self.client.post('/exportar/pagos/marcar/', {
+            'accion': 'marcar', 'profesor_id': self.pago.profesor_id,
+            'colegio_id': self.pago.colegio_id, 'fecha': '2025-03-15',
+            'horas': '2', 'valor': '80000',
+        })
+        self.assertEqual(r.status_code, 404)
