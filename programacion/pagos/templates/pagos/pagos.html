@@ -8,241 +8,124 @@
 {% endblock %}
 
 {% comment %}
-  Vista de SOLO LECTURA para programación: el cálculo semanal (pendiente/realizado) y
-  la descarga de Excel siguen aquí, pero **marcar el pago y subir soportes es de
-  financiera** (financiera/pagos). Las filas realizadas enlazan al detalle de solo
-  lectura (pago_detalle) para ver el comprobante.
+  Vista de SOLO LECTURA para programación, con el estilo de viáticos: tabla oscura con
+  fila de filtros por columna + paginación, y descarga a Excel por modal. Marcar el pago
+  y subir soportes es de financiera; aquí las filas realizadas enlazan al detalle.
 {% endcomment %}
 
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarPagos"
+        {% if not filas %}disabled{% endif %}>
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-<div class="col-lg-11">
+{% include 'pagos/_estilos_tabla.html' %}
 
-<div class="card shadow-sm border-0 mb-4">
-  <div class="card-header bg-dark text-white d-flex align-items-center gap-2">
-    <i class="fas fa-money-check-alt fa-lg"></i>
-    <h5 class="mb-0 fw-bold">Relación de Pagos</h5>
-    <span class="badge bg-secondary ms-auto fw-normal">
-      <i class="fas fa-eye me-1"></i>Solo lectura · la gestión es de financiera
-    </span>
-  </div>
-  <div class="card-body">
+<div class="container-fluid py-3">
 
-    {# ── Filtro de fechas ── #}
-    <div class="mb-3">
-      <label class="form-label fw-bold">Rango de fechas</label>
-      <div class="row g-2 align-items-end">
-        <div class="col-auto">
-          <label class="form-label small text-muted mb-1">Desde</label>
-          <input type="date" id="inputDesde" class="form-control form-control-sm"
-                 value="{{ fecha_inicio }}" max="{{ fecha_max }}" style="width:160px;">
-        </div>
-        <div class="col-auto">
-          <label class="form-label small text-muted mb-1">Hasta</label>
-          <input type="date" id="inputHasta" class="form-control form-control-sm"
-                 value="{{ fecha_fin }}" max="{{ fecha_max }}" style="width:160px;">
-        </div>
-        <div class="col-auto">
-          <button type="button" class="btn btn-primary btn-sm" id="btnAplicar">
-            <i class="fas fa-search me-1"></i>Aplicar
-          </button>
-        </div>
-      </div>
+  {# ── Barra: pestañas + rango de fechas ── #}
+  {% include 'pagos/_barra_filtros.html' %}
+
+  {# ── Tabla estilo viáticos ── #}
+  <div class="card shadow-sm">
+    <div class="card-header bg-white d-flex align-items-center gap-2 py-2">
+      <i class="fas fa-money-check-alt text-success"></i>
+      <span class="fw-bold">Relación de Pagos</span>
+      <span class="badge bg-secondary ms-auto fw-normal"><i class="fas fa-eye me-1"></i>Solo lectura</span>
     </div>
-
-    {# ── Tabs ── #}
-    <ul class="nav nav-tabs mb-3" id="tabsPagos">
-      <li class="nav-item">
-        <a class="nav-link {% if tab == 'pendiente' %}active{% endif %}"
-           href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=pendiente">
-          <i class="fas fa-clock me-1 text-warning"></i>
-          Pendientes
-          <span class="badge bg-warning text-dark ms-1">{{ filas_pendientes|length }}</span>
-        </a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link {% if tab == 'realizado' %}active{% endif %}"
-           href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=realizado">
-          <i class="fas fa-check-circle me-1 text-success"></i>
-          Realizados
-          <span class="badge bg-success ms-1">{{ filas_realizadas|length }}</span>
-        </a>
-      </li>
-    </ul>
-
-    {# ── Tabla ── #}
-    {% if filas %}
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <span class="text-muted small">
-        {{ filas|length }} registro(s)
-        <span id="contadorFiltrado" class="ms-1 text-primary"></span>
-      </span>
-      <button type="button" class="btn btn-outline-secondary btn-sm"
-              onclick="document.querySelectorAll('.filtro-col').forEach(i=>i.value=''); aplicarFiltros();">
-        <i class="fas fa-times me-1"></i>Limpiar filtros
-      </button>
-    </div>
-    <div class="table-responsive mb-3">
-      <table class="table table-sm table-bordered table-hover align-middle" style="font-size:0.82rem; text-align:center" id="tablaPagos">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-pagos" id="tablaPagos">
         <thead class="table-dark">
           <tr>
             <th>Fecha</th>
             <th>Docente</th>
             <th>Documento</th>
             <th>N° Cuenta</th>
-            <th>Tipo Cuenta</th>
+            <th>Tipo</th>
             <th>Banco</th>
             <th>Colegio</th>
             <th>Código</th>
-            <th class="text-center">Valor</th>
+            <th class="text-end">Valor</th>
             {% if tab == 'realizado' %}
-            <th>Fecha Pago</th>
+            <th>Pagado</th>
             <th>Por</th>
-            <th></th>
+            <th class="text-center">Ver</th>
             {% endif %}
           </tr>
-          <tr id="filaFiltros" style="background:#2c3034;"></tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="fecha"></th>
+            <th><input type="text" data-filtro="docente"></th>
+            <th><input type="text" data-filtro="documento"></th>
+            <th><input type="text" data-filtro="cuenta"></th>
+            <th><input type="text" data-filtro="tipo"></th>
+            <th><input type="text" data-filtro="banco"></th>
+            <th><input type="text" data-filtro="colegio"></th>
+            <th><input type="text" data-filtro="codigo"></th>
+            <th></th>
+            {% if tab == 'realizado' %}
+            <th></th><th></th><th></th>
+            {% endif %}
+          </tr>
         </thead>
-        <tbody>
+        <tbody id="cuerpoTablaPagos">
           {% for f in filas %}
-          <tr>
-            <td class="text-center text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
-            <td>{{ f.docente }}</td>
-            <td class="text-center">{{ f.documento }}</td>
-            <td class="text-center">{{ f.num_cuenta }}</td>
-            <td class="text-center">{{ f.tipo_cuenta }}</td>
-            <td class="text-center">{{ f.banco }}</td>
+          <tr class="fila-pago"
+              data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+              data-docente="{{ f.docente|lower }}"
+              data-documento="{{ f.documento|lower }}"
+              data-cuenta="{{ f.num_cuenta|lower }}"
+              data-tipo="{{ f.tipo_cuenta|lower }}"
+              data-banco="{{ f.banco|lower }}"
+              data-colegio="{{ f.colegio|lower }}"
+              data-codigo="{{ f.codigo|lower }}">
+            <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
+            <td><strong>{{ f.docente }}</strong></td>
+            <td>{{ f.documento }}</td>
+            <td>{{ f.num_cuenta }}</td>
+            <td>{{ f.tipo_cuenta }}</td>
+            <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
-            <td class="text-center">{{ f.codigo }}</td>
+            <td>{{ f.codigo }}</td>
             <td class="text-end fw-bold">
-              {% if f.valor_total %}
-                ${{ f.valor_total|floatformat:"0" }}
-              {% else %}
-                <span class="text-muted small">Sin tarifa</span>
-              {% endif %}
+              {% if f.valor_total %}${{ f.valor_total|floatformat:"0" }}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
-            <td class="text-center text-muted small text-nowrap">
-              {{ f.fecha_pago|date:"d/m/Y H:i" }}
-            </td>
-            <td class="text-center text-muted small">{{ f.marcado_por }}</td>
+            <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
+            <td class="text-muted small">{{ f.marcado_por }}</td>
             <td class="text-center">
-              <a href="{% url 'pago_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0"
-                 title="Ver soporte">
+              <a href="{% url 'pago_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver soporte">
                 <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
               </a>
             </td>
             {% endif %}
           </tr>
+          {% empty %}
+          <tr>
+            <td colspan="{% if tab == 'realizado' %}12{% else %}9{% endif %}" class="text-center text-muted py-4">
+              <i class="fas fa-info-circle me-1"></i>
+              {% if tab == 'realizado' %}No hay pagos realizados en este período.{% else %}No hay pagos pendientes en este período.{% endif %}
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
-        <tfoot>
-          <tr class="table-secondary fw-bold">
-            <td colspan="8" class="text-end">TOTAL</td>
-            <td class="text-end">${{ total_valor|floatformat:"0" }}</td>
-            {% if tab == 'realizado' %}<td colspan="3"></td>{% endif %}
-          </tr>
-        </tfoot>
       </table>
     </div>
-    {% else %}
-    <div class="alert alert-secondary mb-3">
-      <i class="fas fa-info-circle me-2"></i>
-      {% if tab == 'realizado' %}No hay pagos realizados en este período.
-      {% else %}No hay pagos pendientes en este período.{% endif %}
+
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+      <small class="text-muted">
+        Mostrando <span id="contadorVisiblesPagos">0</span> de {{ filas|length }}
+        · Total del periodo: <strong>${{ total_valor|floatformat:"0" }}</strong>
+      </small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesPagos"></ul></nav>
     </div>
-    {% endif %}
-
-    {# ── Descarga ── #}
-    <form method="POST" id="formPagos">
-      {% csrf_token %}
-      <input type="hidden" name="fecha_inicio" id="hiddenDesde" value="{{ fecha_inicio }}">
-      <input type="hidden" name="fecha_fin"    id="hiddenHasta" value="{{ fecha_fin }}">
-      <input type="hidden" name="tab"          value="{{ tab }}">
-      <div class="d-flex gap-3 align-items-center flex-wrap">
-        <button type="submit" class="btn btn-success fw-bold px-4" {% if not filas %}disabled{% endif %}>
-          <i class="fas fa-file-excel me-2"></i>Descargar Excel
-          ({% if tab == 'realizado' %}Realizados{% else %}Pendientes{% endif %})
-        </button>
-        <small class="text-muted" id="avisoDescarga" style="display:none;">
-          <i class="fas fa-spinner fa-spin me-1"></i>Generando archivo...
-        </small>
-        {% if filas %}
-        <span class="text-muted small">
-          {{ filas|length }} registro(s) · Total: <strong>${{ total_valor|floatformat:"0" }}</strong>
-        </span>
-        {% endif %}
-      </div>
-    </form>
-
   </div>
 </div>
 
-</div>
-</div>
+{# ── Modal: exportar a Excel ── #}
+{% include 'pagos/_modal_exportar.html' with export_url='pagos_lista' %}
 
-<script>
-const URL_PAGOS    = "{% url 'pagos_lista' %}";
-const TAB_ACTUAL   = "{{ tab }}";
-
-// ── Filtro ────────────────────────────────────────────────────
-document.getElementById('btnAplicar').addEventListener('click', () => {
-    const fi = document.getElementById('inputDesde').value;
-    const ff = document.getElementById('inputHasta').value;
-    if (fi && ff) {
-        window.location.href = `${URL_PAGOS}?semana=${fi}&hasta=${ff}&tab=${TAB_ACTUAL}`;
-    }
-});
-
-// ── Generar fila de filtros dinámicamente ─────────────────────
-(function() {
-    const headerCols = document.querySelectorAll('#tablaPagos thead tr:first-child th');
-    const filaFiltros = document.getElementById('filaFiltros');
-    headerCols.forEach((th, ci) => {
-        const td = document.createElement('th');
-        if (!th.textContent.trim()) { filaFiltros.appendChild(td); return; }
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'form-control form-control-sm filtro-col';
-        input.dataset.col = ci;
-        input.placeholder = '';
-        input.style.cssText = 'background:#3a3f44;color:#fff;border-color:#555;font-weight:normal;';
-        td.appendChild(input);
-        filaFiltros.appendChild(td);
-    });
-})();
-
-// ── Filtros por columna ───────────────────────────────────────
-document.querySelectorAll('.filtro-col').forEach(input => {
-    input.addEventListener('input', aplicarFiltros);
-});
-
-function aplicarFiltros() {
-    const filtros = [...document.querySelectorAll('.filtro-col')].map(i =>
-        i.value.trim().toLowerCase()
-    );
-    const tbody = document.querySelector('#tablaPagos tbody');
-    let visibles = 0;
-    tbody.querySelectorAll('tr').forEach(tr => {
-        const celdas = tr.querySelectorAll('td');
-        const match = filtros.every((q, ci) => {
-            if (!q) return true;
-            const celda = celdas[ci];
-            if (!celda) return true;
-            return celda.textContent.toLowerCase().includes(q);
-        });
-        tr.style.display = match ? '' : 'none';
-        if (match) visibles++;
-    });
-    const badge = document.getElementById('contadorFiltrado');
-    if (badge) badge.textContent = visibles + ' visible(s)';
-}
-
-document.getElementById('formPagos').addEventListener('submit', function() {
-    document.getElementById('hiddenDesde').value = document.getElementById('inputDesde').value;
-    document.getElementById('hiddenHasta').value = document.getElementById('inputHasta').value;
-    document.getElementById('avisoDescarga').style.display = '';
-    setTimeout(() => { document.getElementById('avisoDescarga').style.display = 'none'; }, 30000);
-});
-</script>
+<script>const URL_PAGOS = "{% url 'pagos_lista' %}";</script>
+{% include 'pagos/_tabla_js.html' %}
 {% endblock %}

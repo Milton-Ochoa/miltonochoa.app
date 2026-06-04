@@ -1,0 +1,51 @@
+{% comment %}
+  Modal de descarga a Excel, estilo viáticos. Opciones: tipo (Pendientes/Realizados) y
+  rango de fecha. Prellenado con el tab y el rango actuales. `export_url` es el nombre de
+  URL de la vista que genera el .xlsx (programación: `pagos_lista` POST; financiera:
+  `fin_pagos_exportar`); la vista lee tab/fecha_inicio/fecha_fin del POST.
+{% endcomment %}
+<div class="modal fade" id="modalExportarPagos" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" action="{% url export_url %}">
+      {% csrf_token %}
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar pagos</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="fw-semibold mb-2">Tipo</p>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="tab" value="pendiente" id="expPendiente"
+                     {% if tab != 'realizado' %}checked{% endif %}>
+              <label class="form-check-label" for="expPendiente">Pendientes</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="tab" value="realizado" id="expRealizado"
+                     {% if tab == 'realizado' %}checked{% endif %}>
+              <label class="form-check-label" for="expRealizado">Realizados</label>
+            </div>
+          </div>
+          <p class="fw-semibold mb-2">Rango de fecha</p>
+          <div class="row g-2">
+            <div class="col">
+              <label class="form-label small mb-1" for="expDesde">Desde</label>
+              <input type="date" class="form-control form-control-sm" name="fecha_inicio" id="expDesde"
+                     value="{{ fecha_inicio }}" max="{{ fecha_max }}">
+            </div>
+            <div class="col">
+              <label class="form-label small mb-1" for="expHasta">Hasta</label>
+              <input type="date" class="form-control form-control-sm" name="fecha_fin" id="expHasta"
+                     value="{{ fecha_fin }}" max="{{ fecha_max }}">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-success"><i class="fas fa-download me-1"></i> Descargar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
