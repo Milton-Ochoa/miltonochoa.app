@@ -1,51 +1,47 @@
 {% comment %}
-  Barra superior de la página de pagos: pestañas Pendientes/Realizados + filtro de rango
-  de fechas + etiqueta de la semana. Compartida por programación y financiera (los enlaces
-  de pestaña usan querystring relativa → resuelven en el host actual). El botón #btnAplicar
-  lo cablea `_tabla_js.html`, que espera la global `URL_PAGOS` definida por cada página.
+  Contenido de la cabecera de la tabla de pagos: pestañas Pendientes/Realizados (izquierda)
+  + filtro de rango de fechas (derecha) + etiqueta de la semana. Se incrusta dentro del
+  `card-header` de la tabla (no trae su propia tarjeta). Compartido por programación y
+  financiera; los enlaces de pestaña usan querystring relativa (resuelven en el host actual)
+  y el botón #btnAplicar lo cablea `_tabla_js.html` (espera la global `URL_PAGOS`).
 {% endcomment %}
-<div class="card shadow-sm mb-3">
-  <div class="card-body py-2">
-    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100">
 
-      {# Pestañas #}
-      <ul class="nav nav-pills" id="tabsPagos">
-        <li class="nav-item">
-          <a class="nav-link {% if tab == 'pendiente' %}active{% endif %}"
-             href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=pendiente">
-            <i class="fas fa-clock me-1"></i> Pendientes
-            <span class="badge {% if tab == 'pendiente' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{ filas_pendientes|length }}</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {% if tab == 'realizado' %}active{% endif %}"
-             href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=realizado">
-            <i class="fas fa-check-circle me-1"></i> Realizados
-            <span class="badge {% if tab == 'realizado' %}bg-light text-dark{% else %}bg-success{% endif %} ms-1">{{ filas_realizadas|length }}</span>
-          </a>
-        </li>
-      </ul>
+  {# Pestañas #}
+  <ul class="nav nav-pills" id="tabsPagos">
+    <li class="nav-item">
+      <a class="nav-link {% if tab == 'pendiente' %}active{% endif %}"
+         href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=pendiente">
+        <i class="fas fa-clock me-1"></i> Pendientes
+        <span class="badge {% if tab == 'pendiente' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{ filas_pendientes|length }}</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if tab == 'realizado' %}active{% endif %}"
+         href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=realizado">
+        <i class="fas fa-check-circle me-1"></i> Realizados
+        <span class="badge {% if tab == 'realizado' %}bg-light text-dark{% else %}bg-success{% endif %} ms-1">{{ filas_realizadas|length }}</span>
+      </a>
+    </li>
+  </ul>
 
-      {# Filtro de rango de fechas #}
-      <div class="d-flex align-items-end gap-2">
-        <div>
-          <label class="form-label small text-muted mb-1">Desde</label>
-          <input type="date" id="inputDesde" class="form-control form-control-sm"
-                 value="{{ fecha_inicio }}" max="{{ fecha_max }}" style="width:150px;">
-        </div>
-        <div>
-          <label class="form-label small text-muted mb-1">Hasta</label>
-          <input type="date" id="inputHasta" class="form-control form-control-sm"
-                 value="{{ fecha_fin }}" max="{{ fecha_max }}" style="width:150px;">
-        </div>
-        <button type="button" class="btn btn-primary btn-sm" id="btnAplicar">
-          <i class="fas fa-search me-1"></i>Aplicar
-        </button>
-      </div>
+  {# Filtro de rango de fechas #}
+  <div class="d-flex align-items-end gap-2">
+    <div>
+      <label class="form-label small text-muted mb-1">Desde</label>
+      <input type="date" id="inputDesde" class="form-control form-control-sm"
+             value="{{ fecha_inicio }}" max="{{ fecha_max }}" style="width:145px;">
     </div>
-
-    <div class="text-muted small mt-2">
-      <i class="fas fa-calendar-week me-1"></i>{{ semana_label }}
+    <div>
+      <label class="form-label small text-muted mb-1">Hasta</label>
+      <input type="date" id="inputHasta" class="form-control form-control-sm"
+             value="{{ fecha_fin }}" max="{{ fecha_max }}" style="width:145px;">
     </div>
+    <button type="button" class="btn btn-primary btn-sm" id="btnAplicar">
+      <i class="fas fa-search me-1"></i>Aplicar
+    </button>
   </div>
+</div>
+<div class="text-muted small mt-2 w-100">
+  <i class="fas fa-calendar-week me-1"></i>{{ semana_label }}
 </div>

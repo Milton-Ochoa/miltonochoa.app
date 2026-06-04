@@ -47,7 +47,7 @@ class FinPagosTest(TestCase):
         self._login_financiera()
         r = self.client.get('/pagos/')
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'Relación de Pagos')
+        self.assertContains(r, 'tablaPagos')
 
     def test_lista_rechaza_usuario_solo_programacion(self):
         u = User.objects.create_user(username='prog', password='pass')
