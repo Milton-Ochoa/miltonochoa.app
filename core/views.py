@@ -270,27 +270,42 @@ def ajax_busqueda_global(request):
     results = []
 
     if len(q) >= 2:
-        # Colegios activos del año en curso
+        # Cada palabra de la consulta debe casar (AND entre palabras), pero puede
+        # hacerlo contra cualquiera de los campos buscables (OR dentro de la palabra).
+        # Así "Luis Galeano" encuentra a quien tenga "Luis" en nombre y "Galeano" en
+        # apellido, en cualquier orden, y un colegio se halla por nombre o por código.
+        palabras = q.split()
+
+        # Colegios activos del año en curso (por nombre o código)
         anio_actual = date.today().year
+        filtro_col = Q()
+        for palabra in palabras:
+            filtro_col &= (Q(colegio__nombre__icontains=palabra) |
+                           Q(colegio__codigo__icontains=palabra))
         colegios = (
             ColegioAnio.objects
-            .filter(colegio__nombre__icontains=q, anio=anio_actual, activo=True)
+            .filter(filtro_col, anio=anio_actual, activo=True)
             .select_related('colegio')
             .order_by('colegio__nombre')[:6]
         )
         url_colegios = reverse('dashboard')
         for ca in colegios:
+            # Mismo formato que el dashboard: "[código] - [nombre]" si hay código.
+            etiqueta = f'{ca.codigo} - {ca.nombre}' if ca.codigo else ca.nombre
             results.append({
                 'tipo': 'Colegio',
-                'nombre': ca.nombre,
+                'nombre': etiqueta,
                 'url': f'{url_colegios}?id_col={ca.pk}',
                 'icon': 'fa-school',
             })
 
-        # Profesores
+        # Profesores (por cualquier combinación de palabras de nombre/apellido)
+        filtro_prof = Q()
+        for palabra in palabras:
+            filtro_prof &= (Q(nombre__icontains=palabra) | Q(apellido__icontains=palabra))
         profesores = (
             Profesor.objects
-            .filter(Q(nombre__icontains=q) | Q(apellido__icontains=q))
+            .filter(filtro_prof)
             .order_by('nombre', 'apellido')[:6]
         )
         url_profesores = reverse('ver_horario')

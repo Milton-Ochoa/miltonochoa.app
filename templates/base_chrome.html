@@ -805,7 +805,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const enInput = e.target.matches('input, textarea, select, [contenteditable]');
 
         // Ctrl/Cmd + Shift + F → búsqueda global
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
             e.preventDefault();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('modalBusqueda')).show();
         }
