@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
+from django.db.models import Count
 from django.contrib.auth.decorators import user_passes_test
 from core.areas import es_personal_programacion
 from openpyxl import Workbook
@@ -977,6 +978,94 @@ def _generar_excel_pagos(filas, semana_label):
     return buf.getvalue()
 
 
+def construir_contexto_pagos(get):
+    """Arma el contexto de la página semanal de pagos (tabs pendiente/realizado).
+
+    Compartido por la vista de **programación** (solo lectura) y la de **financiera**
+    (marcar + soportes), para no duplicar el cálculo de la semana. `get` es un
+    `request.GET` (o dict-like con `.get`). Enriquece cada fila realizada con
+    `pago_id`, `fecha_pago`, `marcado_por` y `n_soportes` (para el icono de soporte).
+    """
+    from datetime import timedelta
+
+    hoy = date.today()
+    lunes   = hoy - timedelta(days=hoy.weekday())
+    viernes = lunes + timedelta(days=4)
+    ayer    = hoy - timedelta(days=1)
+
+    semana_str = get.get('semana', '')
+    hasta_str  = get.get('hasta', '')
+    if semana_str:
+        try:
+            lunes = datetime.strptime(semana_str, '%Y-%m-%d').date()
+            viernes = (datetime.strptime(hasta_str, '%Y-%m-%d').date()
+                       if hasta_str else lunes + timedelta(days=4))
+        except ValueError:
+            pass
+    # Clamp: no permitir fechas futuras
+    viernes = min(viernes, ayer)
+    lunes   = min(lunes, ayer)
+
+    tab = get.get('tab', 'pendiente')
+
+    pagados_keys = set(
+        PagoRealizado.objects
+        .filter(fecha__gte=lunes, fecha__lte=viernes)
+        .values_list('profesor_id', 'colegio_id', 'fecha')
+    )
+
+    todas_filas = _build_filas_pagos(lunes, viernes)
+    filas_pendientes, filas_realizadas = [], []
+    for f in todas_filas:
+        key = (f['profesor_id'], f['colegio_id'], f['fecha'])
+        (filas_realizadas if key in pagados_keys else filas_pendientes).append(f)
+
+    # Pagos realizados enriquecidos con fecha_pago, marcado_por y nº de soportes.
+    pagos_db = {
+        (p.profesor_id, p.colegio_id, p.fecha): p
+        for p in PagoRealizado.objects
+            .filter(fecha__gte=lunes, fecha__lte=viernes)
+            .select_related('marcado_por')
+            .annotate(n_soportes=Count('soportes'))
+    }
+    for f in filas_realizadas:
+        pago = pagos_db.get((f['profesor_id'], f['colegio_id'], f['fecha']))
+        f['fecha_pago']  = pago.fecha_pago if pago else None
+        f['marcado_por'] = (pago.marcado_por.get_full_name() or pago.marcado_por.username) if pago and pago.marcado_por else '—'
+        f['pago_id']     = pago.id if pago else None
+        f['n_soportes']  = pago.n_soportes if pago else 0
+
+    filas_tab = filas_pendientes if tab == 'pendiente' else filas_realizadas
+    return {
+        'fecha_inicio':     lunes.isoformat(),
+        'fecha_fin':        viernes.isoformat(),
+        'fecha_max':        ayer.isoformat(),
+        'semana_label':     _semana_label(lunes, viernes),
+        'tab':              tab,
+        'filas_pendientes': filas_pendientes,
+        'filas_realizadas': filas_realizadas,
+        'filas':            filas_tab,
+        'total_valor':      sum(f['valor_total'] for f in filas_tab),
+        'total_pendiente':  sum(f['valor_total'] for f in filas_pendientes),
+        'total_realizado':  sum(f['valor_total'] for f in filas_realizadas),
+    }
+
+
+def filas_pagos_por_tab(fecha_inicio, fecha_fin, tab):
+    """Devuelve las filas de pago del rango filtradas por el tab activo
+    (`'realizado'` = ya tienen `PagoRealizado`; cualquier otro = pendientes).
+    Compartido por la descarga de Excel de programación y de financiera."""
+    pagados_keys = set(
+        PagoRealizado.objects
+        .filter(fecha__gte=fecha_inicio, fecha__lte=fecha_fin)
+        .values_list('profesor_id', 'colegio_id', 'fecha')
+    )
+    todas = _build_filas_pagos(fecha_inicio, fecha_fin)
+    es_realizado = tab == 'realizado'
+    return [f for f in todas
+            if ((f['profesor_id'], f['colegio_id'], f['fecha']) in pagados_keys) == es_realizado]
+
+
 @user_passes_test(es_personal_programacion, login_url='login')
 def exportar_pagos_view(request):
     """GET: página de pagos (tabs pendiente/realizado). POST: descarga Excel."""
@@ -987,68 +1076,7 @@ def exportar_pagos_view(request):
     viernes = lunes + timedelta(days=4)
 
     if request.method == 'GET':
-        ayer = hoy - timedelta(days=1)
-        semana_str = request.GET.get('semana', '')
-        hasta_str  = request.GET.get('hasta', '')
-        if semana_str:
-            try:
-                lunes = datetime.strptime(semana_str, '%Y-%m-%d').date()
-                viernes = (datetime.strptime(hasta_str, '%Y-%m-%d').date()
-                           if hasta_str else lunes + timedelta(days=4))
-            except ValueError:
-                pass
-        # Clamp: no permitir fechas futuras
-        viernes = min(viernes, ayer)
-        lunes   = min(lunes, ayer)
-
-        tab = request.GET.get('tab', 'pendiente')
-
-        # Claves ya pagadas en el rango
-        pagados_keys = set(
-            PagoRealizado.objects
-            .filter(fecha__gte=lunes, fecha__lte=viernes)
-            .values_list('profesor_id', 'colegio_id', 'fecha')
-        )
-
-        todas_filas = _build_filas_pagos(lunes, viernes)
-
-        filas_pendientes = []
-        filas_realizadas = []
-        for f in todas_filas:
-            key = (f['profesor_id'], f['colegio_id'], f['fecha'])
-            if key in pagados_keys:
-                filas_realizadas.append(f)
-            else:
-                filas_pendientes.append(f)
-
-        # Pagos realizados enriquecidos con fecha_pago y marcado_por
-        pagos_db = {
-            (p.profesor_id, p.colegio_id, p.fecha): p
-            for p in PagoRealizado.objects
-                .filter(fecha__gte=lunes, fecha__lte=viernes)
-                .select_related('marcado_por')
-        }
-        for f in filas_realizadas:
-            pago = pagos_db.get((f['profesor_id'], f['colegio_id'], f['fecha']))
-            f['fecha_pago']  = pago.fecha_pago  if pago else None
-            f['marcado_por'] = pago.marcado_por.get_full_name() or pago.marcado_por.username if pago and pago.marcado_por else '—'
-            f['pago_id']     = pago.id if pago else None
-
-        filas_tab = filas_pendientes if tab == 'pendiente' else filas_realizadas
-
-        return render(request, 'exportar/pagos.html', {
-            'fecha_inicio':      lunes.isoformat(),
-            'fecha_fin':         viernes.isoformat(),
-            'fecha_max':         ayer.isoformat(),
-            'semana_label':      _semana_label(lunes, viernes),
-            'tab':               tab,
-            'filas_pendientes':  filas_pendientes,
-            'filas_realizadas':  filas_realizadas,
-            'filas':             filas_tab,
-            'total_valor':       sum(f['valor_total'] for f in filas_tab),
-            'total_pendiente':   sum(f['valor_total'] for f in filas_pendientes),
-            'total_realizado':   sum(f['valor_total'] for f in filas_realizadas),
-        })
+        return render(request, 'exportar/pagos.html', construir_contexto_pagos(request.GET))
 
     # POST: descarga Excel del tab activo
     fi_str = request.POST.get('fecha_inicio', '')
@@ -1060,19 +1088,7 @@ def exportar_pagos_view(request):
     except ValueError:
         fi, ff = lunes, viernes
 
-    pagados_keys = set(
-        PagoRealizado.objects
-        .filter(fecha__gte=fi, fecha__lte=ff)
-        .values_list('profesor_id', 'colegio_id', 'fecha')
-    )
-    todas = _build_filas_pagos(fi, ff)
-    if tab == 'realizado':
-        filas = [f for f in todas
-                 if (f['profesor_id'], f['colegio_id'], f['fecha']) in pagados_keys]
-    else:
-        filas = [f for f in todas
-                 if (f['profesor_id'], f['colegio_id'], f['fecha']) not in pagados_keys]
-
+    filas = filas_pagos_por_tab(fi, ff, tab)
     semana_label = _semana_label(fi, ff)
     excel_bytes  = _generar_excel_pagos(filas, semana_label)
 

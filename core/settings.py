@@ -95,6 +95,7 @@ INSTALLED_APPS = [
     'programacion.api',
     'programacion.viaticos',
     'financiera.viaticos',
+    'financiera.pagos',
 ]
 
 MIDDLEWARE = [

@@ -23,5 +23,13 @@
             <span class="badge bg-danger nav-badge">{{ viaticos_pendientes_count }}</span>
             {% endif %}
         </a>
+
+        {# ── Pagos a profesores ── (badge = filas pendientes de la semana, Fase 3) #}
+        <a href="{% url 'fin_pagos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
+            <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos a profesores
+            {% if pagos_pendientes_count %}
+            <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count }}</span>
+            {% endif %}
+        </a>
         {% endif %}
 {% endblock %}
