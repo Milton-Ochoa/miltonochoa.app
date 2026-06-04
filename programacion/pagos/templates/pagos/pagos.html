@@ -8,9 +8,11 @@
 {% endblock %}
 
 {% comment %}
-  Vista de SOLO LECTURA para programación, con el estilo de viáticos: tabla oscura con
-  fila de filtros por columna + paginación, y descarga a Excel por modal. Marcar el pago
-  y subir soportes es de financiera; aquí las filas realizadas enlazan al detalle.
+  Revisión semanal en programación (estilo viáticos): se prepara el borrador de la
+  semana, se editan valores/excluyen filas/agregan costos extra (desglose) y se ENVÍA a
+  financiera. Mientras el lote está en BORRADOR la pestaña Pendientes trae los controles
+  de edición; en ENVIADO queda en solo lectura y financiera lo ve. Las filas Realizadas
+  (pagadas por financiera) enlazan al detalle.
 {% endcomment %}
 
 {% block header_center %}
@@ -24,6 +26,65 @@
 {% include 'pagos/_estilos_tabla.html' %}
 
 <div class="container-fluid py-3">
+
+  {# ── Banner de estado del lote + acciones de la semana ── #}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        {% if estado_lote == 'SIN_PREPARAR' %}
+          <span class="badge bg-secondary me-1">Sin preparar</span>
+          <span class="text-muted small">{{ semana_label }} — prepárala para revisar y enviar a financiera.</span>
+        {% elif estado_lote == 'BORRADOR' %}
+          <span class="badge bg-warning text-dark me-1">Borrador</span>
+          <span class="text-muted small">{{ semana_label }} — en revisión por programación (financiera aún no la ve).</span>
+          {% if hay_cambios_sin_preparar %}
+          <div class="text-danger small mt-1">
+            <i class="fas fa-exclamation-triangle me-1"></i>Hay clases nuevas no incluidas. Vuelve a preparar para añadirlas.
+          </div>
+          {% endif %}
+        {% elif estado_lote == 'ENVIADO' %}
+          <span class="badge bg-success me-1">Enviado</span>
+          <span class="text-muted small">{{ semana_label }} — enviado a financiera{% if enviado_en %} el {{ enviado_en|date:"d/m/Y H:i" }}{% endif %}.</span>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        {% if estado_lote == 'SIN_PREPARAR' %}
+          <form method="post" action="{% url 'pagos_preparar_semana' %}" class="m-0">
+            {% csrf_token %}
+            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <button class="btn btn-primary btn-sm"><i class="fas fa-clipboard-check me-1"></i>Preparar borrador</button>
+          </form>
+        {% elif estado_lote == 'BORRADOR' %}
+          <form method="post" action="{% url 'pagos_preparar_semana' %}" class="m-0">
+            {% csrf_token %}
+            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <button class="btn btn-outline-secondary btn-sm" title="Re-sincronizar con las clases">
+              <i class="fas fa-sync me-1"></i>Re-preparar
+            </button>
+          </form>
+          <form method="post" action="{% url 'pagos_enviar_semana' %}" class="m-0"
+                onsubmit="return confirm('¿Enviar esta semana a financiera? No podrás editarla después.');">
+            {% csrf_token %}
+            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <button class="btn btn-success btn-sm" {% if not puede_enviar %}disabled{% endif %}>
+              <i class="fas fa-paper-plane me-1"></i>Enviar a financiera
+            </button>
+          </form>
+        {% elif estado_lote == 'ENVIADO' and puede_desenviar %}
+          <form method="post" action="{% url 'pagos_desenviar_semana' %}" class="m-0"
+                onsubmit="return confirm('¿Reabrir la semana para edición? Financiera dejará de verla.');">
+            {% csrf_token %}
+            <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <button class="btn btn-outline-warning btn-sm"><i class="fas fa-lock-open me-1"></i>Reabrir</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 
   {# ── Tabla estilo viáticos: cabecera con pestañas + filtro de fechas ── #}
   <div class="card shadow-sm">
@@ -47,6 +108,8 @@
             <th>Pagado</th>
             <th>Por</th>
             <th class="text-center">Ver</th>
+            {% elif puede_editar %}
+            <th class="text-center">Acciones</th>
             {% endif %}
           </tr>
           <tr class="fila-filtros">
@@ -61,12 +124,14 @@
             <th></th>
             {% if tab == 'realizado' %}
             <th></th><th></th><th></th>
+            {% elif puede_editar %}
+            <th></th>
             {% endif %}
           </tr>
         </thead>
         <tbody id="cuerpoTablaPagos">
           {% for f in filas %}
-          <tr class="fila-pago"
+          <tr class="fila-pago {% if f.excluida %}table-secondary text-muted{% endif %}"
               data-fecha="{{ f.fecha|date:'d/m/Y' }}"
               data-docente="{{ f.docente|lower }}"
               data-documento="{{ f.documento|lower }}"
@@ -76,15 +141,37 @@
               data-colegio="{{ f.colegio|lower }}"
               data-codigo="{{ f.codigo|lower }}">
             <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
-            <td><strong>{{ f.docente }}</strong></td>
+            <td>
+              <strong {% if f.excluida %}class="text-decoration-line-through"{% endif %}>{{ f.docente }}</strong>
+              {% if f.excluida %}<span class="badge bg-secondary ms-1">Excluida</span>{% endif %}
+            </td>
             <td>{{ f.documento }}</td>
             <td>{{ f.num_cuenta }}</td>
             <td>{{ f.tipo_cuenta }}</td>
             <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
             <td>{{ f.codigo }}</td>
-            <td class="text-end fw-bold">
-              {% if f.valor_total %}${{ f.valor_total|floatformat:"0" }}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
+            <td class="text-end">
+              {% if f.valor_total or f.extras %}
+                <span class="fw-bold">${{ f.valor_total|floatformat:"0" }}</span>
+                {% if f.editado or f.extras %}
+                <div class="small text-muted">
+                  Base ${{ f.valor_base|floatformat:"0" }}{% if f.editado %} <i class="fas fa-pen text-warning" title="Valor editado"></i>{% endif %}
+                  {% for e in f.extras %}
+                  <div>+ {{ e.concepto }}: ${{ e.valor|floatformat:"0" }}
+                    {% if puede_editar and not f.fecha_pago %}
+                    <form method="post" action="{% url 'pagos_eliminar_extra' e.id %}" class="d-inline m-0">
+                      {% csrf_token %}
+                      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+                      <input type="hidden" name="tab" value="{{ tab }}">
+                      <button class="btn btn-link btn-sm p-0 text-danger align-baseline" title="Quitar costo extra">&times;</button>
+                    </form>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              {% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
             <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
@@ -94,13 +181,36 @@
                 <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
               </a>
             </td>
+            {% elif puede_editar %}
+            <td class="text-center text-nowrap">
+              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-editar-valor"
+                      data-pago="{{ f.pago_id }}" data-valor="{{ f.valor_base }}" title="Editar valor">
+                <i class="fas fa-pen"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 btn-agregar-extra"
+                      data-pago="{{ f.pago_id }}" data-docente="{{ f.docente }}" title="Agregar costo extra">
+                <i class="fas fa-plus"></i>
+              </button>
+              <form method="post" action="{% url 'pagos_excluir_fila' f.pago_id %}" class="d-inline m-0">
+                {% csrf_token %}
+                <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+                <input type="hidden" name="tab" value="{{ tab }}">
+                {% if f.excluida %}
+                <button class="btn btn-outline-success btn-sm py-0 px-2" title="Incluir de nuevo"><i class="fas fa-undo"></i></button>
+                {% else %}
+                <button class="btn btn-outline-danger btn-sm py-0 px-2" title="Excluir del envío"><i class="fas fa-ban"></i></button>
+                {% endif %}
+              </form>
+            </td>
             {% endif %}
           </tr>
           {% empty %}
           <tr>
-            <td colspan="{% if tab == 'realizado' %}12{% else %}9{% endif %}" class="text-center text-muted py-4">
+            <td colspan="{% if tab == 'realizado' %}12{% elif puede_editar %}10{% else %}9{% endif %}" class="text-center text-muted py-4">
               <i class="fas fa-info-circle me-1"></i>
-              {% if tab == 'realizado' %}No hay pagos realizados en este período.{% else %}No hay pagos pendientes en este período.{% endif %}
+              {% if tab == 'realizado' %}No hay pagos realizados en este período.
+              {% elif estado_lote == 'SIN_PREPARAR' %}Aún no hay borrador. Prepara la semana para verla aquí.
+              {% else %}No hay pagos pendientes en este período.{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -120,6 +230,84 @@
 
 {# ── Modal: exportar a Excel ── #}
 {% include 'pagos/_modal_exportar.html' with export_url='pagos_lista' %}
+
+{% if puede_editar %}
+{# ── Modal: editar valor base ── #}
+<div class="modal fade" id="modalEditarValor" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" id="formEditarValor" class="modal-content">
+      {% csrf_token %}
+      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+      <input type="hidden" name="tab" value="{{ tab }}">
+      <div class="modal-header"><h5 class="modal-title">Editar valor</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label">Valor base (COP)</label>
+        <input type="number" name="valor" id="inputEditarValor" class="form-control" min="0" step="1">
+        <div class="form-text">Sobrescribe el valor calculado de las horas. Déjalo vacío para volver al calculado.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Modal: agregar costo extra ── #}
+<div class="modal fade" id="modalExtra" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" id="formExtra" class="modal-content">
+      {% csrf_token %}
+      <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+      <input type="hidden" name="tab" value="{{ tab }}">
+      <div class="modal-header"><h5 class="modal-title">Costo extra <span id="extraDocente" class="text-muted fs-6"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label">Concepto</label>
+          <input type="text" name="concepto" class="form-control" placeholder="p. ej. Desplazamiento" maxlength="200" required>
+        </div>
+        <div>
+          <label class="form-label">Valor (COP)</label>
+          <input type="number" name="valor" class="form-control" min="1" step="1" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Agregar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var URL_VALOR = "{% url 'pagos_editar_valor' 0 %}";
+  var URL_EXTRA = "{% url 'pagos_agregar_extra' 0 %}";
+  var formValor = document.getElementById('formEditarValor');
+  var formExtra = document.getElementById('formExtra');
+  var modalValor = new bootstrap.Modal(document.getElementById('modalEditarValor'));
+  var modalExtra = new bootstrap.Modal(document.getElementById('modalExtra'));
+
+  document.querySelectorAll('.btn-editar-valor').forEach(function (b) {
+    b.addEventListener('click', function () {
+      formValor.action = URL_VALOR.replace('/0/', '/' + b.dataset.pago + '/');
+      document.getElementById('inputEditarValor').value = b.dataset.valor;
+      modalValor.show();
+    });
+  });
+  document.querySelectorAll('.btn-agregar-extra').forEach(function (b) {
+    b.addEventListener('click', function () {
+      formExtra.action = URL_EXTRA.replace('/0/', '/' + b.dataset.pago + '/');
+      document.getElementById('extraDocente').textContent = '· ' + (b.dataset.docente || '');
+      formExtra.reset();
+      modalExtra.show();
+    });
+  });
+})();
+</script>
+{% endif %}
 
 <script>const URL_PAGOS = "{% url 'pagos_lista' %}";</script>
 {% include 'pagos/_tabla_js.html' %}

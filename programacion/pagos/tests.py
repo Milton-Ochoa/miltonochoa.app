@@ -161,6 +161,79 @@ class PrepararLoteTest(TestCase):
         self.assertTrue(desenviar_lote(lote))
 
 
+class RevisionProgramacionTest(TestCase):
+    """Flujo de revisión por HTTP: preparar → editar/excluir/extra → enviar → reabrir."""
+
+    def setUp(self):
+        from programacion.colegios.models import Bloque, Clase, Grado
+        from datetime import time
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_prog', password='pass123')
+        self.client.login(username='admin_prog', password='pass123')
+
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(colegio=colegio, anio=2025, valor_hora=40000)
+        self.prof = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        grado = Grado.objects.create(nombre='11-1')
+        bloque = Bloque.objects.create(
+            colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=self.prof,
+                             fecha=date(2025, 3, 11))
+        self.semana = '2025-03-10'
+
+    def _preparar(self):
+        self.client.post('/pagos/preparar/', {'semana': self.semana, 'tab': 'pendiente'})
+        return PagoRealizado.objects.get()
+
+    def test_preparar_crea_borrador(self):
+        r = self.client.post('/pagos/preparar/', {'semana': self.semana, 'tab': 'pendiente'})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(LotePagos.objects.count(), 1)
+        self.assertEqual(PagoRealizado.objects.count(), 1)
+
+    def test_editar_valor_sobrescribe_base(self):
+        pago = self._preparar()
+        self.client.post(f'/pagos/{pago.pk}/valor/',
+                         {'valor': '95000', 'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertEqual(pago.valor_base, 95000)
+
+    def test_excluir_saca_la_fila_del_envio(self):
+        pago = self._preparar()
+        self.client.post(f'/pagos/{pago.pk}/excluir/',
+                         {'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertTrue(pago.excluida)
+
+    def test_agregar_extra_suma_al_total(self):
+        pago = self._preparar()
+        self.client.post(f'/pagos/{pago.pk}/extra/',
+                         {'concepto': 'Desplazamiento', 'valor': '15000',
+                          'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertEqual(pago.total_extras, 15000)
+        self.assertEqual(pago.total, 95000)  # 80000 + 15000
+
+    def test_enviar_bloquea_edicion(self):
+        pago = self._preparar()
+        self.client.post('/pagos/enviar/', {'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertEqual(pago.lote.estado, LotePagos.Estado.ENVIADO)
+        # Editar tras enviar no cambia nada.
+        self.client.post(f'/pagos/{pago.pk}/valor/',
+                         {'valor': '1', 'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertIsNone(pago.valor_base_editado)
+
+    def test_reabrir_devuelve_a_borrador_si_no_hay_pagos(self):
+        pago = self._preparar()
+        self.client.post('/pagos/enviar/', {'semana': self.semana, 'tab': 'pendiente'})
+        self.client.post('/pagos/reabrir/', {'semana': self.semana, 'tab': 'pendiente'})
+        pago.refresh_from_db()
+        self.assertEqual(pago.lote.estado, LotePagos.Estado.BORRADOR)
+
+
 class SoportePagoProfesorModelTest(TestCase):
     """El comprobante de pago se ata a un `PagoRealizado` y construye una ruta limpia."""
 

@@ -17,18 +17,21 @@ Los helpers de cálculo (`construir_contexto_pagos`, `filas_pagos_por_tab`,
 import io
 from datetime import date, datetime, timedelta
 
-from django.shortcuts import render, get_object_or_404
-from django.http import HttpResponse
+from django.shortcuts import render, get_object_or_404, redirect
+from django.http import HttpResponse, JsonResponse
+from django.urls import reverse
 from django.db.models import Count
 from django.utils import timezone
+from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.views.decorators.http import require_POST
 from core.areas import es_personal_programacion
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from programacion.colegios.models import Clase
-from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
+from programacion.pagos.models import ExtraPago, LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.viaticos.views import _responder_soporte
 
 
@@ -180,6 +183,7 @@ def _fila_desde_pago(p):
         'horas':        p.horas,
         'valor_hora':   p.colegio.valor_hora or 0,
         'valor_base':   valor_base,
+        'editado':      p.valor_base_editado is not None,
         'extras':       extras,
         'total_extras': total_extras,
         'valor_total':  valor_base + total_extras,
@@ -540,6 +544,144 @@ def pagos_lista(request):
         f'attachment; filename="Pagos_{sufijo}_{label}.xlsx"'
     )
     return response
+
+
+# ══════════════════════════════════════════════════════════════
+# REVISIÓN (programación): preparar · editar valor · excluir · extras · enviar
+# ══════════════════════════════════════════════════════════════
+# Programación revisa el borrador de la semana y lo envía a financiera. Todas las
+# acciones son POST + redirect a la lista (la página re-renderiza con datos frescos);
+# editar/excluir/extras exigen que la semana esté en BORRADOR.
+
+def _volver_a_lista(semana, tab='pendiente'):
+    """Redirige a la lista conservando semana y pestaña activa."""
+    return redirect(f"{reverse('pagos_lista')}?semana={semana}&tab={tab}")
+
+
+def _pago_editable(pago):
+    """True si la fila pertenece a un lote en BORRADOR (editable por programación)."""
+    return bool(pago.lote_id and pago.lote.estado == LotePagos.Estado.BORRADOR)
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_preparar_semana(request):
+    """Materializa (o re-sincroniza) el borrador de la semana desde las clases."""
+    semana = request.POST.get('semana', '')
+    lunes, viernes = _semana_de({'semana': semana})
+    preparar_lote_semana(lunes, viernes, request.user)
+    messages.success(request, 'Borrador de la semana preparado para revisión.')
+    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_enviar_semana(request):
+    """Envía la semana a financiera (BORRADOR→ENVIADO). Bloquea edición posterior."""
+    semana = request.POST.get('semana', '')
+    lunes, viernes = _semana_de({'semana': semana})
+    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
+    if not lote:
+        messages.error(request, 'Primero prepara el borrador de la semana.')
+    elif lote.estado != LotePagos.Estado.BORRADOR:
+        messages.info(request, 'Esta semana ya fue enviada a financiera.')
+    elif not lote.filas.filter(excluida=False).exists():
+        messages.error(request, 'No hay filas para enviar (todas están excluidas o vacías).')
+    else:
+        enviar_lote(lote, request.user)
+        messages.success(request, 'Semana enviada a financiera.')
+    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_desenviar_semana(request):
+    """Reabre la semana (ENVIADO→BORRADOR) solo si ninguna fila está pagada."""
+    semana = request.POST.get('semana', '')
+    lunes, viernes = _semana_de({'semana': semana})
+    lote = LotePagos.objects.filter(fecha_inicio=lunes, fecha_fin=viernes).first()
+    if not lote or not lote.enviado:
+        messages.error(request, 'La semana no está enviada.')
+    elif desenviar_lote(lote):
+        messages.success(request, 'Semana reabierta para edición.')
+    else:
+        messages.error(request, 'No se puede reabrir: financiera ya pagó alguna fila.')
+    return _volver_a_lista(lunes.isoformat(), request.POST.get('tab', 'pendiente'))
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_editar_valor(request, pago_id):
+    """Sobrescribe el valor base de una fila (o lo restaura al calculado si llega vacío)."""
+    pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
+    semana = request.POST.get('semana', pago.fecha.isoformat())
+    if not _pago_editable(pago):
+        messages.error(request, 'La semana no es editable.')
+        return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+    raw = (request.POST.get('valor', '') or '').strip().replace(',', '.')
+    try:
+        pago.valor_base_editado = None if raw == '' else int(float(raw))
+    except (ValueError, TypeError):
+        messages.error(request, 'Valor inválido.')
+        return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+    pago.save(update_fields=['valor_base_editado'])
+    messages.success(request, 'Valor actualizado.')
+    return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_excluir_fila(request, pago_id):
+    """Excluye o vuelve a incluir una fila del envío a financiera (toggle)."""
+    pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
+    semana = request.POST.get('semana', pago.fecha.isoformat())
+    if not _pago_editable(pago):
+        messages.error(request, 'La semana no es editable.')
+    else:
+        pago.excluida = not pago.excluida
+        pago.save(update_fields=['excluida'])
+        messages.success(request, 'Fila excluida.' if pago.excluida else 'Fila incluida.')
+    return _volver_a_lista(semana, request.POST.get('tab', 'pendiente'))
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_agregar_extra(request, pago_id):
+    """Agrega un costo extra (concepto + valor) al desglose de una fila."""
+    pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
+    semana = request.POST.get('semana', pago.fecha.isoformat())
+    tab = request.POST.get('tab', 'pendiente')
+    if not _pago_editable(pago):
+        messages.error(request, 'La semana no es editable.')
+        return _volver_a_lista(semana, tab)
+    concepto = (request.POST.get('concepto', '') or '').strip()
+    raw = (request.POST.get('valor', '') or '').strip().replace('.', '').replace(',', '')
+    try:
+        valor = int(raw)
+    except (ValueError, TypeError):
+        valor = 0
+    if not concepto or valor <= 0:
+        messages.error(request, 'Indica un concepto y un valor mayor que cero.')
+        return _volver_a_lista(semana, tab)
+    siguiente = (pago.extras.count())
+    ExtraPago.objects.create(pago=pago, concepto=concepto, valor=valor, orden=siguiente)
+    messages.success(request, 'Costo extra agregado.')
+    return _volver_a_lista(semana, tab)
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def pagos_eliminar_extra(request, extra_id):
+    """Elimina un costo extra del desglose."""
+    extra = get_object_or_404(ExtraPago.objects.select_related('pago__lote'), pk=extra_id)
+    semana = request.POST.get('semana', extra.pago.fecha.isoformat())
+    tab = request.POST.get('tab', 'pendiente')
+    if not _pago_editable(extra.pago):
+        messages.error(request, 'La semana no es editable.')
+    else:
+        extra.delete()
+        messages.success(request, 'Costo extra eliminado.')
+    return _volver_a_lista(semana, tab)
 
 
 # ══════════════════════════════════════════════════════════════

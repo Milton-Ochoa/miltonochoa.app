@@ -21,7 +21,9 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="mb-0 text-secondary fw-bold">
             <i class="fas fa-money-check-alt me-1"></i> Pago #{{ pago.pk }}
-            <span class="badge bg-success ms-2">Pagado</span>
+            {% if pago.pagada %}<span class="badge bg-success ms-2">Pagado</span>
+            {% elif pago.lote.enviado %}<span class="badge bg-info text-dark ms-2">Enviado</span>
+            {% else %}<span class="badge bg-warning text-dark ms-2">Borrador</span>{% endif %}
         </h5>
         <a href="{% url 'pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
            class="btn btn-outline-secondary btn-sm">Volver</a>
@@ -40,13 +42,30 @@
                 <div class="col-md-3"><span class="text-muted small d-block">Periodo</span>{{ pago.colegio.periodo_label }}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Fecha de la clase</span>{{ pago.fecha|date:"d/m/Y" }}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Horas</span>{{ pago.horas|floatformat:"-2" }}</div>
-                <div class="col-md-3"><span class="text-muted small d-block">Valor pagado</span><strong class="text-success">${{ pago.valor|floatformat:"0" }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Total</span><strong class="text-success">${{ pago.total|floatformat:"0" }}</strong></div>
             </div>
+
+            {# ── Desglose: base + costos extra ── #}
+            <hr>
+            <span class="text-muted small d-block mb-1">Desglose</span>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr><td>Pago por horas{% if pago.valor_base_editado is not None %} <i class="fas fa-pen text-warning small" title="Valor editado"></i>{% endif %}</td>
+                        <td class="text-end">${{ pago.valor_base|floatformat:"0" }}</td></tr>
+                    {% for e in pago.extras.all %}
+                    <tr><td>{{ e.concepto }}</td><td class="text-end">${{ e.valor|floatformat:"0" }}</td></tr>
+                    {% endfor %}
+                    <tr class="fw-bold border-top"><td>Total</td><td class="text-end">${{ pago.total|floatformat:"0" }}</td></tr>
+                </tbody>
+            </table>
+
+            {% if pago.pagada %}
             <hr>
             <div class="row g-3">
                 <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>
                 <div class="col-md-4"><span class="text-muted small d-block">Por</span>{% if pago.marcado_por %}{{ pago.marcado_por.get_full_name|default:pago.marcado_por.username }}{% else %}—{% endif %}</div>
             </div>
+            {% endif %}
         </div>
     </div>
 
