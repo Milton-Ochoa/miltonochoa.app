@@ -751,6 +751,21 @@
     })();
 </script>
 
+<script>
+    // ── Atajo universal: Ctrl/Cmd + Shift + S → colapsar/expandir sidebar ──
+    // Chrome compartido por todas las áreas (programación, financiera, …); por eso
+    // va aquí, fuera del bloque gated por `es_personal_programacion`.
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+            const toggle = document.getElementById('sidebarToggle');
+            if (toggle) {
+                e.preventDefault();
+                toggle.click();
+            }
+        }
+    });
+</script>
+
 {% if request.es_personal_programacion %}
 <script>
     // ── Búsqueda: limpiar resultados al cerrar el modal ──
@@ -768,7 +783,9 @@
         });
     }
 
-    // ── Atajos de teclado ──
+    // ── Atajos de teclado (solo programación: búsqueda global + ayuda) ──
+    // El toggle de sidebar (Ctrl+Shift+S) es chrome universal y vive fuera de este
+    // bloque para que funcione también en financiera y demás áreas.
     document.addEventListener('keydown', function(e) {
         const enInput = e.target.matches('input, textarea, select, [contenteditable]');
 
@@ -776,12 +793,6 @@
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
             e.preventDefault();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('modalBusqueda')).show();
-        }
-
-        // Ctrl/Cmd + Shift + S → toggle sidebar
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
-            e.preventDefault();
-            document.getElementById('sidebarToggle').click();
         }
 
         // ? → modal atajos (no en inputs)
