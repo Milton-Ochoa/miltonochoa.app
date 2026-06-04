@@ -8,6 +8,7 @@ import tempfile
 from datetime import date
 
 from django.contrib.auth.models import Group, User
+from django.core import mail
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
@@ -251,6 +252,74 @@ class ViaticosVistasTest(TestCase):
         r = self.client.get(f'/viaticos/{s.pk}/')
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Falta factura')
+
+
+@override_settings(VIATICOS_NOTIFICAR_A='financiera@aamo.test')
+class ViaticosNotificacionEmailTest(TestCase):
+    """Al pasar a ENVIADA (crear o reenviar) se avisa por correo a financiera.
+
+    El envío va en transaction.on_commit → se envuelve con captureOnCommitCallbacks
+    para que los callbacks corran dentro del TestCase (que usa transacción)."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.admin = User.objects.create_superuser('admin_n', password='pass')
+        self.client.login(username='admin_n', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Juan', apellido='Pérez', documento='123', cuenta_bancaria='999-888',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='COL-1', nombre='Colegio Norte', departamento='Antioquia', ciudad='Medellín',
+        )
+
+    def _solicitud(self, estado, **kwargs):
+        s = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=date(2026, 6, 1), fecha_regreso=date(2026, 6, 3),
+            estado=estado, creado_por=self.admin, **kwargs,
+        )
+        s.aplicar_snapshot()
+        s.save()
+        GastoViatico.objects.create(solicitud=s, nombre='Bus', valor=10000, orden=0)
+        return s
+
+    def test_crear_envia_correo_a_financiera(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post('/viaticos/crear/', {
+                'profesor': self.profesor.pk, 'colegio': self.colegio.pk,
+                'fecha_viaje': '2026-06-01', 'fecha_regreso': '2026-06-03',
+                'gasto_nombre': ['Bus'], 'gasto_valor': ['10000'],
+            })
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        m = mail.outbox[0]
+        self.assertEqual(m.to, ['financiera@aamo.test'])
+        s = SolicitudViatico.objects.get()
+        self.assertIn(f'#{s.pk}', m.subject)
+        self.assertIn('Juan Pérez', m.body)
+
+    def test_reenviar_devuelta_envia_correo(self):
+        s = self._solicitud(SolicitudViatico.Estado.DEVUELTA, motivo_devolucion='Falta factura')
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(f'/viaticos/{s.pk}/editar/', {
+                'profesor': self.profesor.pk, 'colegio': self.colegio.pk,
+                'fecha_viaje': '2026-06-01', 'fecha_regreso': '2026-06-03',
+                'gasto_nombre': ['Bus'], 'gasto_valor': ['10000'],
+                'reenviar': '1',
+            })
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_editar_sin_reenviar_no_envia_correo(self):
+        s = self._solicitud(SolicitudViatico.Estado.DEVUELTA, motivo_devolucion='Falta factura')
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(f'/viaticos/{s.pk}/editar/', {
+                'profesor': self.profesor.pk, 'colegio': self.colegio.pk,
+                'fecha_viaje': '2026-06-01', 'fecha_regreso': '2026-06-03',
+                'gasto_nombre': ['Bus'], 'gasto_valor': ['12000'],
+            })
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
 
 
 @override_settings(MEDIA_ROOT=_MEDIA_TMP_PROG, STORAGES=_STORAGE_LOCAL)
