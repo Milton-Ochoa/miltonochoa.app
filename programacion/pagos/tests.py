@@ -12,8 +12,66 @@ from django.contrib.auth.models import User
 
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 from programacion.pagos.models import (
-    PagoRealizado, SoportePagoProfesor, _pago_soporte_upload_to,
+    ExtraPago, LotePagos, PagoRealizado, SoportePagoProfesor,
+    _pago_soporte_upload_to,
 )
+
+
+class PagoLifecycleModelTest(TestCase):
+    """Lifecycle de la fila base: valor base (con/sin override), desglose de extras,
+    `fecha_pago` nullable y la convención de fila histórica (`lote IS NULL`)."""
+
+    def setUp(self):
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.colegio_anio = ColegioAnio.objects.create(colegio=colegio, anio=2025)
+        self.profesor = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+
+    def _pago(self, **kw):
+        return PagoRealizado.objects.create(
+            profesor=self.profesor, colegio=self.colegio_anio,
+            fecha=date(2025, 3, 14), horas=2, valor=80000, **kw)
+
+    def test_valor_base_usa_calculado_sin_override(self):
+        pago = self._pago()
+        self.assertEqual(pago.valor_base, 80000)
+        self.assertEqual(pago.total, 80000)
+
+    def test_valor_base_editado_sobrescribe(self):
+        pago = self._pago(valor_base_editado=95000)
+        self.assertEqual(pago.valor_base, 95000)
+        self.assertEqual(pago.total, 95000)
+
+    def test_total_suma_extras_al_valor_base(self):
+        pago = self._pago(valor_base_editado=90000)
+        ExtraPago.objects.create(pago=pago, concepto='Desplazamiento', valor=15000)
+        ExtraPago.objects.create(pago=pago, concepto='Refrigerio', valor=5000, orden=1)
+        self.assertEqual(pago.total_extras, 20000)
+        self.assertEqual(pago.total, 110000)
+
+    def test_fecha_pago_es_nullable_y_marca_pagada(self):
+        pago = self._pago()
+        self.assertIsNone(pago.fecha_pago)
+        self.assertFalse(pago.pagada)
+
+    def test_fila_historica_sin_lote(self):
+        # Convención: lote IS NULL AND fecha_pago IS NOT NULL = histórico pagado.
+        from django.utils import timezone
+        pago = self._pago(fecha_pago=timezone.now())
+        self.assertIsNone(pago.lote)
+        self.assertTrue(pago.pagada)
+
+
+class LotePagosModelTest(TestCase):
+    """El lote ancla el estado semanal BORRADOR→ENVIADO; sus filas se acceden por `filas`."""
+
+    def test_estado_por_defecto_y_envio(self):
+        lote = LotePagos.objects.create(
+            fecha_inicio=date(2025, 3, 10), fecha_fin=date(2025, 3, 14))
+        self.assertEqual(lote.estado, LotePagos.Estado.BORRADOR)
+        self.assertFalse(lote.enviado)
+        lote.estado = LotePagos.Estado.ENVIADO
+        self.assertTrue(lote.enviado)
 
 
 class SoportePagoProfesorModelTest(TestCase):
