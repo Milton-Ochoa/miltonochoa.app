@@ -131,6 +131,7 @@ TEMPLATES = [
                 'programacion.auditoria.context_processors.alertas_vigentes',
                 'financiera.viaticos.context_processors.viaticos_pendientes',
                 'financiera.pagos.context_processors.pagos_pendientes',
+                'programacion.pagos.context_processors.pagos_por_revisar',
             ],
         },
     },

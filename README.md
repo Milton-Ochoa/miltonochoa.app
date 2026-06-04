@@ -73,7 +73,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | 🏛️ **Apex** | `miltonochoa.app` | ✅ Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | 📚 **Programación** | `programacion.miltonochoa.app` | ✅ Activa | Gestión académica integral: calendario, auditoría, informes, pagos, viáticos y API REST. |
-| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio, gestión de **viáticos** (devolver / aprobar / pagar / editar + soportes) y **pagos a profesores** (marcar pago + soportes), con badge de pendientes y exportación a Excel. Acceso por grupo `area:financiera`. |
+| 💰 **Financiera** | `financiera.miltonochoa.app` | ✅ Activa | Inicio, gestión de **viáticos** (devolver / aprobar / pagar / editar + soportes) y **pagos a profesores** (solo semanas enviadas por programación → marcar pago + soportes + desglose), con badge de pendientes y exportación a Excel. Acceso por grupo `area:financiera`. |
 | 🚚 **Logística** | `logistica.miltonochoa.app` | 🚧 Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* (sidebar, header, footer,
@@ -193,12 +193,16 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **8 sub-
 
 ### 💵 Liquidación de pagos
 
-- Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha.
-- Registro `PagoRealizado` **inmutable** con valor desnormalizado (preserva tarifa histórica).
-- Constraint `unique_together (profesor, colegio, fecha)` impide doble liquidación.
-- **Gestión en el área financiera** (`financiera.pagos`): financiera marca el pago
-  (PENDIENTE→PAGADA) y, por pago, sube/elimina el **soporte** (comprobante,
-  `SoportePagoProfesor`); programación calcula y ve en **solo lectura**. Sin emails.
+- Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha (fila base
+  `PagoRealizado`, único `(profesor, colegio, fecha)`; valor desnormalizado).
+- **Revisión en programación antes de financiera** (flujo de una sola vía): programación
+  **prepara** el borrador semanal (`LotePagos` BORRADOR), **edita el valor**, **excluye
+  filas** y **agrega costos extra** (`ExtraPago`, desglose) y luego **envía a financiera**
+  (BORRADOR→ENVIADO). El total = valor base (editable) + extras.
+- **Gestión en el área financiera** (`financiera.pagos`): financiera **solo ve las semanas
+  enviadas**, ve el desglose, marca el pago (fija `fecha_pago`) y, por pago, sube/elimina el
+  **soporte** (comprobante, `SoportePagoProfesor`). Desmarcar limpia el pago y sus soportes
+  pero conserva la fila; reabrir una semana solo si ninguna fila está pagada. Sin emails.
 
 ### 📊 Exportación Excel
 
@@ -271,7 +275,7 @@ AAMO/
 │   ├── 🚨 auditoria/         #   Motor de detección de errores + AlertaAuditoria + cron command
 │   ├── 📝 informes/          #   Informes pedagógicos por sesión
 │   ├── 📊 exportar/          #   Generación de Excel de horarios
-│   ├── 💵 pagos/             #   Pagos semanales a profesores (PagoRealizado + soportes); en menú Reportes
+│   ├── 💵 pagos/             #   Pagos semanales: revisión + envío (LotePagos/ExtraPago/PagoRealizado + soportes)
 │   ├── 📋 pendientes/        #   Tablero Kanban (home del área)
 │   ├── ✈️  viaticos/          #   Solicitudes de viáticos (SolicitudViatico, GastoViatico)
 │   └── 🔌 api/               #   DRF: serializers, viewsets, urls, paginación, tests
@@ -280,8 +284,8 @@ AAMO/
 │   ├── urls.py               #   router del área (raíz /): viaticos + pagos
 │   ├── ✈️  viaticos/          #   Inicio + gestión de viáticos: devolver/aprobar/pagar/editar
 │   │                         #   (sin modelos: importa los de programacion.viaticos)
-│   └── 💵 pagos/             #   Pagos a profesores: marcar pago + soportes + Excel
-│                             #   (sin modelos: usa programacion.pagos/PagoRealizado)
+│   └── 💵 pagos/             #   Pagos a profesores: solo semanas enviadas → marcar pago + soportes + Excel
+│                             #   (sin modelos: usa programacion.pagos)
 ├── 🚚 logistica/             # PLACEHOLDER de área futura (solo __init__.py + README)
 │
 ├── 🎨 templates/             # Globales: base_chrome.html (chrome compartido), base.html

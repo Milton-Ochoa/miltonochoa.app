@@ -5,7 +5,7 @@ Cubre el modelo de soporte y la vista de SOLO LECTURA de programación: ver el
 detalle de un pago y sus soportes, pero sin poder marcar ni subir (eso es de
 financiera).
 """
-from datetime import date
+from datetime import date, timedelta
 
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
@@ -232,6 +232,37 @@ class RevisionProgramacionTest(TestCase):
         self.client.post('/pagos/reabrir/', {'semana': self.semana, 'tab': 'pendiente'})
         pago.refresh_from_db()
         self.assertEqual(pago.lote.estado, LotePagos.Estado.BORRADOR)
+
+
+class BadgePagosProgramacionTest(TestCase):
+    """El badge del menú Pagos cuenta filas pendientes de revisar/enviar de la semana
+    actual y se apaga al enviar."""
+
+    def setUp(self):
+        from programacion.colegios.models import Bloque, Clase, Grado
+        from datetime import time
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_prog', password='pass123')
+        self.client.login(username='admin_prog', password='pass123')
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(colegio=colegio, anio=2025, valor_hora=40000)
+        prof = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        grado = Grado.objects.create(nombre='11-1')
+        bloque = Bloque.objects.create(
+            colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        hoy = date.today()
+        self.lunes = hoy - timedelta(days=hoy.weekday())
+        Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=prof, fecha=self.lunes)
+
+    def test_badge_pendiente_y_se_apaga_al_enviar(self):
+        from programacion.pagos.views import preparar_lote_semana, enviar_lote
+        r = self.client.get('/pagos/')
+        self.assertEqual(r.context['pagos_por_revisar_count'], 1)
+        lote = preparar_lote_semana(self.lunes, self.lunes + timedelta(days=4))
+        enviar_lote(lote, None)
+        r = self.client.get('/pagos/')
+        self.assertEqual(r.context['pagos_por_revisar_count'], 0)
 
 
 class SoportePagoProfesorModelTest(TestCase):

@@ -53,8 +53,12 @@
                 <a href="{% url 'lista_informes' %}" class="{% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
                     <i class="fas fa-file-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Informes
                 </a>
-                <a href="{% url 'pagos_lista' %}" class="{% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
-                    <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Pagos
+                <a href="{% url 'pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
+                    <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
+                    <span>Pagos</span>
+                    {% if pagos_por_revisar_count %}
+                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ pagos_por_revisar_count }}</span>
+                    {% endif %}
                 </a>
                 <a href="{% url 'lista_alertas' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'lista_alertas' %}active{% endif %}">
                     <i class="fas fa-shield-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
