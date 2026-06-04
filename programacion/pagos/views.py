@@ -379,10 +379,24 @@ def _generar_excel_pagos(filas, semana_label):
     _celda(total_row, 10, '', fill=TOTAL_FILL)
     ws.row_dimensions[total_row].height = 22
 
-    # Anchos de columna
-    anchos = [12, 22, 14, 18, 18, 16, 30, 10, 14, 40]
-    for ci, ancho in enumerate(anchos, start=1):
-        ws.column_dimensions[get_column_letter(ci)].width = ancho
+    # Anchos de columna: auto-ajuste al contenido real (longitud máx. de la columna),
+    # acotado por un mínimo (legibilidad de la cabecera) y un máximo (evita columnas
+    # gigantes en DESGLOSE/COLEGIO). El ancho de openpyxl ≈ nº de caracteres.
+    MIN_W, MAX_W = 8, 45
+
+    def _texto_largo(cell):
+        """Longitud del texto tal como se ve: los montos numéricos se miden ya
+        formateados ($ + separadores de miles), no por su valor crudo."""
+        v = cell.value
+        if isinstance(v, (int, float)):
+            return len(f"${v:,.0f}")
+        return len(str(v or ''))
+
+    for ci in range(1, NUM_COLS + 1):
+        ancho = max((_texto_largo(ws.cell(r, ci))
+                     for r in range(2, total_row + 1)), default=MIN_W)
+        ws.column_dimensions[get_column_letter(ci)].width = \
+            max(MIN_W, min(ancho + 2, MAX_W))
 
     ws.freeze_panes = 'A3'
     buf = io.BytesIO()

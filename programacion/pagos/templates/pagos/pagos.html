@@ -120,8 +120,8 @@
               {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
             {% if tab == 'realizado' %}
-            <td class="small text-nowrap">
-              {% if f.fecha_pago %}<span class="badge bg-success">Pagado</span> <span class="text-muted">{{ f.fecha_pago|date:"d/m/Y" }}</span>
+            <td class="small">
+              {% if f.fecha_pago %}<span class="badge bg-success">Pagado</span><span class="text-muted d-block">{{ f.fecha_pago|date:"d/m/Y" }}</span>
               {% else %}<span class="badge bg-info text-dark">Enviado</span>{% endif %}
             </td>
             <td class="text-center text-nowrap">
