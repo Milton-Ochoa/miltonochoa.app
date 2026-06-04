@@ -129,7 +129,11 @@
               {{ f.fecha_pago|date:"d/m/Y H:i" }}
             </td>
             <td class="text-center text-muted small">{{ f.marcado_por }}</td>
-            <td class="text-center">
+            <td class="text-center text-nowrap">
+              <a href="{% url 'fin_pagos_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0"
+                 title="Ver / gestionar soporte">
+                <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
+              </a>
               <button type="button" class="btn btn-outline-danger btn-sm py-0"
                       title="Desmarcar pago"
                       onclick="abrirDesmarcar(

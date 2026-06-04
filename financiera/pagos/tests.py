@@ -4,14 +4,24 @@ Acceso por subdominio, marcar/desmarcar (crea/borra `PagoRealizado`) y la descar
 de Excel. El cálculo semanal (clases → filas) lo cubren los tests de programación;
 aquí se valida la gestión propia de financiera y su gate de área.
 """
+import shutil
+import tempfile
 from datetime import date
 
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User, Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_PROGRAMACION
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from programacion.exportar.models import PagoRealizado
+from programacion.exportar.models import PagoRealizado, SoportePagoProfesor
+
+# Soportes en disco local aislado en tmp: NUNCA tocar Supabase (igual que viáticos).
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP_PAGOS = tempfile.mkdtemp()
 
 
 class FinPagosTest(TestCase):
@@ -107,3 +117,82 @@ class FinPagosTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('spreadsheetml', r['Content-Type'])
         self.assertIn('attachment', r['Content-Disposition'])
+
+    # ── Detalle ───────────────────────────────────────────────
+    def test_detalle_muestra_datos_del_pago(self):
+        self._login_financiera()
+        pago = PagoRealizado.objects.create(
+            profesor=self.profesor, colegio=self.colegio_anio,
+            fecha=date(2025, 3, 14), horas=2, valor=80000)
+        r = self.client.get(f'/pagos/{pago.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Colegio Central')
+        self.assertContains(r, 'Soporte de pago')
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_PAGOS, STORAGES=_STORAGE_LOCAL)
+class FinPagosSoporteTest(TestCase):
+    """Subida/eliminación/descarga de soportes en disco local aislado."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_PAGOS, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        grupo_fin = Group.objects.get(name=GRUPO_STAFF_FINANCIERA)
+        self.finan = User.objects.create_user(username='finan', password='pass')
+        self.finan.groups.add(grupo_fin)
+        self.client.login(username='finan', password='pass')
+
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        colegio_anio = ColegioAnio.objects.create(colegio=colegio, anio=2025)
+        profesor = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.pago = PagoRealizado.objects.create(
+            profesor=profesor, colegio=colegio_anio,
+            fecha=date(2025, 3, 14), horas=2, valor=80000)
+
+    def _archivo(self, nombre='comprobante.pdf', contenido=b'%PDF-1.4 fake'):
+        return SimpleUploadedFile(nombre, contenido, content_type='application/pdf')
+
+    def test_subir_soporte_ok(self):
+        r = self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.pago.soportes.count(), 1)
+        soporte = self.pago.soportes.first()
+        self.assertEqual(soporte.subido_por, self.finan)
+        self.assertTrue(soporte.archivo.name.startswith('pagos/pago-ana-perez-2025-03-14'))
+
+    def test_subir_extension_invalida_rechazada(self):
+        r = self.client.post(f'/pagos/{self.pago.pk}/soporte/',
+                             {'archivo': self._archivo('virus.exe', b'MZ')})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.pago.soportes.count(), 0)
+
+    def test_eliminar_soporte(self):
+        self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
+        soporte = self.pago.soportes.first()
+        r = self.client.post(f'/pagos/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.pago.soportes.count(), 0)
+
+    def test_descargar_soporte(self):
+        self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
+        soporte = self.pago.soportes.first()
+        r = self.client.get(f'/pagos/soporte/{soporte.pk}/descargar/')
+        self.assertEqual(r.status_code, 200)
+
+    def test_desmarcar_borra_soporte_y_archivo(self):
+        # Subir un soporte y luego desmarcar el pago: la fila y el archivo se van.
+        self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
+        self.assertEqual(SoportePagoProfesor.objects.count(), 1)
+        self.client.post('/pagos/marcar/', {
+            'accion': 'desmarcar',
+            'profesor_id': self.pago.profesor_id,
+            'colegio_id': self.pago.colegio_id,
+            'fecha': '2025-03-14',
+        })
+        self.assertEqual(PagoRealizado.objects.count(), 0)
+        self.assertEqual(SoportePagoProfesor.objects.count(), 0)
