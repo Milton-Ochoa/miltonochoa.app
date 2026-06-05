@@ -3,6 +3,49 @@
 Guía interna del proyecto **AAMO**. Léela antes de tocar la estructura. Para la
 documentación de usuario/instalación ver [README.md](README.md).
 
+## Mapa del proyecto: skill `graphify` (LÉELO ANTES DE EXPLORAR)
+
+Este repo tiene un **grafo de conocimiento** precomputado de todo el código y las
+plantillas, generado por la skill **graphify** (`/graphify`). Es un mapa de "qué se
+conecta con qué": modelos, vistas, plantillas, sub-apps y áreas, con sus relaciones
+(`calls`, `extends`, `references`, `shares_data_with`, …), detección de comunidades y
+"god nodes" (las abstracciones más conectadas).
+
+**Por qué existe:** AAMO es un único Django grande, multi-área, con una convención no
+obvia (ruta de import ≠ `app_label`, áreas servidas por subdominio, código compartido
+entre `financiera`→`programacion`). Buscar a ciegas con grep es lento y se pierde el
+contexto de "esto vive aquí pero pertenece a aquella área". El grafo da ese contexto de
+golpe.
+
+**Cuándo usarlo (preferentemente ANTES de un grep/glob a ciegas):**
+- Para **entender el proyecto** o una zona nueva al empezar una sesión.
+- Para **localizar** dónde vive una funcionalidad o quién la usa: "¿qué toca los pagos?",
+  "¿qué plantillas extienden `base_chrome`?", "¿quién llama a `_responder_soporte`?".
+- Para **medir el impacto** de un cambio: qué nodos dependen del modelo/vista que vas a
+  tocar (mira los "god nodes" y las aristas entrantes).
+- Para ver **acoplamientos cruzados** entre áreas/sub-apps que el código no grita
+  (p. ej. `financiera.*` reutilizando `programacion.*`).
+
+**Cómo consultarlo (en orden de preferencia):**
+1. **Lee el resumen ya generado:** [graphify-out/GRAPH_REPORT.md](graphify-out/GRAPH_REPORT.md)
+   — god nodes, conexiones sorpresa y preguntas que el grafo responde. Empieza aquí.
+2. **Pregunta al grafo:** `graphify query "<pregunta>"` (BFS, contexto amplio) o
+   `graphify query "<pregunta>" --dfs` (traza un camino). `graphify path "A" "B"` =
+   camino más corto entre dos conceptos; `graphify explain "<nodo>"` = explicación.
+3. **Visor interactivo:** abre [graphify-out/graph.html](graphify-out/graph.html) en el navegador.
+4. El grafo crudo está en `graphify-out/graph.json` (NetworkX-friendly).
+
+**Importante / mantenimiento:**
+- `graphify-out/` está **gitignored** (artefacto regenerable, NO se versiona). Si no
+  existe en tu copia local, regenéralo con `/graphify .` antes de apoyarte en él.
+- Tras cambios de código, **actualízalo** con `/graphify . --update` (re-extrae solo lo
+  modificado) para que no quede desfasado. Es un **apoyo de orientación**, no la verdad
+  absoluta: las aristas `INFERRED`/`AMBIGUOUS` pueden estar equivocadas — **verifica en el
+  código** antes de actuar sobre algo crítico.
+- La skill se instala una vez por máquina: `uv tool install graphifyy` + `graphify install`
+  (registra `~/.claude/skills/graphify/SKILL.md`). La extracción de código es AST local
+  (gratis); la semántica de docs/plantillas usa la sesión como LLM (subagentes).
+
 ## Qué es AAMO
 
 Un **único proyecto Django** organizado por **áreas**, cada una servida en su
@@ -374,6 +417,8 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 - Si tocas modelos, incluye la migración en el commit.
 - Ejecuta `python manage.py test` y compara con el baseline (306 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
+- Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
+  mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
 
 ### Mensajes de commit (evitar el `@` espurio)
 
