@@ -46,6 +46,33 @@ golpe.
   (registra `~/.claude/skills/graphify/SKILL.md`). La extracción de código es AST local
   (gratis); la semántica de docs/plantillas usa la sesión como LLM (subagentes).
 
+## README.md: skill `/readme` (ÚSALO SIEMPRE PARA ACTUALIZAR EL README)
+
+El proyecto tiene un **skill dedicado para generar y mantener el README.md** instalado en
+`~/.claude/skills/readme/SKILL.md`. Debe usarse **siempre** que haya que crear o actualizar
+el README:
+
+- **`/readme`** — reescribe el README completo desde cero.
+- **`/readme --update`** — actualiza solo las secciones afectadas por cambios recientes.
+
+**Cuándo usarlo (obligatorio):**
+- Tras eliminar o añadir un área, sub-app o feature significativa.
+- Tras cambios en el stack (nuevas dependencias, paquetes eliminados).
+- Cuando el conteo de tests cambie notablemente (nuevo baseline).
+- Cuando cambien las variables de entorno o las instrucciones de deploy.
+- Cuando se refactorizó la estructura de directorios.
+
+**Por qué:** El README es documentación pública de usuario/colaborador. Sin este skill es
+fácil que quede con referencias a features eliminadas (como la API REST que se quitó),
+versiones incorrectas o instrucciones que ya no funcionan. El skill lee `graphify-out/`,
+`CLAUDE.md` y `requirements.txt` para producir un README fiel al estado real del código.
+
+**Cómo mantener este CLAUDE.md actualizado:**
+- Actualiza este archivo manualmente después de cada cambio estructural importante
+  (nuevas áreas, modelos eliminados, convenciones nuevas, decisiones de arquitectura).
+- El skill `/readme` avisa si detecta que CLAUDE.md tiene información desactualizada,
+  pero **no lo edita automáticamente** — la edición es siempre manual y deliberada.
+
 ## Qué es AAMO
 
 Un **único proyecto Django** organizado por **áreas**, cada una servida en su
