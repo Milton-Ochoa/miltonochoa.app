@@ -110,7 +110,7 @@
         </div>
         {# Contrapeso de 140px (espejo del indicador) para que el buscador quede centrado. #}
         <div class="d-flex justify-content-end" style="min-width: 140px;">
-            {% if request.user.is_staff and not usuario_bloqueado %}
+            {% if request.es_personal_programacion and not usuario_bloqueado %}
             <button type="button" class="btn btn-success btn-sm" onclick="abrirModalCrear()">
                 <i class="fas fa-plus me-1"></i> Crear clase
             </button>
@@ -126,7 +126,7 @@
     El contenido se renderiza completamente en JS (renderLibrosAsignados()) usando
     STATS_JSON inyectado más abajo — no hay HTML de stats en el servidor.
     {% endcomment %}
-    {% if not stats_vacio and request.user.is_staff %}
+    {% if not stats_vacio and request.es_personal_programacion %}
     <div class="mt-4" id="seccion-stats">
       <div class="d-flex align-items-center flex-wrap gap-2 rounded-top bg-dark px-3 py-2" style="border:1px solid #dee2e6; border-bottom:none;">
         <span class="text-white fw-bold me-2" style="font-size:0.9rem;"><i class="fas fa-chart-bar me-1"></i> Estadísticas de avance</span>
@@ -222,7 +222,7 @@ Se rellenan en prepararHiddensMaterialEspecial() para que el backend no tenga
 que inferir el tipo de clase desde los campos visibles del form.
 onsubmit intercepta el submit normal y lo reemplaza por guardarClaseAjax().
 {% endcomment %}
-{% if request.user.is_staff %}
+{% if request.es_personal_programacion %}
 <div class="modal fade" id="modalClase" tabindex="-1">
     <div class="modal-dialog modal-fullscreen-sm-down">
         <form method="POST" class="modal-content" onsubmit="prepararHiddensMaterialEspecial()">
@@ -348,7 +348,7 @@ onsubmit intercepta el submit normal y lo reemplaza por guardarClaseAjax().
 {% endif %}
 
 {# Modal de confirmación de recálculo de secuencia #}
-{% if sel_col and request.user.is_staff %}
+{% if sel_col and request.es_personal_programacion %}
 <div class="modal fade" id="modalRecalcular" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-fullscreen-sm-down">
         <div class="modal-content">
@@ -377,7 +377,7 @@ Permite crear una clase en una fecha/grado/bloque sin hacer doble clic en la tab
 Al confirmar, cierra este modal y llama prepararModal() con un setTimeout(300ms)
 para darle tiempo al modal anterior de terminar la animación de cierre.
 {% endcomment %}
-{% if sel_col and request.user.is_staff %}
+{% if sel_col and request.es_personal_programacion %}
 <div class="modal fade" id="modalCrearClase" tabindex="-1">
     <div class="modal-dialog modal-sm">
         <div class="modal-content">
@@ -430,7 +430,7 @@ Datos para JS: inyectados como constantes JSON desde Django.
     const BLOQUES_POR_GRADO = JSON.parse(document.getElementById('bloques-data').textContent);
     const LIBROS_ESPECIALES = JSON.parse(document.getElementById('libros-especiales-data').textContent);
 </script>
-{% if not stats_vacio and request.user.is_staff %}
+{% if not stats_vacio and request.es_personal_programacion %}
 {{ stats_data|json_script:"stats-data" }}
 <script>let STATS_JSON = JSON.parse(document.getElementById('stats-data').textContent);</script>
 {% endif %}
@@ -1382,7 +1382,7 @@ Datos para JS: inyectados como constantes JSON desde Django.
     document.getElementById('stats-filtro-materia')?.addEventListener('change', renderLibrosAsignados);
 
     // ── Doble-tap en móvil (solo staff) ──
-    {% if request.user.is_staff %}
+    {% if request.es_personal_programacion %}
     (function() {
         let _lastTap = 0;
         let _lastTapEl = null;
