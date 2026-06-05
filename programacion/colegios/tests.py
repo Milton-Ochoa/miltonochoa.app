@@ -368,6 +368,19 @@ class DashboardColegiosViewTest(TestCase):
         html = self.client.get(f'/colegios/?id_col={ca.id}').content.decode()
         self.assertIn('Cal B · 2025-2026', html)
 
+    def test_staff_de_area_ve_boton_crear_clase(self):
+        # Regresión: el staff de área (grupo area:programacion, NO is_staff) debe ver el
+        # botón "Crear clase". El gate antes era request.user.is_staff → lo ocultaba.
+        from django.contrib.auth.models import Group
+        from core.areas import GRUPO_STAFF_PROGRAMACION
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        staff = User.objects.create_user('staff_col', password='pass123')
+        staff.groups.add(grupo)
+        self.assertFalse(staff.is_staff)  # el staff de área no es is_staff
+        self.client.login(username='staff_col', password='pass123')
+        html = self.client.get(f'/colegios/?id_col={self.colegio.id}').content.decode()
+        self.assertIn('Crear clase', html)
+
 
 class CargarGradosViewTest(TestCase):
 
