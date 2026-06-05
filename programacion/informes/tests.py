@@ -9,7 +9,7 @@ from django.contrib.auth.models import User
 from datetime import date
 from datetime import time as dt_time
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, Materia
-from programacion.colegios.models import Bloque, Clase, ClaseParticular, Grado
+from programacion.colegios.models import Bloque, Clase, ClasePersonalizada, Grado
 from programacion.informes.models import Informe
 from usuarios.models import UsuarioColegio, UsuarioProfesor
 
@@ -144,10 +144,10 @@ class GuardarInformeTest(TestCase):
         self.colegio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
         self.clase = crear_clase(self.colegio, self.profesor)
 
-    def _payload(self, clase_id=None, particular_id=None, actividades='Texto.'):
+    def _payload(self, clase_id=None, personalizada_id=None, actividades='Texto.'):
         return {
             'clase_id':      clase_id,
-            'particular_id': particular_id,
+            'personalizada_id': personalizada_id,
             'profesor_id':   self.profesor.id,
             'fecha_iso':     str(date.today()),
             'colegio_nombre': self.colegio.nombre,
@@ -186,10 +186,10 @@ class GuardarInformeTest(TestCase):
         self.assertEqual(Informe.objects.filter(clase=self.clase).count(), 1)
         self.assertEqual(Informe.objects.get(clase=self.clase).actividades, 'Texto actualizado.')
 
-    def test_sin_clase_ni_particular_devuelve_error(self):
+    def test_sin_clase_ni_personalizada_devuelve_error(self):
         r = self.client.post(
             '/informes/ajax/guardar/',
-            data=json.dumps(self._payload()),  # clase_id=None, particular_id=None
+            data=json.dumps(self._payload()),  # clase_id=None, personalizada_id=None
             content_type='application/json',
         )
         data = json.loads(r.content)

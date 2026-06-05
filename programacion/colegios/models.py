@@ -230,13 +230,18 @@ class Clase(models.Model):
 # CLASE PARTICULAR
 # ─────────────────────────────────────────────────────────────
 
-class ClaseParticular(models.Model):
+class ClasePersonalizada(models.Model):
     """
-    Clase particular que dicta un profesor fuera del horario de colegios.
+    Clase personalizada que dicta un profesor fuera del horario de colegios.
 
     El campo `ciudad` es texto libre intencionalmente: puede contener una ciudad
     o una dirección completa. No es FK ni choices, para permitir flexibilidad
     de ubicación sin restricciones de catálogo.
+
+    El material es una FK al catálogo de libros (`NombreLibro`): se guarda el id
+    del libro, no su nombre, para integridad referencial. Queda `null` en las
+    clases de "Socialización de simulacro", que no usan libro (se detectan por
+    `unidad == 'S'`).
     """
     profesor    = models.ForeignKey(Profesor, on_delete=models.CASCADE,
                                     verbose_name="Profesor")
@@ -251,15 +256,18 @@ class ClaseParticular(models.Model):
     hora_fin    = models.TimeField(verbose_name="Hora de Fin")
     grado       = models.ForeignKey(Grado, on_delete=models.PROTECT,
                                     verbose_name="Grado")
-    material    = models.CharField(max_length=200, verbose_name="Libro / Material")
+    # FK al catálogo de libros. null en Socialización de simulacro (sin libro).
+    libro       = models.ForeignKey(NombreLibro, on_delete=models.PROTECT,
+                                    null=True, blank=True,
+                                    verbose_name="Libro / Material")
     materia     = models.ForeignKey(Materia, on_delete=models.PROTECT,
                                     verbose_name="Asignatura")
     unidad      = models.CharField(max_length=50, verbose_name="Unidad")
 
     class Meta:
-        db_table            = 'prog_clases_particulares'
-        verbose_name        = "Clase Particular"
-        verbose_name_plural = "Clases Particulares"
+        db_table            = 'prog_clases_personalizadas'
+        verbose_name        = "Clase Personalizada"
+        verbose_name_plural = "Clases Personalizadas"
 
     @property
     def hora(self):
@@ -273,7 +281,7 @@ class ClaseParticular(models.Model):
         return ''
 
     def __str__(self):
-        return f"Particular: {self.estudiante} - {self.profesor.nombre} ({self.fecha})"
+        return f"Personalizada: {self.estudiante} - {self.profesor.nombre} ({self.fecha})"
 
 
 # ─────────────────────────────────────────────────────────────
