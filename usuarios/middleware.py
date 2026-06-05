@@ -7,7 +7,9 @@ from django.contrib.auth import logout
 
 from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA
 
-RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/admin/']
+# '/usuarios/telemetria/': el capturador de errores del navegador debe poder reportar desde
+# cualquier rol (incluidos colegio/profesor, restringidos a sus prefijos) y aun sin sesión.
+RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/usuarios/telemetria/', '/admin/']
 
 # La API REST usa JWT propio — DRF maneja auth y permisos internamente.
 # El ControlAccesoMiddleware no aplica a estas rutas. (Rutas del área, ya sin prefijo.)

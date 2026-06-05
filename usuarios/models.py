@@ -60,3 +60,36 @@ class PerfilEmpleado(models.Model):
 
     def __str__(self):
         return f"{self.user.username} (empleado)"
+
+
+class ErrorCliente(models.Model):
+    """
+    Diagnóstico casero: registro de errores ocurridos en el NAVEGADOR (JS, promesas
+    rechazadas, fetch fallido) enviados por el capturador de `base_chrome.html`.
+
+    Existe porque los errores que describe el usuario son INTERMITENTES y bajo carga
+    ("se cuelga al hacer muchas cosas rápido"); un `console.log` no sirve (hay que estar
+    mirando justo en el instante y el reload lo borra) y los logs de Railway son efímeros.
+    Aquí queda persistido y consultable en /admin/, con el contexto del instante: los
+    últimos clics y fetches del usuario (`breadcrumbs`) antes del fallo.
+    """
+    creado_en   = models.DateTimeField(auto_now_add=True)
+    usuario     = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='errores_cliente')
+    area        = models.CharField(max_length=30, blank=True)
+    tipo        = models.CharField(max_length=30)   # error | promesa | fetch | http
+    mensaje     = models.TextField(blank=True)
+    stack       = models.TextField(blank=True)
+    url         = models.TextField(blank=True)
+    user_agent  = models.TextField(blank=True)
+    breadcrumbs = models.JSONField(default=list, blank=True)   # [{t, tipo, detalle}, …]
+    extra       = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table            = 'usuarios_errores_cliente'
+        verbose_name        = "Error de cliente"
+        verbose_name_plural = "Errores de cliente"
+        ordering            = ['-creado_en']
+
+    def __str__(self):
+        return f"[{self.tipo}] {self.mensaje[:60]} ({self.creado_en:%Y-%m-%d %H:%M})"

@@ -12,9 +12,10 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_GET, require_POST
+import json
 import logging
 
-from .models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado
+from .models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado, ErrorCliente
 from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
 from core.areas import (
@@ -445,3 +446,52 @@ class EmpleadoPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
         respuesta = super().form_valid(form)
         PerfilEmpleado.objects.filter(user=self.user).update(debe_cambiar_password=False)
         return respuesta
+
+
+# ── Telemetría: capturador casero de errores del navegador ───────────────────
+# Recibe el JSON que arma el capturador de `base_chrome.html` y lo persiste en
+# `ErrorCliente`. Disponible en todos los hosts (usuarios/ se incluye en apex y áreas).
+
+_ERR_MAX_BREADCRUMBS = 60
+
+
+def _recortar(valor, limite):
+    """Texto seguro y acotado: nunca confiar en el tamaño de lo que manda el navegador."""
+    return ('' if valor is None else str(valor))[:limite]
+
+
+@require_POST
+def telemetria_error_cliente(request):
+    """
+    Persiste un error del navegador. TOLERANTE a propósito: cualquier fallo de parseo o de
+    guardado se traga y responde sin 500, para que el propio capturador no genere ruido ni
+    bucles (un error al reportar un error no debe romper nada en la página del usuario).
+    """
+    try:
+        payload = json.loads((request.body or b'').decode('utf-8') or '{}')
+        if not isinstance(payload, dict):
+            return JsonResponse({'ok': False}, status=400)
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({'ok': False}, status=400)
+
+    breadcrumbs = payload.get('breadcrumbs')
+    breadcrumbs = breadcrumbs[-_ERR_MAX_BREADCRUMBS:] if isinstance(breadcrumbs, list) else []
+    extra = payload.get('extra') if isinstance(payload.get('extra'), dict) else {}
+
+    try:
+        ErrorCliente.objects.create(
+            usuario     = request.user if request.user.is_authenticated else None,
+            area        = _recortar(getattr(request, 'area', '') or payload.get('area'), 30),
+            tipo        = _recortar(payload.get('tipo'), 30) or 'desconocido',
+            mensaje     = _recortar(payload.get('mensaje'), 2000),
+            stack       = _recortar(payload.get('stack'), 8000),
+            url         = _recortar(payload.get('url'), 1000),
+            user_agent  = _recortar(request.META.get('HTTP_USER_AGENT'), 500),
+            breadcrumbs = breadcrumbs,
+            extra       = extra,
+        )
+    except Exception:
+        logging.getLogger('aamo').exception('Fallo al registrar ErrorCliente')
+        return JsonResponse({'ok': False})
+
+    return JsonResponse({'ok': True})

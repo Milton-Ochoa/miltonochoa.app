@@ -449,6 +449,115 @@
 
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
 
+{# ─── Capturador casero de errores del navegador → /usuarios/telemetria/error/ ───
+   Por qué: los errores que reporta el usuario son INTERMITENTES y bajo carga ("se cuelga
+   al hacer muchas cosas rápido"); un console.log no sirve (hay que mirar en el instante y
+   el reload lo borra). Esto registra los últimos clics y fetches (breadcrumbs) y, ante un
+   error JS, una promesa rechazada o un fetch fallido (red o HTTP ≥500), envía todo el
+   contexto del instante. Queda persistido y consultable en /admin/. Va aquí arriba para
+   instalar los handlers antes que el JS de la página. #}
+<script>
+(function () {
+    var ENDPOINT = "{% url 'telemetria_error_cliente' %}";
+    var CSRF     = "{{ csrf_token }}";
+    var AREA     = "{{ request.area|default:'' }}";
+    var MAX_BC   = 60;
+    var crumbs   = [];     // anillo de migas (clics y fetches recientes)
+    var enviados = {};     // firma → timestamp, para no spamear el mismo error
+
+    function addCrumb(tipo, detalle) {
+        try {
+            crumbs.push({ t: new Date().toISOString(), tipo: tipo, detalle: detalle });
+            if (crumbs.length > MAX_BC) crumbs.shift();
+        } catch (e) {}
+    }
+
+    function describir(el) {
+        if (!el || el === document || el === window || !el.tagName) return '';
+        var s = el.tagName.toLowerCase();
+        if (el.id) s += '#' + el.id;
+        if (el.className && typeof el.className === 'string')
+            s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
+        var txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+        if (txt) s += ' «' + txt + '»';
+        return s;
+    }
+
+    function reportar(tipo, datos) {
+        try {
+            var firma = tipo + '|' + (datos.mensaje || '');
+            var t = Date.now();
+            if (enviados[firma] && (t - enviados[firma]) < 10000) return;  // dedup 10s
+            enviados[firma] = t;
+
+            fetch(ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({
+                    tipo: tipo,
+                    mensaje: datos.mensaje || '',
+                    stack: datos.stack || '',
+                    url: location.href,
+                    area: AREA,
+                    breadcrumbs: crumbs.slice(),
+                    extra: datos.extra || {}
+                }),
+                keepalive: true,    // sobrevive a un unload de la página
+                _telemetria: true   // marca para que el envoltorio de fetch NO se instrumente a sí mismo
+            }).catch(function () {});
+        } catch (e) {}
+    }
+
+    // Migas: clics del usuario (fase de captura para no perderlos si algo hace stopPropagation)
+    document.addEventListener('click', function (e) { addCrumb('click', describir(e.target)); }, true);
+
+    // Errores JS no capturados
+    window.addEventListener('error', function (e) {
+        if (e && e.message) reportar('error', {
+            mensaje: e.message,
+            stack: (e.error && e.error.stack) || '',
+            extra: { archivo: e.filename, linea: e.lineno, col: e.colno }
+        });
+    });
+
+    // Promesas rechazadas sin catch (típico de un await fetch que falla)
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        reportar('promesa', {
+            mensaje: r ? String(r.message || r).slice(0, 500) : 'unhandledrejection',
+            stack: (r && r.stack) || ''
+        });
+    });
+
+    // Envoltorio de fetch: registra cada llamada y reporta fallos de red o HTTP ≥500
+    var _fetch = window.fetch;
+    window.fetch = function (recurso, opciones) {
+        opciones = opciones || {};
+        if (opciones._telemetria) return _fetch.apply(this, arguments);  // no instrumentar el propio reporte
+        var url    = (typeof recurso === 'string') ? recurso : (recurso && recurso.url) || '';
+        var metodo = (opciones.method || 'GET').toUpperCase();
+        var t0     = Date.now();
+        return _fetch.apply(this, arguments).then(function (res) {
+            var ms = Date.now() - t0;
+            addCrumb('fetch', metodo + ' ' + url + ' → ' + res.status + ' (' + ms + 'ms)');
+            if (res.status >= 500) reportar('http', {
+                mensaje: 'HTTP ' + res.status + ' en ' + metodo + ' ' + url,
+                extra: { status: res.status, ms: ms }
+            });
+            return res;
+        }).catch(function (err) {
+            var ms = Date.now() - t0;
+            addCrumb('fetch-error', metodo + ' ' + url + ' → ' + (err && err.message) + ' (' + ms + 'ms)');
+            reportar('fetch', {
+                mensaje: 'Fallo de red en ' + metodo + ' ' + url + ': ' + (err && err.message),
+                stack: (err && err.stack) || '', extra: { ms: ms }
+            });
+            throw err;  // re-lanzar: el envoltorio es transparente, no altera el flujo
+        });
+    };
+})();
+</script>
+
 <!-- Toast container global -->
 <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 9999;"></div>
 
