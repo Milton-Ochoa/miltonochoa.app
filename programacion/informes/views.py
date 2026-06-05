@@ -98,16 +98,16 @@ def obtener_informe(request):
 
     Llamado desde el modal de informe en los cronogramas. El frontend usa
     'existe' para decidir si pre-cargar el formulario o presentarlo vacío.
-    Acepta clase_id (Clase regular) o particular_id (ClaseParticular).
+    Acepta clase_id (Clase regular) o personalizada_id (ClasePersonalizada).
     """
     clase_id       = request.GET.get('clase_id')
-    particular_id  = request.GET.get('particular_id')
+    personalizada_id  = request.GET.get('personalizada_id')
 
     informe = None
     if clase_id:
         informe = Informe.objects.filter(clase_id=clase_id).first()
-    elif particular_id:
-        informe = Informe.objects.filter(clase_particular_id=particular_id).first()
+    elif personalizada_id:
+        informe = Informe.objects.filter(clase_personalizada_id=personalizada_id).first()
 
     if informe:
         data = {
@@ -144,7 +144,7 @@ def guardar_informe(request):
     Esto impide que un profesor guarde informes bajo el nombre de otro colega
     manipulando el payload de la petición.
 
-    Usa update_or_create con lookup por clase_id o particular_id para que
+    Usa update_or_create con lookup por clase_id o personalizada_id para que
     re-guardar un informe sea idempotente (no crea duplicados).
     """
     try:
@@ -153,7 +153,7 @@ def guardar_informe(request):
         return JsonResponse({'ok': False, 'error': 'JSON inválido'}, status=400)
 
     clase_id      = body.get('clase_id')
-    particular_id = body.get('particular_id')
+    personalizada_id = body.get('personalizada_id')
     profesor_id   = body.get('profesor_id')
 
     # Blindaje de identidad: el perfil del middleware no puede falsificarse desde POST.
@@ -189,9 +189,9 @@ def guardar_informe(request):
         )
         logger.info(f'Informe guardado: id={informe.id} (por {request.user.username})')
         registrar_cambio(request, 'crear' if creado else 'editar', informe)
-    elif particular_id:
+    elif personalizada_id:
         informe, creado = Informe.objects.update_or_create(
-            clase_particular_id=particular_id,
+            clase_personalizada_id=personalizada_id,
             defaults={
                 'profesor_id':    profesor_id,
                 'colegio_nombre': body.get('colegio_nombre', ''),
@@ -206,7 +206,7 @@ def guardar_informe(request):
         logger.info(f'Informe guardado: id={informe.id} (por {request.user.username})')
         registrar_cambio(request, 'crear' if creado else 'editar', informe)
     else:
-        return JsonResponse({'ok': False, 'error': 'Falta clase_id o particular_id'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Falta clase_id o personalizada_id'}, status=400)
 
     _invalidar_cache_lista()
     return JsonResponse({'ok': True, 'informe_id': informe.id})

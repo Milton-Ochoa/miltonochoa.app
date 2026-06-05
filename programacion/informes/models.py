@@ -1,11 +1,11 @@
 from django.db import models
 from programacion.configuracion.models import Profesor
-from programacion.colegios.models import Clase, ClaseParticular
+from programacion.colegios.models import Clase, ClasePersonalizada
 
 
 class Informe(models.Model):
     """
-    Informe de sesión vinculado a exactamente UNA clase (regular o particular).
+    Informe de sesión vinculado a exactamente UNA clase (regular o personalizada).
 
     El constraint de base de datos garantiza la exclusividad a nivel de motor,
     no solo a nivel de aplicación — impide estados imposibles aunque la app falle.
@@ -13,13 +13,13 @@ class Informe(models.Model):
     para que el informe sea legible aunque la clase original sea eliminada.
     """
 
-    # FK a Clase o ClaseParticular: exactamente una debe ser no nula.
+    # FK a Clase o ClasePersonalizada: exactamente una debe ser no nula.
     # La relación OneToOne impide dos informes para la misma clase.
-    profesor         = models.ForeignKey(Profesor, on_delete=models.CASCADE, related_name='informes')
-    clase            = models.OneToOneField(Clase, on_delete=models.CASCADE,
-                                            null=True, blank=True, related_name='informe')
-    clase_particular = models.OneToOneField(ClaseParticular, on_delete=models.CASCADE,
-                                            null=True, blank=True, related_name='informe')
+    profesor            = models.ForeignKey(Profesor, on_delete=models.CASCADE, related_name='informes')
+    clase               = models.OneToOneField(Clase, on_delete=models.CASCADE,
+                                               null=True, blank=True, related_name='informe')
+    clase_personalizada = models.OneToOneField(ClasePersonalizada, on_delete=models.CASCADE,
+                                               null=True, blank=True, related_name='informe')
 
     # Datos de cabecera copiados en el momento de creación.
     # Se guardan como texto para sobrevivir reorganizaciones del catálogo.
@@ -48,13 +48,13 @@ class Informe(models.Model):
         verbose_name_plural = 'Informes de Sesión'
         ordering            = ['-fecha', 'colegio_nombre']
         constraints = [
-            # Garantía a nivel de BD: un informe pertenece a Clase XOR ClaseParticular.
+            # Garantía a nivel de BD: un informe pertenece a Clase XOR ClasePersonalizada.
             # Sin este constraint, un bug en la vista podría crear informes huérfanos
             # o doblemente vinculados que serían silenciosamente ignorados.
             models.CheckConstraint(
                 check=(
-                    models.Q(clase__isnull=False, clase_particular__isnull=True) |
-                    models.Q(clase__isnull=True, clase_particular__isnull=False)
+                    models.Q(clase__isnull=False, clase_personalizada__isnull=True) |
+                    models.Q(clase__isnull=True, clase_personalizada__isnull=False)
                 ),
                 name='informe_exactamente_una_clase',
             ),

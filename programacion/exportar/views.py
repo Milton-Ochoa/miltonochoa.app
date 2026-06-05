@@ -2,7 +2,7 @@
 Exportación masiva de horarios.
 
 Genera archivos Excel con openpyxl:
-- Por profesor: un Excel con todas sus clases (colegio + particulares) en el período.
+- Por profesor: un Excel con todas sus clases (colegio + personalizadas) en el período.
 - Por colegio: un Excel con la matriz grado×fecha de todos los bloques.
 
 (Los pagos semanales a profesores se movieron a la sub-app `programacion.pagos`.)
@@ -25,7 +25,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from programacion.configuracion.models import Profesor, NombreLibro, Unidad, ColegioAnio
-from programacion.colegios.models import Clase, Asignacion, ClaseParticular, Bloque
+from programacion.colegios.models import Clase, Asignacion, ClasePersonalizada, Bloque
 from programacion.colegios.utils import extraer_numero_grado, ordenar_grados
 
 
@@ -162,13 +162,13 @@ _num_grado = extraer_numero_grado
 
 def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
     """
-    Genera el Excel de horario de un profesor: clases de colegios + clases particulares.
+    Genera el Excel de horario de un profesor: clases de colegios + clases personalizadas.
 
     Estructura: tabla transpuesta (filas=etiquetas, columnas=clases ordenadas por fecha/hora).
-    Clases particulares se colorean en amarillo claro (PART_COLOR) para distinguirlas visualmente.
+    Clases personalizadas se colorean en amarillo claro (PART_COLOR) para distinguirlas visualmente.
 
-    N+1 resuelto: los libros de clases particulares se cargan en batch con
-    NombreLibro.objects.filter(nombre__in=set_materiales) — una sola query para todos.
+    N+1 resuelto: las unidades de los libros de clases personalizadas se cargan en
+    batch (un solo query sobre Unidad filtrando por libro_id).
 
     El valor del campo 'titulo' para material asignado se fija a 'Material Asignado'
     y el nombre real del libro va en 'unidad', siguiendo la convención del sistema.
@@ -198,18 +198,13 @@ def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
     for asigs in asig_map.values():
         for a in asigs:
             libros_ids.add(a.libro_id)
-    materiales_particulares = set(
-        ClaseParticular.objects.filter(
+    # material es FK: tomamos los libro_id directamente (sin lookup por nombre).
+    libros_ids |= set(
+        ClasePersonalizada.objects.filter(
             profesor=profesor, fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-        ).values_list('material', flat=True)
+            libro__isnull=False,
+        ).values_list('libro_id', flat=True)
     )
-    materiales_particulares.discard(None)
-    materiales_particulares.discard('')
-    if materiales_particulares:
-        libros_ids |= set(
-            NombreLibro.objects.filter(nombre__in=materiales_particulares)
-            .values_list('id', flat=True)
-        )
 
     libros_map = {
         (u.libro.nombre, u.materia.nombre, str(u.numero)): u
@@ -246,13 +241,14 @@ def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
             'libro_obj':      libros_map.get((titulo, c.materia.nombre if c.materia_id else '', unidad_c)),
         })
 
-    for p in ClaseParticular.objects.filter(
+    for p in ClasePersonalizada.objects.filter(
         profesor=profesor, fecha__gte=fecha_inicio, fecha__lte=fecha_fin
-    ).select_related('materia', 'grado'):
+    ).select_related('materia', 'grado', 'libro'):
         unidad    = str(p.unidad) if p.unidad else ''
         mat_nombre = p.materia.nombre if p.materia_id else ''
-        libro_obj = libros_map.get((p.material, mat_nombre, unidad))
-        material  = p.material or 'Sin libro asignado'
+        libro_nombre = p.libro.nombre if p.libro_id else ''
+        libro_obj = libros_map.get((libro_nombre, mat_nombre, unidad))
+        material  = libro_nombre or 'Sin libro asignado'
         entradas.append({
             'fecha':          p.fecha,
             'hora':           p.hora,
@@ -264,7 +260,7 @@ def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
             'material':       material,
             'materia':        mat_nombre,
             'unidad':         unidad,
-            'tipo':           'particular',
+            'tipo':           'personalizada',
             'libro_obj':      libro_obj,
         })
 
@@ -306,7 +302,7 @@ def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
         _e(ws, row_i, 1, label, bold=True, fill=LABEL_GRAY)
 
     for ci, e in enumerate(entradas, start=2):
-        fill = PART_COLOR if e['tipo'] == 'particular' else None
+        fill = PART_COLOR if e['tipo'] == 'personalizada' else None
         safe_link = _safe_url(e['mapa_link'])
         if safe_link:
             _e(ws, 2, ci, e['colegio_nombre'], fill=fill, hyperlink=safe_link)
@@ -689,7 +685,7 @@ def exportar_view(request):
                 fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
                 cancelada=False, es_evento=False,
             )
-            q_pa = ClaseParticular.objects.filter(
+            q_pa = ClasePersonalizada.objects.filter(
                 fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
             )
             if profesores_ids:
@@ -741,7 +737,7 @@ def exportar_contar(request):
     colegios_ids   = [int(x) for x in request.GET.getlist('colegios_ids') if x.isdigit()]
 
     resultado = {
-        'n_profesores': 0, 'clases_colegio': 0, 'clases_particular': 0,
+        'n_profesores': 0, 'clases_colegio': 0, 'clases_personalizada': 0,
         'n_colegios': 0, 'clases_colegios': 0,
         'total': 0,
     }
@@ -751,7 +747,7 @@ def exportar_contar(request):
             fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
             cancelada=False, es_evento=False,
         )
-        q_pa = ClaseParticular.objects.filter(
+        q_pa = ClasePersonalizada.objects.filter(
             fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
         )
         if profesores_ids:
@@ -759,7 +755,7 @@ def exportar_contar(request):
             q_pa = q_pa.filter(profesor_id__in=profesores_ids)
 
         resultado['clases_colegio']    = q_cl.count()
-        resultado['clases_particular'] = q_pa.count()
+        resultado['clases_personalizada'] = q_pa.count()
 
         ids_prof = (
             set(q_cl.values_list('profesor_id', flat=True))
@@ -779,6 +775,6 @@ def exportar_contar(request):
         resultado['n_colegios'] = q_col.values('colegio_id').distinct().count()
 
     resultado['total'] = (resultado['clases_colegio']
-                          + resultado['clases_particular']
+                          + resultado['clases_personalizada']
                           + resultado['clases_colegios'])
     return JsonResponse(resultado)

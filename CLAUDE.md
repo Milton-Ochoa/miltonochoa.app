@@ -139,7 +139,7 @@ cada modelo declara explícitamente su `Meta.db_table` con un nombre de dominio
 limpio, en **plural snake_case**. Convención obligatoria al crear un modelo nuevo:
 
 - **Modelos del área `programacion`:** prefijo `prog_` → `prog_<plural>`
-  (ej. `prog_colegios`, `prog_clases_particulares`, `prog_historial_cambios`).
+  (ej. `prog_colegios`, `prog_clases_personalizadas`, `prog_historial_cambios`).
   El prefijo agrupa las tablas del área en el navegador de BD y reserva el
   namespace para cuando convivan `logistica`/`financiera`.
 - **Modelos globales (`usuarios/`):** prefijo de dominio propio (`usuarios_…`),
@@ -150,7 +150,7 @@ Registro actual (modelo → tabla):
 
 | Modelo | Tabla | | Modelo | Tabla |
 |---|---|---|---|---|
-| `Materia` | `prog_materias` | | `ClaseParticular` | `prog_clases_particulares` |
+| `Materia` | `prog_materias` | | `ClasePersonalizada` | `prog_clases_personalizadas` |
 | `NombreLibro` | `prog_libros` | | `HistorialCambio` | `prog_historial_cambios` |
 | `Unidad` | `prog_unidades` | | `Informe` | `prog_informes` |
 | `Colegio` | `prog_colegios` | | `AlertaAuditoria` | `prog_alertas_auditoria` |

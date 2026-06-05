@@ -7,7 +7,7 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from datetime import date, time
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia, Unidad
-from programacion.colegios.models import Asignacion, Clase, ClaseParticular, Grado
+from programacion.colegios.models import Asignacion, Clase, ClasePersonalizada, Grado
 from usuarios.models import UsuarioProfesor
 from programacion.profesores.views import extraer_minutos, _resolver_unidad, _libro_para_fecha
 from collections import defaultdict
@@ -134,25 +134,26 @@ class AjaxAsignaturasViewTest(TestCase):
         self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
-        nombre_libro = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
+        self.libro   = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
         materia_obj  = Materia.objects.create(nombre='Lectura Crítica')
         Unidad.objects.create(
-            libro=nombre_libro, materia=materia_obj,
+            libro=self.libro, materia=materia_obj,
             numero=1, nombre='Primera unidad', link='https://example.com/u1'
         )
         Unidad.objects.create(
-            libro=nombre_libro, materia=materia_obj,
+            libro=self.libro, materia=materia_obj,
             numero=2, nombre='Segunda unidad', link='https://example.com/u2'
         )
 
     def test_devuelve_materias_para_material_existente(self):
-        r = self.client.get('/profesores/ajax/asignaturas/?material=Saberes 11 Oro')
+        # material ahora es el id del libro (FK), no su nombre
+        r = self.client.get(f'/profesores/ajax/asignaturas/?material={self.libro.id}')
         self.assertEqual(r.status_code, 200)
         data = json.loads(r.content)
         self.assertIn('Lectura Crítica', data)
 
     def test_material_inexistente_devuelve_lista_vacia(self):
-        r = self.client.get('/profesores/ajax/asignaturas/?material=Libro Inventado')
+        r = self.client.get('/profesores/ajax/asignaturas/?material=999999')
         data = json.loads(r.content)
         self.assertEqual(data, [])
 
@@ -168,16 +169,17 @@ class AjaxUnidadesViewTest(TestCase):
         self.client = Client(HTTP_HOST='programacion.testserver')
         User.objects.create_superuser(username='admin', password='pass')
         self.client.login(username='admin', password='pass')
-        nombre_libro = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
+        self.libro   = NombreLibro.objects.create(nombre='Saberes 11 Oro', activo=True)
         materia_obj  = Materia.objects.create(nombre='Lectura Crítica')
         Unidad.objects.create(
-            libro=nombre_libro, materia=materia_obj,
+            libro=self.libro, materia=materia_obj,
             numero=1, nombre='Primera', link='https://example.com'
         )
 
     def test_devuelve_unidades_para_material_y_materia_validos(self):
+        # material ahora es el id del libro (FK), no su nombre
         r = self.client.get(
-            '/profesores/ajax/unidades/?material=Saberes 11 Oro&materia=Lectura Crítica'
+            f'/profesores/ajax/unidades/?material={self.libro.id}&materia=Lectura Crítica'
         )
         data = json.loads(r.content)
         self.assertTrue(len(data) > 0)
