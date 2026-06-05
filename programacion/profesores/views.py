@@ -228,7 +228,7 @@ def ver_horario(request):
       - unidades_map: una query de Unidad cubriendo todos los libros de clases y personalizadas
       - Acceso O(1) con clave (libro, materia, numero_str)
     """
-    if request.method == 'POST' and request.user.is_staff:
+    if request.method == 'POST' and request.es_personal_programacion:
         profesor_id = request.POST.get('profesor_id')
 
         # El <select> de material envía el id del libro (FK) o 'S' (Socialización).

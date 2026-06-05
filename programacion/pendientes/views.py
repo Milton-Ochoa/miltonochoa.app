@@ -50,14 +50,15 @@ def kanban_inicio(request):
 def cambiar_estado(request, tarea_id, nuevo_estado):
     """
     Mueve una tarea entre columnas del Kanban.
-    Solo el creador o un superusuario puede cambiar el estado.
+    Puede cambiarla el creador o cualquier personal de programación (superusuario
+    o staff de área): el Kanban es un tablero de equipo del área.
     Al marcar 'completado' registra quién completó la tarea; al salir de ese estado
     limpia `completado_por` para no dejar datos huérfanos.
     Si la petición lleva HX-Request retorna el card HTML de la tarea en su nuevo
     estado (para que el JS la inserte en la columna destino).
     """
     tarea = get_object_or_404(Tarea, id=tarea_id)
-    if not request.user.is_superuser and tarea.creado_por != request.user:
+    if not request.es_personal_programacion and tarea.creado_por != request.user:
         return HttpResponseForbidden()
 
     if nuevo_estado in ESTADOS_VALIDOS:
@@ -81,7 +82,7 @@ def editar_tarea(request, tarea_id):
     Si la petición lleva HX-Request retorna el card HTML actualizado (OOB swap).
     """
     tarea = get_object_or_404(Tarea, id=tarea_id)
-    if not request.user.is_superuser and tarea.creado_por != request.user:
+    if not request.es_personal_programacion and tarea.creado_por != request.user:
         return HttpResponseForbidden()
 
     descripcion = request.POST.get('descripcion', '')
