@@ -26,11 +26,5 @@ tzdata==2025.3             # Datos de zonas horarias (Windows + producción)
 # ── HTMX ─────────────────────────────────────────────────────────────────────
 django-htmx==1.19.0        # Detecta HX-Request y expone request.htmx en vistas
 
-# ── API REST ─────────────────────────────────────────────────────────────────
-djangorestframework==3.15.2           # DRF core
-djangorestframework-simplejwt==5.3.1  # JWT auth para API (8h access / 7d refresh)
-drf-spectacular==0.27.2               # OpenAPI schema + Swagger UI (/api/v1/docs/)
-django-filter==24.3                   # Filtros declarativos para DRF viewsets
-
 # ── Caché Redis (opcional — solo si CACHE_BACKEND=redis) ────────────────────
 django-redis==5.4.0        # Backend Redis para Django cache

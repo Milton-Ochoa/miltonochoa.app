@@ -28,5 +28,4 @@ urlpatterns = [
     path('buscar/', ajax_busqueda_global, name='ajax_busqueda_global'),
     path('pendientes/', include('programacion.pendientes.urls')),
     path('viaticos/', include('programacion.viaticos.urls')),
-    path('api/v1/', include('programacion.api.urls')),
 ]

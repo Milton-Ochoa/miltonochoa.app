@@ -13,3 +13,5 @@ backups/
 # CLAUDE.md: versionado a propósito para compartir la guía del proyecto entre máquinas
 # Resguardo local de BD por fase (no versionar)
 db.sqlite3.*.bak
+# graphify: artefactos del grafo de conocimiento (regenerables con /graphify)
+graphify-out/

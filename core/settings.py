@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import sys
 
 # Cargar variables del .env (una sola vez)
-# Prioridad: .env.dev-api (rama feat/htmx-api-migration) > .env (default)
+# Prioridad: .env.dev-api > .env (default)
 # Esto permite trabajar en BD local SQLite sin tocar config de prod en .env
 BASE_DIR = Path(__file__).resolve().parent.parent
 _DEV_API_ENV = BASE_DIR / '.env.dev-api'
@@ -78,10 +78,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django_htmx',
-    'rest_framework',
-    'rest_framework_simplejwt',
-    'drf_spectacular',
-    'django_filters',
     'storages',
     'core',
     'programacion.configuracion',
@@ -93,7 +89,6 @@ INSTALLED_APPS = [
     'programacion.exportar',
     'programacion.pagos',
     'programacion.pendientes',
-    'programacion.api',
     'programacion.viaticos',
     'financiera.viaticos',
     'financiera.pagos',
@@ -315,53 +310,6 @@ STORAGES = {
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# ─────────────────────────────────────────────────────────────
-# REST FRAMEWORK (DRF)
-# ─────────────────────────────────────────────────────────────
-from datetime import timedelta  # noqa: E402
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'programacion.api.pagination.StandardPagination',
-    'PAGE_SIZE': 200,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.UserRateThrottle',
-        'rest_framework.throttling.AnonRateThrottle',
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'user': '1000/hour',
-        # El endpoint de obtención de token JWT (auth/token/) es anónimo por
-        # naturaleza; sin esto no tendría throttle de DRF. Límite conservador.
-        'anon': '30/hour',
-    },
-    'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
-    ],
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-}
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': False,
-    'ALGORITHM': 'HS256',
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
-
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'AAMO API',
-    'DESCRIPTION': 'API REST para sistema de gestión de colegios AAMO. Uso interno y sistema financiero.',
-    'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
-    'SERVE_AUTHENTICATION': ['rest_framework.authentication.SessionAuthentication'],
-}
 
 if 'test' in sys.argv:
     DATABASES = {
