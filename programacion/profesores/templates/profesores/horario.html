@@ -32,7 +32,7 @@
 <div class="container-fluid py-3">
 {% if profesor_sel and not usuario_bloqueado %}
 <div class="d-flex align-items-center rounded-top bg-dark px-3 py-2" style="border: 1px solid #dee2e6; border-bottom: none;">
-    {% if request.user.is_staff %}
+    {% if request.es_personal_programacion %}
     <div style="width: 120px;"></div>
     {% endif %}
     <div class="mx-auto" style="width: 450px;">
@@ -43,7 +43,7 @@
             {% endfor %}
         </select>
     </div>
-    {% if request.user.is_staff %}
+    {% if request.es_personal_programacion %}
     <button type="button" class="btn btn-warning btn-sm ms-3 text-dark fw-bold border border-warning" onclick="abrirNuevoPersonalizada()">
         <i class="fas fa-plus-circle me-1"></i> Personalizada
     </button>
@@ -98,7 +98,7 @@ raw_data en cada columna-clase es usado por abrirEditarPersonalizada() para pre-
                 <div class="columna-clase">
                     <div class="celda position-relative">
                         <a href="{{ item.maps_link }}" target="_blank" class="link-azul text-truncate" style="max-width: 85%;">{% if item.es_personalizada %}{{ item.personalizada_obj.estudiante }} (Pers.){% else %}{{ item.clase.colegio.nombre }}{% endif %}</a>
-                        {% if request.user.is_staff and item.es_personalizada %}
+                        {% if request.es_personal_programacion and item.es_personalizada %}
                         <button class="btn btn-sm text-warning p-0 border-0 position-absolute" style="right: 6px;" title="Editar Clase Personalizada"
                             onclick="abrirEditarPersonalizada('{{ item.personalizada_id }}', '{{ item.raw_data.estudiante|escapejs }}', '{{ item.raw_data.ciudad|escapejs }}', '{{ item.maps_link|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.hora_inicio }}', '{{ item.raw_data.hora_fin }}', '{{ item.raw_data.grado|escapejs }}', '{{ item.raw_data.material|escapejs }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.raw_data.unidad|escapejs }}')">
                             <i class="fas fa-edit"></i>
@@ -178,7 +178,7 @@ raw_data en cada columna-clase es usado por abrirEditarPersonalizada() para pre-
     });
 </script>
 
-{% if request.user.is_staff and profesor_sel %}
+{% if request.es_personal_programacion and profesor_sel %}
 <div class="modal fade" id="modalPersonalizada" tabindex="-1">
     <div class="modal-dialog modal-fullscreen-sm-down modal-lg">
         <form method="POST" id="formPersonalizada" class="modal-content">

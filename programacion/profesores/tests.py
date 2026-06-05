@@ -127,6 +127,47 @@ class VerHorarioViewTest(TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn(f'profesor_id={self.profesor.id}', r['Location'])
 
+    def _crear_staff_area(self, username):
+        from django.contrib.auth.models import Group
+        from core.areas import GRUPO_STAFF_PROGRAMACION
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        staff = User.objects.create_user(username, password='pass123')
+        staff.groups.add(grupo)
+        return staff
+
+    def test_staff_de_area_ve_boton_personalizada(self):
+        # Regresión: el staff de área (no is_staff) debe ver el botón "Personalizada"
+        # y el selector de gestión, antes gateados por request.user.is_staff.
+        staff = self._crear_staff_area('staff_prof')
+        self.assertFalse(staff.is_staff)
+        self.client.login(username='staff_prof', password='pass123')
+        html = self.client.get(f'/profesores/?profesor_id={self.profesor.id}').content.decode()
+        self.assertIn('Personalizada', html)
+
+    def test_staff_de_area_puede_crear_personalizada(self):
+        # Regresión: el POST de clases personalizadas estaba gateado por is_staff.
+        self._crear_staff_area('staff_prof2')
+        self.client.login(username='staff_prof2', password='pass123')
+        r = self.client.post('/profesores/', {
+            'guardar_personalizada': '1',
+            'profesor_id': self.profesor.id,
+            'estudiante':  'Juan',
+            'ciudad':      'Bogotá',
+            'mapa_link':   '',
+            'fecha':       '2026-05-15',
+            'hora_inicio': '08:00',
+            'hora_fin':    '10:00',
+            'grado':       '11-1',
+            'material':    '',
+            'materia':     'Matemáticas',
+            'unidad':      '1',
+        })
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(
+            ClasePersonalizada.objects.filter(
+                profesor=self.profesor, estudiante='Juan').exists()
+        )
+
 
 class AjaxAsignaturasViewTest(TestCase):
 
