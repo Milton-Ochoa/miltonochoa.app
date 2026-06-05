@@ -6,6 +6,8 @@ from .views import (
     ajax_toggle_libro, ajax_toggle_material_asignado, ajax_eliminar_libro,
     ajax_unidades_libro, ajax_crear_unidad, ajax_editar_unidad, ajax_eliminar_unidad,
     ajax_materias, ajax_crear_materia, ajax_editar_materia, ajax_eliminar_materia,
+    ajax_documentos_profesor, ajax_subir_documento_profesor,
+    ajax_eliminar_documento_profesor, documento_profesor_descargar,
 )
 
 urlpatterns = [
@@ -35,4 +37,10 @@ path('ajax/libros/<int:libro_id>/toggle/',              ajax_toggle_libro,      
     path('ajax/materias/crear/',                 ajax_crear_materia,  name='ajax_crear_materia'),
     path('ajax/materias/<int:materia_id>/editar/', ajax_editar_materia,  name='ajax_editar_materia'),
     path('ajax/materias/<int:materia_id>/eliminar/', ajax_eliminar_materia, name='ajax_eliminar_materia'),
+
+    # ── Documentos de profesor (CV, cédula, RUT, …) ──
+    path('ajax/profesores/<int:profesor_id>/documentos/',       ajax_documentos_profesor,        name='ajax_documentos_profesor'),
+    path('ajax/profesores/<int:profesor_id>/documentos/subir/', ajax_subir_documento_profesor,   name='ajax_subir_documento_profesor'),
+    path('ajax/documentos/<int:documento_id>/eliminar/',        ajax_eliminar_documento_profesor, name='ajax_eliminar_documento_profesor'),
+    path('profesores/documentos/<int:documento_id>/descargar/', documento_profesor_descargar,    name='documento_profesor_descargar'),
 ]

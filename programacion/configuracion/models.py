@@ -1,6 +1,9 @@
+import os
 import re
+from django.contrib.auth.models import User
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.utils.text import slugify
 from datetime import date
 
 
@@ -384,3 +387,46 @@ class Profesor(models.Model):
 
     def __str__(self):
         return self.nombre_corto
+
+
+def _documento_profesor_upload_to(instance, filename):
+    """Ruta/nombre limpio del documento: ``profesores/<slug-profesor>/<slug-archivo><ext>``.
+
+    Agrupa los archivos por profesor en una carpeta legible y conserva el nombre
+    original (slugificado) para distinguir CV / cédula / RUT de un vistazo. Con
+    ``FileSystemStorage`` (dev) o S3 (prod) las colisiones reciben un sufijo único
+    automático, así que subir dos archivos con el mismo nombre no se pisa.
+    """
+    prof = instance.profesor
+    slug_prof = slugify(prof.nombre_corto) or str(prof.pk or 'profesor')
+    base = slugify(os.path.splitext(filename)[0]) or 'documento'
+    ext = os.path.splitext(filename)[1].lower()
+    return f'profesores/{slug_prof}/{base}{ext}'
+
+
+class DocumentoProfesor(models.Model):
+    """Archivo adjunto a la ficha de un profesor (CV, cédula, RUT, etc.).
+
+    Sin límite de cantidad: varios documentos por profesor, con historial de quién
+    subió qué y cuándo. Mismo patrón de almacenamiento que los soportes de pago
+    (``FileField`` sobre ``STORAGES['default']`` → disco en dev, Supabase en prod) y
+    descarga **proxiada** por una vista protegida, nunca por URL pública. La
+    validación (extensión/tamaño) vive en ``configuracion.documentos``.
+    """
+
+    profesor = models.ForeignKey(Profesor, on_delete=models.CASCADE,
+                                 related_name='documentos')
+    archivo = models.FileField(upload_to=_documento_profesor_upload_to)
+    nombre_original = models.CharField(max_length=255, blank=True)
+    subido_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='documentos_profesor')
+    subido_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'prog_profesores_documentos'
+        ordering = ['-subido_en']
+        verbose_name = 'Documento de profesor'
+        verbose_name_plural = 'Documentos de profesor'
+
+    def __str__(self):
+        return f'{self.nombre_original or self.archivo.name} ({self.profesor})'
