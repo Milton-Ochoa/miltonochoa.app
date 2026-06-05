@@ -1170,12 +1170,12 @@ def configurar_colegio(request, colegio_id):
     """
     colegio = get_object_or_404(ColegioAnio, id=colegio_id)
 
-    # Solo superusuarios o el usuario del colegio correspondiente
-    if not request.user.is_superuser:
+    # Personal de programación (superusuario / staff de área) o el usuario del colegio correspondiente
+    if not request.es_personal_programacion:
         perfil = getattr(request, 'perfil_colegio', None)
         if not perfil or perfil.colegio_id != colegio.colegio_id:
             ca = getattr(request, 'colegio_anio_activo', None)
-            destino = f'/colegios/?id_col={ca.id}' if ca else '/configuracion/usuarios/login/'
+            destino = f'/colegios/?id_col={ca.id}' if ca else '/usuarios/login/'
             return redirect(destino)
 
     if request.method == 'POST':
@@ -1334,9 +1334,9 @@ def ajax_clonar_colegio(request, colegio_id):
     """
     Crea un ColegioAnio para el año siguiente del mismo colegio,
     duplicando sus Bloques y Asignaciones con fechas actualizadas.
-    Solo accesible por superusuarios.
+    Solo accesible por personal de programación (superusuario / staff de área).
     """
-    if not request.user.is_superuser:
+    if not request.es_personal_programacion:
         return JsonResponse({'ok': False, 'error': 'Sin permisos'}, status=403)
 
     origen = get_object_or_404(ColegioAnio, id=colegio_id)
@@ -1408,7 +1408,7 @@ def historial_colegio(request, colegio_id):
     completo está disponible en historial_global con paginación server-side.
     """
     colegio = get_object_or_404(ColegioAnio, id=colegio_id)
-    if not request.user.is_superuser:
+    if not request.es_personal_programacion:
         perfil = getattr(request, 'perfil_colegio', None)
         if not perfil or perfil.colegio_id != colegio.colegio_id:
             return redirect(f'{reverse("dashboard")}?id_col={colegio.id}')
