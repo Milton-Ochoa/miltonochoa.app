@@ -658,8 +658,10 @@ Datos para JS: inyectados como constantes JSON desde Django.
         _mostrarCampoEnlace(link, enlacePersonalizado);
     }
 
-    // Escuchar cambios de unidad en modo especial
-    document.getElementById('modal_unidad').addEventListener('change', function() {
+    // Escuchar cambios de unidad en modo especial.
+    // El modal (y modal_unidad/modal_materia) solo se renderiza para es_personal_programacion;
+    // sin ?. el listener revienta para perfiles colegio/profesor y mata todo el script.
+    document.getElementById('modal_unidad')?.addEventListener('change', function() {
         const esEspecial = document.getElementById('modal_material_asignado').checked;
         if (esEspecial) {
             _actualizarEnlaceEspecial(this.value, '');
@@ -667,7 +669,7 @@ Datos para JS: inyectados como constantes JSON desde Django.
     });
 
     // Escuchar cambios de materia para actualizar unidades
-    document.getElementById('modal_materia').addEventListener('change', () => {
+    document.getElementById('modal_materia')?.addEventListener('change', () => {
         filtrarProfesoresPorMateria(document.getElementById('modal_materia').value);
         const { grado, fecha } = _getGradoFecha();
         const esEspecial = document.getElementById('modal_material_asignado').checked;
