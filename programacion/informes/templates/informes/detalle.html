@@ -149,7 +149,9 @@
 
 <style>
 @media print {
-    .sidebar, .top-header, .btn, .badge { display: none !important; }
+    /* Ocultamos solo los badges de estado (Completado/Pendiente), NO el badge
+       del área dentro del informe — `materia_badge` también es un `.badge`. */
+    .sidebar, .top-header, .btn, .badge-completo, .badge-pendiente { display: none !important; }
     .main-wrapper { overflow: visible !important; }
     .informe-wrap { box-shadow: none; border: 1px solid #000; }
     body { background: #fff !important; }
