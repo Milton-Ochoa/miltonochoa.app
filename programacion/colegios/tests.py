@@ -1,6 +1,6 @@
 """
 Tests — app: colegios
-Modelos: Bloque, Asignacion, Clase, ClaseParticular
+Modelos: Bloque, Asignacion, Clase, ClasePersonalizada
 Utilidades: label_unidad, extraer_numero_grado, calcular_rango_fechas, ordenar_grados
 Vistas: dashboard_colegios, cargar_grados
 """
@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from datetime import date, time
 
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia
-from programacion.colegios.models import Bloque, Asignacion, Clase, ClaseParticular, Grado
+from programacion.colegios.models import Bloque, Asignacion, Clase, ClasePersonalizada, Grado
 from programacion.colegios.utils import (
     extraer_numero_grado,
     calcular_rango_fechas,
@@ -269,7 +269,7 @@ class ClaseCalendarioBTest(TestCase):
         self.assertEqual(asig.fecha_fin, date(2026, 6, 30))
 
 
-class ClaseParticularModelTest(TestCase):
+class ClasePersonalizadaModelTest(TestCase):
 
     def setUp(self):
         self.profesor = Profesor.objects.create(nombre='Ana', apellido='García')
@@ -277,10 +277,11 @@ class ClaseParticularModelTest(TestCase):
     def test_str_incluye_estudiante_y_profesor(self):
         grado = Grado.objects.create(nombre='10-1')
         materia = Materia.objects.create(nombre='Lectura Crítica')
-        cp = ClaseParticular.objects.create(
+        libro = NombreLibro.objects.create(nombre='Conceptos 10')
+        cp = ClasePersonalizada.objects.create(
             profesor=self.profesor, estudiante='Col San Pedro',
             fecha=date.today(), hora_inicio=time(14, 0), hora_fin=time(16, 0),
-            grado=grado, material='Conceptos 10', materia=materia, unidad='2',
+            grado=grado, libro=libro, materia=materia, unidad='2',
         )
         self.assertIn('Col San Pedro', str(cp))
         self.assertIn('Ana', str(cp))
@@ -288,20 +289,22 @@ class ClaseParticularModelTest(TestCase):
     def test_ciudad_default_bucaramanga(self):
         grado = Grado.objects.create(nombre='11-1')
         materia = Materia.objects.create(nombre='Mate')
-        cp = ClaseParticular.objects.create(
+        libro = NombreLibro.objects.create(nombre='Libro A')
+        cp = ClasePersonalizada.objects.create(
             profesor=self.profesor, estudiante='Col X',
             fecha=date.today(), hora_inicio=time(8, 0), hora_fin=time(10, 0),
-            grado=grado, material='Libro A', materia=materia, unidad='1',
+            grado=grado, libro=libro, materia=materia, unidad='1',
         )
         self.assertEqual(cp.ciudad, 'Bucaramanga')
 
     def test_propiedad_hora_devuelve_rango(self):
         grado = Grado.objects.create(nombre='9-1')
         materia = Materia.objects.create(nombre='Ciencias')
-        cp = ClaseParticular.objects.create(
+        libro = NombreLibro.objects.create(nombre='Libro B')
+        cp = ClasePersonalizada.objects.create(
             profesor=self.profesor, estudiante='Col Y',
             fecha=date.today(), hora_inicio=time(14, 0), hora_fin=time(16, 0),
-            grado=grado, material='Libro B', materia=materia, unidad='1',
+            grado=grado, libro=libro, materia=materia, unidad='1',
         )
         self.assertEqual(cp.hora, '2:00 PM - 4:00 PM')
 

@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from datetime import time, date
-from programacion.colegios.models import Clase, Asignacion, ClaseParticular, Grado
+from programacion.colegios.models import Clase, Asignacion, ClasePersonalizada, Grado
 from programacion.configuracion.models import Colegio, Profesor, NombreLibro, Unidad, Materia
 from collections import defaultdict
 
@@ -65,7 +65,7 @@ def _construir_entrada_clase(c, libro_titulo, unidades_map):
             'unidad_full':   'Socialización de simulacro',
             'unidad_link':   c.enlace_personalizado or '#',
             'maps_link':     getattr(c.colegio, 'mapa_link', '#') or '#',
-            'es_particular': False,
+            'es_personalizada': False,
         }
 
     if c.libro_especial_id:
@@ -82,7 +82,7 @@ def _construir_entrada_clase(c, libro_titulo, unidades_map):
             'unidad_full':   unidad_full,
             'unidad_link':   unidad_link,
             'maps_link':     getattr(c.colegio, 'mapa_link', '#') or '#',
-            'es_particular': False,
+            'es_personalizada': False,
         }
 
     unidad_obj = unidades_map.get((libro_titulo, mat_nombre, unidad_str)) if unidad_str.isdigit() else None
@@ -96,29 +96,34 @@ def _construir_entrada_clase(c, libro_titulo, unidades_map):
         'unidad_full':   unidad_full,
         'unidad_link':   unidad_link,
         'maps_link':     getattr(c.colegio, 'mapa_link', '#') or '#',
-        'es_particular': False,
+        'es_personalizada': False,
     }
 
 
-def _construir_entrada_particular(p, unidades_map):
+def _construir_entrada_personalizada(p, unidades_map):
     """
-    Construye el dict de visualización de una ClaseParticular para el template del horario.
+    Construye el dict de visualización de una ClasePersonalizada para el template del horario.
     Incluye `raw_data` con todos los campos editables para pre-poblar el modal de edición.
     `ciudad` es texto libre — puede contener dirección completa, no solo ciudad.
+
+    El material es FK al catálogo: `raw_data.material` lleva el id del libro (lo que
+    espera el <select>), o el centinela 'S' en Socialización (sin libro).
     """
     minutos = (p.hora_inicio.hour * 60 + p.hora_inicio.minute) if p.hora_inicio else 0
     mat_nombre = p.materia.nombre if p.materia_id else ''
+    # Socialización: sin libro (libro=None) y unidad='S'.
+    material_sel = str(p.libro_id) if p.libro_id else 'S'
 
-    if p.material == 'S':
+    if str(p.unidad) == 'S':
         return {
-            'particular_obj': p,
-            'minutos':        minutos,
-            'material':       'Socialización de simulacro',
-            'unidad_full':    'Socialización de simulacro',
-            'unidad_link':    '#',
-            'maps_link':      p.mapa_link or '#',
-            'es_particular':  True,
-            'particular_id':  p.id,
+            'personalizada_obj': p,
+            'minutos':           minutos,
+            'material':          'Socialización de simulacro',
+            'unidad_full':       'Socialización de simulacro',
+            'unidad_link':       '#',
+            'maps_link':         p.mapa_link or '#',
+            'es_personalizada':  True,
+            'personalizada_id':  p.id,
             'raw_data': {
                 'estudiante':   p.estudiante,
                 'ciudad':       p.ciudad,
@@ -129,24 +134,25 @@ def _construir_entrada_particular(p, unidades_map):
                 'grado':        p.grado.nombre,
                 'materia':      mat_nombre,
                 'unidad':       p.unidad,
-                'material':     p.material,
+                'material':     material_sel,
             },
         }
 
+    libro_nombre = p.libro.nombre if p.libro_id else ''
     unidad_str = str(p.unidad) if p.unidad else ''
-    unidad_obj = unidades_map.get((p.material, mat_nombre, unidad_str)) if unidad_str.isdigit() else None
+    unidad_obj = unidades_map.get((libro_nombre, mat_nombre, unidad_str)) if unidad_str.isdigit() else None
 
     material_override, unidad_full, unidad_link = _resolver_unidad(p.unidad, unidad_obj)
 
     return {
-        'particular_obj': p,
-        'minutos':        minutos,
-        'material':       material_override if material_override else p.material,
-        'unidad_full':    unidad_full,
-        'unidad_link':    unidad_link,
-        'maps_link':      p.mapa_link or '#',
-        'es_particular':  True,
-        'particular_id':  p.id,
+        'personalizada_obj': p,
+        'minutos':           minutos,
+        'material':          material_override if material_override else libro_nombre,
+        'unidad_full':       unidad_full,
+        'unidad_link':       unidad_link,
+        'maps_link':         p.mapa_link or '#',
+        'es_personalizada':  True,
+        'personalizada_id':  p.id,
         'raw_data': {
             'estudiante':   p.estudiante,
             'ciudad':       p.ciudad,
@@ -157,40 +163,46 @@ def _construir_entrada_particular(p, unidades_map):
             'grado':        p.grado.nombre,
             'materia':      mat_nombre,
             'unidad':       p.unidad,
-            'material':     p.material,
+            'material':     material_sel,
         },
     }
 
 
 @login_required
-def obtener_asignaturas_particular(request):
+def obtener_asignaturas_personalizada(request):
     """
-    Retorna las materias disponibles según el tipo de material de una clase particular.
-    'A' o 'S' (Material Asignado/Socialización) → todas las materias del sistema.
-    Nombre de libro → solo las materias que tienen unidades en ese libro.
+    Retorna las materias disponibles según el material de una clase personalizada.
+    El parámetro `material` es el id del libro (FK) o el centinela 'S' (Socialización).
+    'S' → todas las materias del sistema.
+    id de libro → solo las materias que tienen unidades en ese libro.
     """
     material = request.GET.get('material')
     if not material:
         return JsonResponse([], safe=False)
-    if material in ('A', 'S'):
+    if material == 'S':
         asignaturas = list(Materia.objects.values_list('nombre', flat=True).order_by('nombre'))
-    else:
+    elif material.isdigit():
         asignaturas = sorted(set(
-            Unidad.objects.filter(libro__nombre=material)
+            Unidad.objects.filter(libro_id=material)
             .values_list('materia__nombre', flat=True)
         ))
+    else:
+        asignaturas = []
     return JsonResponse(asignaturas, safe=False)
 
 
 @login_required
-def obtener_unidades_particular(request):
-    """Retorna las unidades de un libro filtradas por materia, para el selector del modal de clase particular."""
+def obtener_unidades_personalizada(request):
+    """Retorna las unidades de un libro filtradas por materia, para el selector del modal de clase personalizada.
+
+    `material` es el id del libro (FK); `materia` es el nombre de la asignatura.
+    """
     material = request.GET.get('material')
     materia  = request.GET.get('materia')
-    if not (material and materia):
+    if not (material and materia and material.isdigit()):
         return JsonResponse([], safe=False)
     unidades = list(
-        Unidad.objects.filter(libro__nombre=material, materia__nombre=materia)
+        Unidad.objects.filter(libro_id=material, materia__nombre=materia)
         .order_by('numero')
         .values('numero', 'nombre')
     )
@@ -203,26 +215,34 @@ def obtener_unidades_particular(request):
 @login_required
 def ver_horario(request):
     """
-    Horario personal del profesor: clases de colegios + clases particulares, agrupadas por fecha.
+    Horario personal del profesor: clases de colegios + clases personalizadas, agrupadas por fecha.
 
     Tres roles posibles:
-      - Superusuario/staff: ve a cualquier profesor (selector visible, puede gestionar particulares)
+      - Superusuario/staff: ve a cualquier profesor (selector visible, puede gestionar personalizadas)
       - Profesor (perfil_profesor): forzado a su propio horario (selector oculto, `usuario_bloqueado=True`)
-      - POST (guardar/editar/eliminar particulares): solo para staff; scoped siempre por `profesor_id`
-        en el .filter() de ClaseParticular para prevenir ediciones cruzadas entre profesores.
+      - POST (guardar/editar/eliminar personalizadas): solo para staff; scoped siempre por `profesor_id`
+        en el .filter() de ClasePersonalizada para prevenir ediciones cruzadas entre profesores.
 
     Optimización N+1:
       - asig_map: una query de Asignacion para todos los colegios del profesor (no una por clase)
-      - unidades_map: una query de Unidad cubriendo todos los libros de clases y particulares
+      - unidades_map: una query de Unidad cubriendo todos los libros de clases y personalizadas
       - Acceso O(1) con clave (libro, materia, numero_str)
     """
     if request.method == 'POST' and request.user.is_staff:
         profesor_id = request.POST.get('profesor_id')
 
-        if 'guardar_particular' in request.POST:
+        # El <select> de material envía el id del libro (FK) o 'S' (Socialización).
+        # 'S' / vacío / id inexistente → libro None (Socialización va con unidad='S').
+        material_val = (request.POST.get('material') or '').strip()
+        libro_obj = (
+            NombreLibro.objects.filter(id=material_val).first()
+            if material_val.isdigit() else None
+        )
+
+        if 'guardar_personalizada' in request.POST:
             grado_obj, _ = Grado.objects.get_or_create(nombre=request.POST.get('grado', '').strip())
             materia_obj, _ = Materia.objects.get_or_create(nombre=request.POST.get('materia', '').strip())
-            ClaseParticular.objects.create(
+            ClasePersonalizada.objects.create(
                 profesor_id = profesor_id,
                 estudiante  = request.POST.get('estudiante'),
                 ciudad      = request.POST.get('ciudad'),
@@ -231,16 +251,16 @@ def ver_horario(request):
                 hora_inicio = request.POST.get('hora_inicio'),
                 hora_fin    = request.POST.get('hora_fin'),
                 grado       = grado_obj,
-                material    = request.POST.get('material'),
+                libro       = libro_obj,
                 materia     = materia_obj,
                 unidad      = request.POST.get('unidad'),
             )
-        elif 'editar_particular' in request.POST:
+        elif 'editar_personalizada' in request.POST:
             grado_obj, _ = Grado.objects.get_or_create(nombre=request.POST.get('grado', '').strip())
             materia_obj, _ = Materia.objects.get_or_create(nombre=request.POST.get('materia', '').strip())
             # Scoped to the correct professor to prevent cross-professor edits
-            ClaseParticular.objects.filter(
-                id=request.POST.get('particular_id'),
+            ClasePersonalizada.objects.filter(
+                id=request.POST.get('personalizada_id'),
                 profesor_id=profesor_id,
             ).update(
                 estudiante  = request.POST.get('estudiante'),
@@ -250,14 +270,14 @@ def ver_horario(request):
                 hora_inicio = request.POST.get('hora_inicio'),
                 hora_fin    = request.POST.get('hora_fin'),
                 grado       = grado_obj,
-                material    = request.POST.get('material'),
+                libro       = libro_obj,
                 materia     = materia_obj,
                 unidad      = request.POST.get('unidad'),
             )
-        elif 'eliminar_particular' in request.POST:
+        elif 'eliminar_personalizada' in request.POST:
             # Scoped to the correct professor to prevent cross-professor deletes
-            ClaseParticular.objects.filter(
-                id=request.POST.get('particular_id'),
+            ClasePersonalizada.objects.filter(
+                id=request.POST.get('personalizada_id'),
                 profesor_id=profesor_id,
             ).delete()
 
@@ -270,7 +290,8 @@ def ver_horario(request):
         profesor_id = request.GET.get('profesor_id')
 
     profesores   = Profesor.objects.filter(activo=True).only('id', 'nombre', 'apellido').order_by('nombre')
-    todos_libros = NombreLibro.objects.filter(activo=True).values_list('nombre', flat=True).order_by('nombre')
+    # Objetos (no solo nombres): el <select> de material usa el id como value (FK).
+    todos_libros = NombreLibro.objects.filter(activo=True).only('id', 'nombre').order_by('nombre')
     agrupado_por_fecha = []
 
     if profesor_id:
@@ -305,14 +326,14 @@ def ver_horario(request):
             ):
                 asig_map[(a.colegio_id, a.grado.nombre)].append(a)
 
-        particulares = list(
-            ClaseParticular.objects
+        personalizadas = list(
+            ClasePersonalizada.objects
             .filter(profesor_id=profesor_id)
-            .select_related('materia', 'grado')
+            .select_related('materia', 'grado', 'libro')
             .order_by('fecha')
         )
 
-        # Single batch query covering all books from both classes and particulars
+        # Single batch query covering all books from both classes and personalizadas
         titulos_clases = set()
         for c in clases:
             if c.libro_especial_id:
@@ -321,10 +342,9 @@ def ver_horario(request):
                 t = _libro_para_fecha(asig_map, c.colegio_id, c.bloque.grado.nombre, c.fecha)
                 if t and t != 'Sin Libro':
                     titulos_clases.add(t)
-        titulos_part = {p.material for p in particulares
-                        if p.material and p.material not in ('A', 'S')}
+        titulos_pers = {p.libro.nombre for p in personalizadas if p.libro_id}
 
-        todos_titulos = titulos_clases | titulos_part
+        todos_titulos = titulos_clases | titulos_pers
 
         unidades_map = {}
         if todos_titulos:
@@ -341,8 +361,8 @@ def ver_horario(request):
             libro_titulo = _libro_para_fecha(asig_map, c.colegio_id, grado_nombre, c.fecha)
             temp_dict[c.fecha].append(_construir_entrada_clase(c, libro_titulo, unidades_map))
 
-        for p in particulares:
-            temp_dict[p.fecha].append(_construir_entrada_particular(p, unidades_map))
+        for p in personalizadas:
+            temp_dict[p.fecha].append(_construir_entrada_personalizada(p, unidades_map))
 
         for fecha in sorted(temp_dict.keys()):
             clases_del_dia = sorted(temp_dict[fecha], key=lambda x: x['minutos'])

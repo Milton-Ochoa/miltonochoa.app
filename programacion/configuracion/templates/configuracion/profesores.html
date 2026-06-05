@@ -203,6 +203,12 @@
               <i class="fas fa-edit me-1"></i> Editar
             </button>
           </li>
+          <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDocumentos" id="btnTabDocumentos">
+              <i class="fas fa-folder-open me-1"></i> Documentos
+              <span class="badge bg-secondary ms-1" id="doc_badge" style="display:none">0</span>
+            </button>
+          </li>
         </ul>
 
         <div class="tab-content">
@@ -437,6 +443,39 @@
             </form>
           </div>
 
+          {# ── Tab Documentos ── #}
+          <div class="tab-pane fade" id="tabDocumentos">
+            <div class="border rounded p-3 mb-3 bg-light">
+              <p class="section-title mt-0">Subir documento</p>
+              <div class="input-group input-group-sm">
+                <input type="file" class="form-control" id="doc_input"
+                       accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
+                <button class="btn btn-warning fw-bold" type="button" id="doc_btn_subir" onclick="subirDocumento()">
+                  <i class="fas fa-upload me-1"></i> Subir
+                </button>
+              </div>
+              <small class="text-muted">PDF, imagen (JPG/PNG) o Office (Word/Excel) · máx. 10 MB · sin límite de cantidad.</small>
+              <div id="doc_error" class="text-danger small mt-1" style="display:none"></div>
+            </div>
+
+            <p class="section-title">Archivos del profesor</p>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Archivo</th>
+                    <th class="text-nowrap">Tamaño</th>
+                    <th class="text-nowrap">Subido</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="doc_lista">
+                  <tr><td colspan="4" class="text-center text-muted py-3">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>{# end tab-content #}
       </div>{# end modal-body #}
     </div>
@@ -666,9 +705,132 @@ function abrirGestionar(btn) {
   const matIds = d.profMaterias ? d.profMaterias.split(',') : [];
   $('#edit_materias').val(matIds).trigger('change.select2');
 
+  // Documentos: fijar profesor actual y resetear estado (se cargan al abrir la pestaña)
+  _docProfId = d.profId;
+  _docCargado = false;
+  document.getElementById('doc_badge').style.display = 'none';
+  document.getElementById('doc_error').style.display = 'none';
+  document.getElementById('doc_input').value = '';
+  document.getElementById('doc_lista').innerHTML =
+    '<tr><td colspan="4" class="text-center text-muted py-3">Cargando…</td></tr>';
+
   // Volver al tab Ver
   document.querySelector('[data-bs-target="#tabVer"]').click();
   new bootstrap.Modal(document.getElementById('modalGestionar')).show();
 }
+
+// ── Documentos del profesor (CV, cédula, RUT, …) ──────────
+let _docProfId  = null;
+let _docCargado = false;
+
+function _csrf() {
+  return document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+}
+function _docUrlLista(id)   { return "{% url 'ajax_documentos_profesor' 0 %}".replace('/profesores/0/', '/profesores/' + id + '/'); }
+function _docUrlSubir(id)   { return "{% url 'ajax_subir_documento_profesor' 0 %}".replace('/profesores/0/', '/profesores/' + id + '/'); }
+function _docUrlEliminar(id){ return "{% url 'ajax_eliminar_documento_profesor' 0 %}".replace('/0/eliminar/', '/' + id + '/eliminar/'); }
+
+function _docEscape(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function _renderDocumentos(docs) {
+  const tbody = document.getElementById('doc_lista');
+  const badge = document.getElementById('doc_badge');
+  badge.textContent = docs.length;
+  badge.style.display = docs.length ? '' : 'none';
+
+  if (!docs.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Sin documentos. Sube el primero arriba.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = docs.map(d => `
+    <tr id="doc_fila_${d.id}">
+      <td><a href="${d.url_ver}" target="_blank" class="text-decoration-none">
+            <i class="fas fa-file me-1 text-secondary"></i>${_docEscape(d.nombre)}</a></td>
+      <td class="text-nowrap text-muted small">${d.tamano}</td>
+      <td class="text-nowrap text-muted small">${d.subido_en}<br><span class="text-muted">${_docEscape(d.subido_por)}</span></td>
+      <td class="text-end text-nowrap">
+        <a href="${d.url_descargar}" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Descargar"><i class="fas fa-download"></i></a>
+        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" title="Eliminar" onclick="eliminarDocumento(${d.id})"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+async function cargarDocumentos() {
+  if (!_docProfId) return;
+  try {
+    const res = await fetch(_docUrlLista(_docProfId));
+    const data = await res.json();
+    if (data.ok) { _renderDocumentos(data.documentos); _docCargado = true; }
+  } catch (e) {
+    document.getElementById('doc_lista').innerHTML =
+      '<tr><td colspan="4" class="text-center text-danger py-3">Error al cargar los documentos.</td></tr>';
+  }
+}
+
+async function subirDocumento() {
+  const input = document.getElementById('doc_input');
+  const errEl = document.getElementById('doc_error');
+  const btn   = document.getElementById('doc_btn_subir');
+  errEl.style.display = 'none';
+
+  if (!input.files.length) {
+    errEl.textContent = 'Selecciona un archivo para subir.';
+    errEl.style.display = '';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('archivo', input.files[0]);
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Subiendo…';
+  try {
+    const res = await fetch(_docUrlSubir(_docProfId), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': _csrf() },
+      body: fd,
+    });
+    const data = await res.json();
+    if (data.ok) {
+      input.value = '';
+      await cargarDocumentos();
+    } else {
+      errEl.textContent = data.error || 'No se pudo subir el archivo.';
+      errEl.style.display = '';
+    }
+  } catch (e) {
+    errEl.textContent = 'Error de red al subir el archivo.';
+    errEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-upload me-1"></i> Subir';
+  }
+}
+
+async function eliminarDocumento(docId) {
+  if (!confirm('¿Eliminar este documento permanentemente?')) return;
+  try {
+    const res = await fetch(_docUrlEliminar(docId), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': _csrf() },
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await cargarDocumentos();
+    } else {
+      alert('No se pudo eliminar el documento.');
+    }
+  } catch (e) {
+    alert('Error de red al eliminar el documento.');
+  }
+}
+
+// Cargar la lista la primera vez que se abre la pestaña Documentos por profesor.
+document.getElementById('btnTabDocumentos').addEventListener('shown.bs.tab', function () {
+  if (!_docCargado) cargarDocumentos();
+});
 </script>
 {% endblock %}

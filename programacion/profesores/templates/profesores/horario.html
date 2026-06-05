@@ -44,7 +44,7 @@
         </select>
     </div>
     {% if request.user.is_staff %}
-    <button type="button" class="btn btn-warning btn-sm ms-3 text-dark fw-bold border border-warning" onclick="abrirNuevoParticular()">
+    <button type="button" class="btn btn-warning btn-sm ms-3 text-dark fw-bold border border-warning" onclick="abrirNuevoPersonalizada()">
         <i class="fas fa-plus-circle me-1"></i> Personalizada
     </button>
     {% endif %}
@@ -70,8 +70,8 @@ Agenda Transpuesta.
 Layout: columna-labels (fija a la izquierda) + contenedor-datos (scroll horizontal).
 Filas = etiquetas (Colegio, Ciudad, Hora, Grado, Material, Asignatura, Unidad, Informe).
 Columnas = una por clase del día, ordenadas por (fecha, hora_inicio).
-Clases de colegios y clases particulares se mezclan cronológicamente.
-raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-poblar el modal.
+Clases de colegios y clases personalizadaes se mezclan cronológicamente.
+raw_data en cada columna-clase es usado por abrirEditarPersonalizada() para pre-poblar el modal.
 {% endcomment %}
 {% if agrupado %}
 <div class="wrapper-agenda shadow-sm{% if usuario_bloqueado %} sin-header{% endif %}">
@@ -97,24 +97,24 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
                 {% for item in grupo.clases %}
                 <div class="columna-clase">
                     <div class="celda position-relative">
-                        <a href="{{ item.maps_link }}" target="_blank" class="link-azul text-truncate" style="max-width: 85%;">{% if item.es_particular %}{{ item.particular_obj.estudiante }} (Part.){% else %}{{ item.clase.colegio.nombre }}{% endif %}</a>
-                        {% if request.user.is_staff and item.es_particular %}
-                        <button class="btn btn-sm text-warning p-0 border-0 position-absolute" style="right: 6px;" title="Editar Clase Particular"
-                            onclick="abrirEditarParticular('{{ item.particular_id }}', '{{ item.raw_data.estudiante|escapejs }}', '{{ item.raw_data.ciudad|escapejs }}', '{{ item.maps_link|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.hora_inicio }}', '{{ item.raw_data.hora_fin }}', '{{ item.raw_data.grado|escapejs }}', '{{ item.raw_data.material|escapejs }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.raw_data.unidad|escapejs }}')">
+                        <a href="{{ item.maps_link }}" target="_blank" class="link-azul text-truncate" style="max-width: 85%;">{% if item.es_personalizada %}{{ item.personalizada_obj.estudiante }} (Pers.){% else %}{{ item.clase.colegio.nombre }}{% endif %}</a>
+                        {% if request.user.is_staff and item.es_personalizada %}
+                        <button class="btn btn-sm text-warning p-0 border-0 position-absolute" style="right: 6px;" title="Editar Clase Personalizada"
+                            onclick="abrirEditarPersonalizada('{{ item.personalizada_id }}', '{{ item.raw_data.estudiante|escapejs }}', '{{ item.raw_data.ciudad|escapejs }}', '{{ item.maps_link|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.hora_inicio }}', '{{ item.raw_data.hora_fin }}', '{{ item.raw_data.grado|escapejs }}', '{{ item.raw_data.material|escapejs }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.raw_data.unidad|escapejs }}')">
                             <i class="fas fa-edit"></i>
                         </button>
                         {% endif %}
                     </div>
-                    <div class="celda">{% if item.es_particular %}{{ item.particular_obj.ciudad }}{% else %}{{ item.clase.colegio.ciudad }}{% endif %}</div>
-                    <div class="celda fw-bold text-dark">{% if item.es_particular %}{{ item.particular_obj.hora }}{% else %}{{ item.clase.bloque.hora }}{% endif %}</div>
-                    <div class="celda">{% if item.es_particular %}{{ item.particular_obj.grado }}{% else %}{{ item.clase.bloque.grado }}{% endif %}</div>
+                    <div class="celda">{% if item.es_personalizada %}{{ item.personalizada_obj.ciudad }}{% else %}{{ item.clase.colegio.ciudad }}{% endif %}</div>
+                    <div class="celda fw-bold text-dark">{% if item.es_personalizada %}{{ item.personalizada_obj.hora }}{% else %}{{ item.clase.bloque.hora }}{% endif %}</div>
+                    <div class="celda">{% if item.es_personalizada %}{{ item.personalizada_obj.grado }}{% else %}{{ item.clase.bloque.grado }}{% endif %}</div>
                     <div class="columna-clase">
                         <div class="celda">
                             <span class="celda-contenido" title="{{ item.material }}">{{ item.material }}</span>
                         </div>
         
                         <div class="celda">
-                            {% if item.es_particular %}{% materia_badge item.particular_obj.materia %}{% else %}{% materia_badge item.clase.materia %}{% endif %}
+                            {% if item.es_personalizada %}{% materia_badge item.personalizada_obj.materia %}{% else %}{% materia_badge item.clase.materia %}{% endif %}
                         </div>
         
                         <div class="celda">
@@ -126,11 +126,11 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
 
                     <!-- Fila Informe -->
                     <div class="celda justify-content-center">
-                        {% if item.es_particular %}
-                        {% with inf=item.particular_obj.informe %}
+                        {% if item.es_personalizada %}
+                        {% with inf=item.personalizada_obj.informe %}
                         <button class="btn btn-sm {% if inf and inf.completado %}btn-success{% else %}btn-outline-secondary{% endif %} py-0 px-2"
                                 title="{% if inf and inf.completado %}Ver / Editar informe{% else %}Crear informe{% endif %}"
-                                onclick="abrirInforme(null, '{{ item.particular_id }}', '{{ item.particular_obj.estudiante|escapejs }}', '{{ item.particular_obj.grado|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.unidad_full|escapejs }}', '{{ item.material|escapejs }}', this)">
+                                onclick="abrirInforme(null, '{{ item.personalizada_id }}', '{{ item.personalizada_obj.estudiante|escapejs }}', '{{ item.personalizada_obj.grado|escapejs }}', '{{ item.raw_data.fecha }}', '{{ item.raw_data.materia|escapejs }}', '{{ item.unidad_full|escapejs }}', '{{ item.material|escapejs }}', this)">
                             <i class="fas fa-{% if inf and inf.completado %}check{% else %}plus{% endif %}"></i>
                             {% if inf and inf.completado %}Subido{% else %}Pendiente{% endif %}
                         </button>
@@ -179,16 +179,16 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
 </script>
 
 {% if request.user.is_staff and profesor_sel %}
-<div class="modal fade" id="modalParticular" tabindex="-1">
+<div class="modal fade" id="modalPersonalizada" tabindex="-1">
     <div class="modal-dialog modal-fullscreen-sm-down modal-lg">
-        <form method="POST" id="formParticular" class="modal-content">
+        <form method="POST" id="formPersonalizada" class="modal-content">
             {% csrf_token %}
-            <input type="hidden" name="guardar_particular" id="modal_part_accion" value="1">
-            <input type="hidden" name="particular_id" id="modal_part_id" value="">
+            <input type="hidden" name="guardar_personalizada" id="modal_part_accion" value="1">
+            <input type="hidden" name="personalizada_id" id="modal_part_id" value="">
             <input type="hidden" name="profesor_id" value="{{ profesor_sel }}">
             
             <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title fw-bold" id="tituloModalPart"><i class="fas fa-chalkboard-teacher"></i> Programar Clase Particular</h5>
+                <h5 class="modal-title fw-bold" id="tituloModalPart"><i class="fas fa-chalkboard-teacher"></i> Programar Clase Personalizada</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             
@@ -239,7 +239,7 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
                             <option value="">Seleccionar libro...</option>
                             <option value="S">Socialización de Simulacro</option>
                             {% for libro in todos_libros %}
-                            <option value="{{ libro }}">{{ libro }}</option>
+                            <option value="{{ libro.id }}">{{ libro.nombre }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -269,28 +269,28 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
 </div>
 
 <script>
-    const URL_ASIGNATURAS     = "{% url 'ajax_asignaturas_particular' %}";
-    const URL_UNIDADES        = "{% url 'ajax_unidades_particular' %}";
+    const URL_ASIGNATURAS     = "{% url 'ajax_asignaturas_personalizada' %}";
+    const URL_UNIDADES        = "{% url 'ajax_unidades_personalizada' %}";
 
     // ── Abrir modal nuevo ──
-    function abrirNuevoParticular() {
-        document.getElementById('modal_part_accion').name = "guardar_particular";
+    function abrirNuevoPersonalizada() {
+        document.getElementById('modal_part_accion').name = "guardar_personalizada";
         document.getElementById('modal_part_id').value    = "";
-        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-chalkboard-teacher"></i> Programar Clase Particular';
+        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-chalkboard-teacher"></i> Programar Clase Personalizada';
         document.getElementById('btnEliminarPart').classList.add('d-none');
 
-        document.getElementById('formParticular').reset();
+        document.getElementById('formPersonalizada').reset();
         document.getElementById('modal_asignatura_part').innerHTML = '<option value="">Seleccionar material primero...</option>';
         document.getElementById('modal_unidad_part').innerHTML     = '<option value="">Seleccionar materia primero...</option>';
 
-        new bootstrap.Modal(document.getElementById('modalParticular')).show();
+        new bootstrap.Modal(document.getElementById('modalPersonalizada')).show();
     }
 
     // ── Abrir modal editar ──
-    async function abrirEditarParticular(id, estudiante, ciudad, mapa, fecha, horaInicio, horaFin, grado, material, materia, unidad) {
-        document.getElementById('modal_part_accion').name = "editar_particular";
+    async function abrirEditarPersonalizada(id, estudiante, ciudad, mapa, fecha, horaInicio, horaFin, grado, material, materia, unidad) {
+        document.getElementById('modal_part_accion').name = "editar_personalizada";
         document.getElementById('modal_part_id').value    = id;
-        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-edit"></i> Editar Clase Particular';
+        document.getElementById('tituloModalPart').innerHTML = '<i class="fas fa-edit"></i> Editar Clase Personalizada';
         document.getElementById('btnEliminarPart').classList.remove('d-none');
 
         document.getElementById('input_estudiante').value   = estudiante;
@@ -337,13 +337,13 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
             });
         }
 
-        new bootstrap.Modal(document.getElementById('modalParticular')).show();
+        new bootstrap.Modal(document.getElementById('modalPersonalizada')).show();
     }
 
     function confirmarEliminarPart() {
-        if (confirm('¿Estás seguro de que deseas eliminar permanentemente esta clase particular?')) {
-            document.getElementById('modal_part_accion').name = "eliminar_particular";
-            document.getElementById('formParticular').submit();
+        if (confirm('¿Estás seguro de que deseas eliminar permanentemente esta clase personalizada?')) {
+            document.getElementById('modal_part_accion').name = "eliminar_personalizada";
+            document.getElementById('formPersonalizada').submit();
         }
     }
 
@@ -483,13 +483,13 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
     const URL_OBTENER_INFORME = "{% url 'ajax_obtener_informe' %}";
     const URL_GUARDAR_INFORME = "{% url 'ajax_guardar_informe' %}";
 
-    let _inf = { clase_id: null, particular_id: null, fecha_iso: null,
+    let _inf = { clase_id: null, personalizada_id: null, fecha_iso: null,
                  colegio_nombre: '', grado: '', materia: '', tematica: '', material: '' };
     let _inf_btn = null;
 
-    async function abrirInforme(claseId, particularId, colegio, grado, fechaIso, materia, tematica, material, btn) {
+    async function abrirInforme(claseId, personalizadaId, colegio, grado, fechaIso, materia, tematica, material, btn) {
         _inf_btn = btn || null;
-        _inf = { clase_id: claseId, particular_id: particularId, fecha_iso: fechaIso,
+        _inf = { clase_id: claseId, personalizada_id: personalizadaId, fecha_iso: fechaIso,
                  colegio_nombre: colegio, grado: grado, materia: materia,
                  tematica: tematica, material: material };
 
@@ -512,7 +512,7 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
 
         new bootstrap.Modal(document.getElementById('modalInforme')).show();
 
-        const params = claseId ? `clase_id=${claseId}` : `particular_id=${particularId}`;
+        const params = claseId ? `clase_id=${claseId}` : `personalizada_id=${personalizadaId}`;
         try {
             const res  = await fetch(`${URL_OBTENER_INFORME}?${params}`);
             const data = await res.json();
@@ -545,7 +545,7 @@ raw_data en cada columna-clase es usado por abrirEditarParticular() para pre-pob
 
         const body = {
             clase_id:        _inf.clase_id,
-            particular_id:   _inf.particular_id,
+            personalizada_id:   _inf.personalizada_id,
             profesor_id:     '{{ profesor_sel }}',
             fecha_iso:       _inf.fecha_iso,
             colegio_nombre:  _inf.colegio_nombre,

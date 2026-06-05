@@ -139,7 +139,7 @@ cada modelo declara explícitamente su `Meta.db_table` con un nombre de dominio
 limpio, en **plural snake_case**. Convención obligatoria al crear un modelo nuevo:
 
 - **Modelos del área `programacion`:** prefijo `prog_` → `prog_<plural>`
-  (ej. `prog_colegios`, `prog_clases_particulares`, `prog_historial_cambios`).
+  (ej. `prog_colegios`, `prog_clases_personalizadas`, `prog_historial_cambios`).
   El prefijo agrupa las tablas del área en el navegador de BD y reserva el
   namespace para cuando convivan `logistica`/`financiera`.
 - **Modelos globales (`usuarios/`):** prefijo de dominio propio (`usuarios_…`),
@@ -150,14 +150,15 @@ Registro actual (modelo → tabla):
 
 | Modelo | Tabla | | Modelo | Tabla |
 |---|---|---|---|---|
-| `Materia` | `prog_materias` | | `ClaseParticular` | `prog_clases_particulares` |
+| `Materia` | `prog_materias` | | `ClasePersonalizada` | `prog_clases_personalizadas` |
 | `NombreLibro` | `prog_libros` | | `HistorialCambio` | `prog_historial_cambios` |
 | `Unidad` | `prog_unidades` | | `Informe` | `prog_informes` |
 | `Colegio` | `prog_colegios` | | `AlertaAuditoria` | `prog_alertas_auditoria` |
 | `ColegioAnio` | `prog_colegio_anios` | | `PagoRealizado` | `prog_pagos` |
 | `Profesor` | `prog_profesores` | | `Tarea` | `prog_tareas` |
-| `Grado` | `prog_grados` | | `UsuarioColegio` | `usuarios_colegio` |
-| `Bloque` | `prog_bloques` | | `UsuarioProfesor` | `usuarios_profesor` |
+| `DocumentoProfesor` | `prog_profesores_documentos` | | `UsuarioColegio` | `usuarios_colegio` |
+| `Grado` | `prog_grados` | | `UsuarioProfesor` | `usuarios_profesor` |
+| `Bloque` | `prog_bloques` | | | |
 | | | | `PerfilEmpleado` | `usuarios_empleados` |
 | | | | `ErrorCliente` | `usuarios_errores_cliente` |
 | `Asignacion` | `prog_asignaciones` | | `SolicitudViatico` | `prog_viaticos` |
@@ -172,6 +173,24 @@ Registro actual (modelo → tabla):
   `prog_alertas_auditoria_colegios_implicados`. No requiere operación manual.
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
+
+## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
+
+Adjuntos de la **ficha del profesor** (CV, cédula, RUT, …) gestionados desde la pestaña
+**Documentos** del modal "Gestionar" en **Configuración → Profesores** (`configuracion_profesores`).
+**Sin límite de cantidad** por profesor; cada archivo guarda historial (`subido_por`/`subido_en`).
+Modelo `DocumentoProfesor` (FK→`Profesor` con `on_delete=CASCADE`, `related_name='documentos'`).
+
+- **Subida/listado/borrado por AJAX** (el modal no recarga): `ajax_documentos_profesor` (GET,
+  lista JSON), `ajax_subir_documento_profesor` (POST multipart), `ajax_eliminar_documento_profesor`
+  (POST). Gate `es_personal_programacion` (`solo_superusuario` en `configuracion.views`).
+- **Validación** en `programacion/configuracion/documentos.py:validar_documento` — más permisiva que
+  los soportes de pago: admite **PDF, imagen (JPG/PNG) y Office (.doc/.docx/.xls/.xlsx)**, ≤10 MB.
+- **Almacenamiento** idéntico a los soportes de pago: `FileField` sobre `STORAGES['default']`
+  (disco en dev, Supabase en prod), nombre limpio vía `_documento_profesor_upload_to` →
+  `profesores/<slug-profesor>/<slug-archivo><ext>`. **Nunca** se exponen URLs firmadas: la descarga
+  la proxia `documento_profesor_descargar` (`FileResponse`, `?inline=1` abre en pestaña, por defecto
+  descarga), con el mismo gate de área. Borrar un documento elimina el archivo del storage y la fila.
 
 ## Calendario A / B y periodo académico
 
@@ -399,7 +418,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 306 tests OK
+python manage.py test                        # baseline: 289 tests OK
 python manage.py runserver
 ```
 
@@ -442,10 +461,34 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (306 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (289 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
+
+### Flujo de ramas (OBLIGATORIO — se trabaja en varios computadores)
+
+**Nunca** se commitea directo a `dev` ni a `main`. El trabajo siempre va en una **rama
+de feature** que luego se mergea por **PR a `dev`**. Esto evita conflictos y pérdidas al
+alternar entre máquinas. Pasos antes de empezar cualquier cambio:
+
+1. **Sincroniza `dev` con GitHub primero** (parte siempre de una base actualizada, no de
+   una copia vieja del otro computador):
+   ```bash
+   git checkout dev
+   git fetch origin
+   git pull --ff-only origin dev        # si falla por divergencia, reconcilia antes de seguir
+   ```
+2. **Crea una rama** descriptiva según el cambio (`feat/…`, `fix/…`, `docs/…`,
+   `refactor/…`), p. ej. `git checkout -b feat/documentos-profesor`.
+3. Trabaja, commitea en esa rama y **haz push** (`git push -u origin <rama>`).
+4. **Abre un PR hacia `dev`** (`gh pr create --base dev`). El merge a `dev` se hace por PR,
+   no a mano. `dev` se promociona a `main` (deploy a Railway) por su propio PR.
+
+- `main` es producción (push a `main` → Railway auto). `dev` es la rama de integración.
+- Si ya empezaste a editar sobre `dev` por error y **aún no commiteaste**, no pasa nada:
+  crea la rama desde ahí (`git checkout -b <rama>`) y los cambios del working tree se
+  llevan a la nueva rama, dejando `dev` limpio.
 
 ### Mensajes de commit (evitar el `@` espurio)
 
