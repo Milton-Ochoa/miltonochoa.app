@@ -257,6 +257,97 @@ def obtener_unidades(request):
 # ─────────────────────────────────────────────────────────────
 # HELPERS PRIVADOS
 # ─────────────────────────────────────────────────────────────
+def _es_clase_regular(es_evento, es_cancelada, libro_especial_id, unidad, materia_nombre):
+    """
+    True si la clase cuenta en la numeración secuencial de su materia.
+
+    Una clase "regular" es: no evento, no cancelada, sin libro_especial (no material
+    asignado), con materia asignada y unidad numérica distinta de 'S' (no socialización).
+    Recibe primitivos para servir tanto al estado guardado (objeto Clase) como al
+    estado viejo/nuevo del POST en `_guardar_clase`.
+    """
+    if es_evento or es_cancelada:
+        return False
+    if libro_especial_id is not None:
+        return False
+    if not materia_nombre:
+        return False
+    if not unidad or str(unidad) == 'S' or not str(unidad).isdigit():
+        return False
+    return True
+
+
+def _contar_futuras_renumerables(sel_col, grado_nombre, materia_nombre, fecha_obj,
+                                 hora_inicio_bloque):
+    """
+    Cuenta las clases futuras renumerables de una materia en un grado, desde el bloque
+    de referencia (fecha + hora), acotadas al rango de la Asignacion vigente (mismo libro).
+
+    Incluye clases posteriores a la fecha y clases del mismo día en bloques con
+    hora_inicio posterior (no renumera bloques anteriores del mismo día). La clase de
+    referencia no se incluye nunca (su bloque tiene hora == hora_inicio_bloque, no >);
+    en el flujo de edición ya está guardada y en el de eliminación ya fue borrada.
+    """
+    # El rango se toma de la Asignacion que cubre la fecha (cualquier partición). Si no
+    # hay Asignacion (datos sin configurar), no se impone tope superior de fecha.
+    asig_actual = Asignacion.objects.filter(
+        colegio=sel_col,
+        grado__nombre=grado_nombre,
+        fecha_inicio__lte=fecha_obj,
+        fecha_fin__gte=fecha_obj,
+    ).first()
+    qs = Clase.objects.filter(
+        Q(fecha__gt=fecha_obj) |
+        Q(fecha=fecha_obj, bloque__hora_inicio__gt=hora_inicio_bloque),
+        colegio=sel_col,
+        bloque__grado__nombre=grado_nombre,
+        materia__nombre=materia_nombre,
+        es_evento=False,
+        cancelada=False,
+        libro_especial__isnull=True,
+    ).exclude(unidad='S')
+    if asig_actual:
+        qs = qs.filter(fecha__lte=asig_actual.fecha_fin)
+    return qs.count()
+
+
+def _recalcular_por_eliminacion(sel_col, clase):
+    """
+    Al eliminar una clase regular, las clases futuras de su misma materia/grado deben
+    renumerarse desde la unidad que ocupaba la clase borrada (mismo caso que
+    'materia_quitada' al editar). Retorna la lista `recalcular` (0 o 1 ítem) que
+    `ajax_guardar_clase` envía al frontend para ofrecer el modal de confirmación.
+
+    Requiere que `clase` venga con select_related('materia', 'bloque__grado').
+    """
+    es_regular = _es_clase_regular(
+        clase.es_evento,
+        clase.cancelada,
+        clase.libro_especial_id,
+        clase.unidad,
+        clase.materia.nombre if clase.materia else None,
+    )
+    if not es_regular:
+        return []
+
+    grado_nombre = clase.bloque.grado.nombre
+    fecha_obj    = clase.fecha
+    n = _contar_futuras_renumerables(
+        sel_col, grado_nombre, clase.materia.nombre, fecha_obj, clase.bloque.hora_inicio,
+    )
+    if n <= 0:
+        return []
+    return [{
+        'grado':          grado_nombre,
+        'materia':        clase.materia.nombre,
+        'unidad_inicio':  int(clase.unidad),
+        'fecha_desde':    fecha_obj.isoformat(),
+        'bloque_excluir': str(clase.bloque_id),
+        'n_clases':       n,
+        'motivo':         'materia_quitada',
+    }]
+
+
 def _guardar_clase(request, sel_col):
     """
     Guarda (create/update/delete) una clase a partir del POST del modal de clase.
@@ -375,21 +466,10 @@ def _guardar_clase(request, sel_col):
     new_unidad   = unidad_valor
     new_libro_esp_id = libro_especial_obj.id if libro_especial_obj else None
 
-    def _es_regular(es_ev, es_can, libro_esp_id, unidad, materia_nombre):
-        if es_ev or es_can:
-            return False
-        if libro_esp_id is not None:
-            return False
-        if not materia_nombre:
-            return False
-        if not unidad or str(unidad) == 'S' or not str(unidad).isdigit():
-            return False
-        return True
-
-    old_regular = (clase_anterior is not None) and _es_regular(
+    old_regular = (clase_anterior is not None) and _es_clase_regular(
         old_es_evento, old_es_cancelada, old_libro_esp_id, old_unidad, old_materia,
     )
-    new_regular = _es_regular(
+    new_regular = _es_clase_regular(
         es_evento, es_cancelada, new_libro_esp_id, new_unidad, new_materia,
     )
 
@@ -400,41 +480,10 @@ def _guardar_clase(request, sel_col):
         fecha_obj    = datetime.strptime(fecha_clase, '%Y-%m-%d').date() if isinstance(fecha_clase, str) else fecha_clase
         hora_inicio_bloque = bloque_obj.hora_inicio
 
-        # Determinar el libro vigente en (grado, fecha) para no renumerar clases que
-        # caen en otra Asignacion (otro libro). El rango de fechas se toma del registro
-        # de Asignacion (cualquier partición: ene-jun/jul-dic, ene-ago/sep-dic, varios
-        # libros sucesivos, etc.). Si no hay Asignacion (datos sin configurar), se hace
-        # fallback al comportamiento previo (sin tope superior de fecha).
-        asig_actual = Asignacion.objects.filter(
-            colegio=sel_col,
-            grado__nombre=grado_nombre,
-            fecha_inicio__lte=fecha_obj,
-            fecha_fin__gte=fecha_obj,
-        ).first()
-        fecha_hasta = asig_actual.fecha_fin if asig_actual else None
-
         def _futuras(materia_nombre):
-            """
-            Cuenta clases futuras renumerables de una materia desde el bloque editado,
-            acotadas al rango de la Asignacion vigente (mismo libro).
-
-            Incluye: clases posteriores a la fecha, y clases del mismo día en bloques
-            con hora_inicio posterior (para no renumerar bloques anteriores del mismo día).
-            Excluye: el bloque que se acaba de guardar (bloque_id, fecha_obj).
-            """
-            qs = Clase.objects.filter(
-                Q(fecha__gt=fecha_obj) |
-                Q(fecha=fecha_obj, bloque__hora_inicio__gt=hora_inicio_bloque),
-                colegio=sel_col,
-                bloque__grado__nombre=grado_nombre,
-                materia__nombre=materia_nombre,
-                es_evento=False,
-                cancelada=False,
-                libro_especial__isnull=True,
-            ).exclude(unidad='S')
-            if fecha_hasta:
-                qs = qs.filter(fecha__lte=fecha_hasta)
-            return qs.count()
+            return _contar_futuras_renumerables(
+                sel_col, grado_nombre, materia_nombre, fecha_obj, hora_inicio_bloque,
+            )
 
         misma_materia = old_regular and new_regular and old_materia == new_materia
         misma_unidad  = misma_materia and str(old_unidad) == str(new_unidad)
@@ -535,21 +584,29 @@ def ajax_guardar_clase(request, colegio_id):
             return JsonResponse({'error': 'Fecha inválida'}, status=400)
 
     if request.POST.get('eliminar_clase') == '1':
-        clase_a_eliminar = Clase.objects.filter(
-            colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase,
-        ).first()
+        clase_a_eliminar = (
+            Clase.objects
+            .select_related('materia', 'bloque__grado')
+            .filter(colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase)
+            .first()
+        )
+        # Calcular el recálculo ANTES de borrar (necesita la materia/unidad de la clase):
+        # eliminar una clase regular deja un hueco y las futuras de esa materia deben
+        # renumerarse desde la unidad que ocupaba la borrada.
+        recalcular = _recalcular_por_eliminacion(sel_col, clase_a_eliminar) if clase_a_eliminar else []
         if clase_a_eliminar:
             registrar_cambio(request, 'eliminar', clase_a_eliminar, colegio=sel_col)
-        Clase.objects.filter(
-            colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase,
-        ).delete()
+            clase_a_eliminar.delete()
         cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))
         cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
         if is_htmx:
             resp = HttpResponse('')  # celda vacía
-            resp['HX-Trigger'] = json.dumps({'showToast': {'msg': 'Clase eliminada', 'level': 'warning'}})
+            triggers = {'showToast': {'msg': 'Clase eliminada', 'level': 'warning'}}
+            if recalcular:
+                triggers['recalcular'] = recalcular
+            resp['HX-Trigger'] = json.dumps(triggers)
             return resp
-        return JsonResponse({'ok': True, 'eliminada': True, 'recalcular': []})
+        return JsonResponse({'ok': True, 'eliminada': True, 'recalcular': recalcular})
 
     recalcular = _guardar_clase(request, sel_col)
     cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))

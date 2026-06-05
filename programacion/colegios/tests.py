@@ -771,6 +771,37 @@ class AjaxGuardarClaseHtmxTest(TestCase):
         trigger = json.loads(r.get('HX-Trigger', '{}'))
         self.assertEqual(trigger.get('showToast', {}).get('level'), 'warning')
 
+    def test_eliminar_clase_regular_ofrece_recalcular(self):
+        # Eliminar una clase regular con clases futuras de la misma materia debe ofrecer
+        # renumerar esas futuras desde la unidad que ocupaba la borrada (materia_quitada).
+        Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 22),
+            materia=self.materia, profesor=self.profesor, unidad='2',
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        self.assertEqual(r.status_code, 200)
+        trigger = json.loads(r.get('HX-Trigger', '{}'))
+        self.assertIn('recalcular', trigger)
+        item = trigger['recalcular'][0]
+        self.assertEqual(item['motivo'], 'materia_quitada')
+        self.assertEqual(item['unidad_inicio'], 1)
+        self.assertEqual(item['n_clases'], 1)
+        self.assertEqual(item['materia'], 'Física')
+
+    def test_eliminar_clase_sin_futuras_no_ofrece_recalcular(self):
+        # Sin clases futuras de la materia, eliminar no dispara el modal de recálculo.
+        Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        trigger = json.loads(r.get('HX-Trigger', '{}'))
+        self.assertNotIn('recalcular', trigger)
+
     def test_sin_permiso_devuelve_403(self):
         user_normal = User.objects.create_user('normal_htmx', password='pass')
         self.client.login(username='normal_htmx', password='pass')
