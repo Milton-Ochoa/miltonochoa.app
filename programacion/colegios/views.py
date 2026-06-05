@@ -505,7 +505,7 @@ def ajax_guardar_clase(request, colegio_id):
         toasts y datos de recálculo. Sin recarga de página.
     - Si no: retorna JSON legacy (compatibilidad con código antiguo).
     """
-    if not request.user.is_staff:
+    if not request.es_personal_programacion:
         return JsonResponse({'error': 'Sin permiso'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -570,7 +570,7 @@ def ajax_guardar_clase(request, colegio_id):
             'clase':      clase,
             'bloque_id':  bloque_id,
             'fecha_str':  fecha_clase,
-            'is_staff':   request.user.is_staff,
+            'is_staff':   request.es_personal_programacion,
         })
         resp['HX-Trigger'] = json.dumps(triggers)
         return resp
@@ -588,7 +588,7 @@ def ajax_recalcular_secuencia(request, colegio_id):
     clase que disparó el recálculo. Ordena por (fecha, hora_inicio) para garantizar
     una numeración cronológica correcta. Usa bulk_update para evitar N queries.
     """
-    if not request.user.is_staff:
+    if not request.es_personal_programacion:
         return JsonResponse({'error': 'Sin permiso'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -1012,7 +1012,7 @@ def dashboard_colegios(request):
         ctx['sel_col'] = sel_col
 
         if request.method == 'POST' and 'guardar_clase' in request.POST:
-            if request.user.is_staff:
+            if request.es_personal_programacion:
                 _guardar_clase(request, sel_col)
             return redirect(request.get_full_path())
 
@@ -1082,7 +1082,7 @@ def dashboard_colegios(request):
     ctx['usuario_bloqueado'] = bool(perfil_col)
 
     # Alertas de auditoría vigentes para el colegio seleccionado
-    if request.user.is_staff and ctx.get('sel_col'):
+    if request.es_personal_programacion and ctx.get('sel_col'):
         from programacion.auditoria.models import AlertaAuditoria
         from programacion.auditoria.engine import sincronizar
 
