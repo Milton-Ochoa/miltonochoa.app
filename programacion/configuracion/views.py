@@ -1,8 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test, login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse
 from django.db.models import Count, Prefetch
+from django.template.defaultfilters import filesizeformat
+from django.urls import reverse
 from datetime import date
+import os
 import json
 import re
 
@@ -11,7 +14,8 @@ import re
 _HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$')
 
 from .models import (NombreLibro, Materia, Unidad, Colegio, ColegioAnio,
-                     Profesor, periodo_por_defecto)
+                     Profesor, DocumentoProfesor, periodo_por_defecto)
+from .documentos import validar_documento
 from .forms import ColegioForm, ProfesorForm
 from .colombia_geo import DEPARTAMENTOS, DEPARTAMENTOS_CIUDADES, ciudades_de
 from usuarios.ratelimit import rate_limit
@@ -484,3 +488,85 @@ def configuracion_profesores(request):
         'departamentos_json':    DEPARTAMENTOS_CIUDADES,
         'departamentos':         DEPARTAMENTOS,
     })
+
+
+# ─────────────────────────────────────────────────────────────
+# DOCUMENTOS DE PROFESOR (CV, cédula, RUT, …)
+# ─────────────────────────────────────────────────────────────
+#
+# Adjuntos sin límite de cantidad por profesor. Subida/listado/borrado vía AJAX
+# (el modal "Gestionar" no recarga la página); la descarga se proxia por una
+# vista protegida (igual que los soportes de pago), nunca por URL pública.
+
+def _documento_a_dict(request, doc):
+    """Serializa un DocumentoProfesor para el JSON del modal (incluye URLs de proxy)."""
+    base = reverse('documento_profesor_descargar', args=[doc.id], urlconf=request.urlconf)
+    try:
+        tam = filesizeformat(doc.archivo.size)
+    except (OSError, ValueError):
+        tam = '—'
+    return {
+        'id':         doc.id,
+        'nombre':     doc.nombre_original or os.path.basename(doc.archivo.name),
+        'tamano':     tam,
+        'subido_por': doc.subido_por.get_username() if doc.subido_por else '—',
+        'subido_en':  doc.subido_en.strftime('%Y-%m-%d %H:%M'),
+        'url_ver':       f'{base}?inline=1',
+        'url_descargar': base,
+    }
+
+
+@solo_superusuario
+@rate_limit(max_calls=120, periodo=60)
+def ajax_documentos_profesor(request, profesor_id):
+    """Lista (JSON) los documentos de un profesor para poblar la pestaña del modal."""
+    profesor = get_object_or_404(Profesor, id=profesor_id)
+    docs = [_documento_a_dict(request, d) for d in profesor.documentos.all()]
+    return JsonResponse({'ok': True, 'documentos': docs})
+
+
+@solo_superusuario
+@rate_limit(max_calls=60, periodo=60)
+def ajax_subir_documento_profesor(request, profesor_id):
+    """Adjunta un archivo a la ficha del profesor (PDF/imagen/Office, ≤10 MB)."""
+    if request.method != 'POST':
+        return JsonResponse({'ok': False}, status=405)
+    profesor = get_object_or_404(Profesor, id=profesor_id)
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        return JsonResponse({'ok': False, 'error': 'Selecciona un archivo para subir.'})
+    error = validar_documento(archivo)
+    if error:
+        return JsonResponse({'ok': False, 'error': error})
+    doc = DocumentoProfesor.objects.create(
+        profesor=profesor,
+        archivo=archivo,
+        nombre_original=archivo.name,
+        subido_por=request.user,
+    )
+    return JsonResponse({'ok': True, 'documento': _documento_a_dict(request, doc)})
+
+
+@solo_superusuario
+@rate_limit(max_calls=120, periodo=60)
+def ajax_eliminar_documento_profesor(request, documento_id):
+    """Elimina un documento del profesor (borra el archivo en storage y la fila)."""
+    if request.method != 'POST':
+        return JsonResponse({'ok': False}, status=405)
+    doc = get_object_or_404(DocumentoProfesor, id=documento_id)
+    # Borrar primero el archivo del storage (S3/disco), luego la fila.
+    doc.archivo.delete(save=False)
+    doc.delete()
+    return JsonResponse({'ok': True})
+
+
+@solo_superusuario
+def documento_profesor_descargar(request, documento_id):
+    """Ver (``?inline=1``) o descargar un documento de profesor vía proxy protegido.
+
+    No se exponen URLs firmadas: el gate de permiso queda server-side e idéntico en
+    dev y prod (mismo criterio que los soportes de pago)."""
+    doc = get_object_or_404(DocumentoProfesor, id=documento_id)
+    inline = request.GET.get('inline') == '1'
+    nombre = os.path.basename(doc.archivo.name)
+    return FileResponse(doc.archivo.open('rb'), as_attachment=not inline, filename=nombre)

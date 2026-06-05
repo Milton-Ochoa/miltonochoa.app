@@ -1,16 +1,26 @@
 """
 Tests — app: configuracion
-Modelos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor
+Modelos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor, DocumentoProfesor
 """
+import shutil
+import tempfile
 from datetime import date
 
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from programacion.configuracion.models import (
     Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor,
-    periodo_por_defecto,
+    DocumentoProfesor, periodo_por_defecto,
 )
+
+# Almacenamiento local en tmp para los tests de documentos: NUNCA tocar Supabase.
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP_DOCS = tempfile.mkdtemp()
 
 
 # ── NombreLibro ──────────────────────────────────────────────
@@ -274,3 +284,89 @@ class ConfiguracionColegiosCalendarioViewTest(TestCase):
         self.assertEqual(ctx_col.calendario, Colegio.Calendario.B)
         self.assertEqual(ctx_col.todos_anios[0].periodo_label, '2025-2026')
         self.assertIn('2025-2026', ctx_col.anios_json)
+
+# ── DocumentoProfesor (subida/listado/descarga/borrado) ──────
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_DOCS, STORAGES=_STORAGE_LOCAL)
+class DocumentoProfesorTest(TestCase):
+    """Adjuntos de la ficha del profesor: AJAX para subir/listar/borrar y proxy de descarga.
+
+    Los archivos se fuerzan a disco (tmp) — nunca tocan Supabase. El gate es
+    es_personal_programacion (superusuario o staff del área)."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.admin = User.objects.create_superuser('admin_doc', password='pass')
+        self.profesor = Profesor.objects.create(nombre='Juan', apellido='Pérez', documento='123')
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_DOCS, ignore_errors=True)
+        super().tearDownClass()
+
+    def _subir(self, nombre='cv.pdf', contenido=b'%PDF-1.4 datos', tipo='application/pdf'):
+        return self.client.post(
+            f'/configuracion/ajax/profesores/{self.profesor.id}/documentos/subir/',
+            {'archivo': SimpleUploadedFile(nombre, contenido, content_type=tipo)},
+        )
+
+    def test_subir_crea_documento(self):
+        self.client.login(username='admin_doc', password='pass')
+        r = self._subir()
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()['ok'])
+        self.assertEqual(self.profesor.documentos.count(), 1)
+        doc = self.profesor.documentos.first()
+        self.assertEqual(doc.nombre_original, 'cv.pdf')
+        self.assertEqual(doc.subido_por, self.admin)
+
+    def test_subir_rechaza_extension_no_permitida(self):
+        self.client.login(username='admin_doc', password='pass')
+        r = self._subir(nombre='virus.exe', contenido=b'MZ', tipo='application/octet-stream')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()['ok'])
+        self.assertEqual(self.profesor.documentos.count(), 0)
+
+    def test_subir_acepta_office(self):
+        self.client.login(username='admin_doc', password='pass')
+        r = self._subir(nombre='hoja_vida.docx', contenido=b'PK\x03\x04',
+                        tipo='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        self.assertTrue(r.json()['ok'])
+        self.assertEqual(self.profesor.documentos.count(), 1)
+
+    def test_listar_devuelve_documentos(self):
+        self.client.login(username='admin_doc', password='pass')
+        self._subir()
+        r = self.client.get(f'/configuracion/ajax/profesores/{self.profesor.id}/documentos/')
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(len(data['documentos']), 1)
+        self.assertEqual(data['documentos'][0]['nombre'], 'cv.pdf')
+
+    def test_descarga_proxy_attachment_e_inline(self):
+        self.client.login(username='admin_doc', password='pass')
+        self._subir()
+        doc = self.profesor.documentos.first()
+        r = self.client.get(f'/configuracion/profesores/documentos/{doc.id}/descargar/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('attachment', r['Content-Disposition'])
+        r2 = self.client.get(f'/configuracion/profesores/documentos/{doc.id}/descargar/?inline=1')
+        self.assertIn('inline', r2['Content-Disposition'])
+
+    def test_eliminar_borra_documento(self):
+        self.client.login(username='admin_doc', password='pass')
+        self._subir()
+        doc = self.profesor.documentos.first()
+        r = self.client.post(f'/configuracion/ajax/documentos/{doc.id}/eliminar/')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()['ok'])
+        self.assertEqual(self.profesor.documentos.count(), 0)
+
+    def test_sin_permiso_redirige(self):
+        """Un usuario sin acceso al área (sin grupo ni superusuario) no puede subir."""
+        User.objects.create_user('don_nadie', password='pass')
+        self.client.login(username='don_nadie', password='pass')
+        r = self._subir()
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.profesor.documentos.count(), 0)

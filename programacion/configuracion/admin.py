@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.db.models import Count
-from .models import NombreLibro, Materia, Unidad, Colegio, ColegioAnio, Profesor
+from .models import (NombreLibro, Materia, Unidad, Colegio, ColegioAnio,
+                     Profesor, DocumentoProfesor)
 
 
 @admin.register(Materia)
@@ -60,3 +61,11 @@ class ProfesorAdmin(admin.ModelAdmin):
     list_filter     = ('ciudad', 'disponibilidad', 'banco')
     ordering        = ('nombre',)
     readonly_fields = ('nombre_corto',)
+
+
+@admin.register(DocumentoProfesor)
+class DocumentoProfesorAdmin(admin.ModelAdmin):
+    list_display    = ('nombre_original', 'profesor', 'subido_por', 'subido_en')
+    search_fields   = ('nombre_original', 'profesor__nombre', 'profesor__apellido')
+    list_filter     = ('subido_en',)
+    readonly_fields = ('subido_en',)
