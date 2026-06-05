@@ -73,3 +73,22 @@ class ListaAlertasViewTest(TestCase):
         )
         r = self.client.get('/auditoria/')
         self.assertEqual(len(r.context['alertas']), 1)
+
+    def test_staff_de_area_ve_badge_de_alertas(self):
+        # Regresión: el context processor del badge estaba gateado por is_superuser,
+        # así que el staff de área entraba a auditoría pero sin contador en el menú.
+        from django.contrib.auth.models import Group
+        from core.areas import GRUPO_STAFF_PROGRAMACION
+        from django.core.cache import cache
+        cache.delete('alertas_vigentes_count')
+        AlertaAuditoria.objects.create(
+            tipo=AlertaAuditoria.Tipo.SECUENCIA,
+            huella='vig_badge', mensaje='Vigente', vigente=True,
+        )
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        staff = User.objects.create_user('staff_audit', password='pass123')
+        staff.groups.add(grupo)
+        self.assertFalse(staff.is_staff)
+        self.client.login(username='staff_audit', password='pass123')
+        r = self.client.get('/auditoria/')
+        self.assertEqual(r.context['alertas_vigentes_count'], 1)
