@@ -8,9 +8,10 @@ from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth.models import User, Group
 from django.core.cache import cache
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
-from usuarios.models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado
+from usuarios.models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado, ErrorCliente
 from usuarios.ratelimit import rate_limit
 from core.areas import GRUPO_STAFF_PROGRAMACION
+import json
 
 
 # ── Modelos ───────────────────────────────────────────────────
@@ -495,3 +496,44 @@ class RateLimitTest(TestCase):
         request.META['REMOTE_ADDR'] = '10.0.0.1'
         r = vista_test(request)
         self.assertEqual(r.status_code, 429)
+
+
+# ── Telemetría: capturador de errores del navegador ───────────
+class TelemetriaErrorClienteTest(TestCase):
+
+    def setUp(self):
+        # Host de área: el endpoint debe ser accesible aunque el middleware de acceso
+        # restrinja a colegio/profesor (va en RUTAS_PUBLICAS).
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.url = '/usuarios/telemetria/error/'
+
+    def test_post_valido_crea_registro(self):
+        payload = {
+            'tipo': 'fetch',
+            'mensaje': 'Fallo de red en POST /colegios/ajax/guardar/',
+            'stack': 'TypeError: failed to fetch',
+            'url': 'https://programacion.testserver/colegios/',
+            'breadcrumbs': [{'t': '2026-06-04T17:00:00Z', 'tipo': 'click', 'detalle': 'button «Guardar»'}],
+        }
+        r = self.client.post(self.url, data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(ErrorCliente.objects.count(), 1)
+        e = ErrorCliente.objects.first()
+        self.assertEqual(e.tipo, 'fetch')
+        self.assertEqual(len(e.breadcrumbs), 1)
+
+    def test_usuario_anonimo_se_registra_sin_user(self):
+        # Sin sesión: el reporte igual se guarda (usuario=None), no se pierde el error.
+        r = self.client.post(self.url, data=json.dumps({'tipo': 'error', 'mensaje': 'x'}),
+                             content_type='application/json')
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(ErrorCliente.objects.first().usuario)
+
+    def test_json_invalido_no_revienta(self):
+        # Tolerante: cuerpo basura → 400 controlado, nunca un 500.
+        r = self.client.post(self.url, data='no-es-json{', content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(ErrorCliente.objects.count(), 0)
+
+    def test_get_no_permitido(self):
+        self.assertEqual(self.client.get(self.url).status_code, 405)

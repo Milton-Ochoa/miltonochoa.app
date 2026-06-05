@@ -46,4 +46,7 @@ urlpatterns = [
     path('ajax/area/editar/',   views.ajax_editar_usuario_area,    name='ajax_editar_usuario_area'),
     path('ajax/area/eliminar/', views.ajax_eliminar_usuario_area,  name='ajax_eliminar_usuario_area'),
     path('ajax/area/resetear/', views.ajax_resetear_password_area, name='ajax_resetear_password_area'),
+
+    # Telemetría: capturador casero de errores del navegador (base_chrome.html → /admin/).
+    path('telemetria/error/', views.telemetria_error_cliente, name='telemetria_error_cliente'),
 ]
