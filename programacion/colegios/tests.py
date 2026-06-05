@@ -381,6 +381,20 @@ class DashboardColegiosViewTest(TestCase):
         html = self.client.get(f'/colegios/?id_col={self.colegio.id}').content.decode()
         self.assertIn('Crear clase', html)
 
+    def test_staff_de_area_accede_a_configurar_colegio(self):
+        # Regresión: el staff de área (grupo area:programacion, NO superusuario ni perfil
+        # de colegio) debe poder abrir el panel de configuración (grados/bloques). El gate
+        # antes era request.user.is_superuser → lo redirigía a /configuracion/usuarios/login/
+        # (404). Ahora usa request.es_personal_programacion.
+        from django.contrib.auth.models import Group
+        from core.areas import GRUPO_STAFF_PROGRAMACION
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        staff = User.objects.create_user('staff_cfg', password='pass123')
+        staff.groups.add(grupo)
+        self.client.login(username='staff_cfg', password='pass123')
+        r = self.client.get(f'/colegios/configurar-colegio/{self.colegio.id}/')
+        self.assertEqual(r.status_code, 200)
+
 
 class CargarGradosViewTest(TestCase):
 
