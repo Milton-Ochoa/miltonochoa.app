@@ -449,13 +449,13 @@
 
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
 
-{# ─── Capturador casero de errores del navegador → /usuarios/telemetria/error/ ───
+{% comment %} ─── Capturador casero de errores del navegador → /usuarios/telemetria/error/ ───
    Por qué: los errores que reporta el usuario son INTERMITENTES y bajo carga ("se cuelga
    al hacer muchas cosas rápido"); un console.log no sirve (hay que mirar en el instante y
    el reload lo borra). Esto registra los últimos clics y fetches (breadcrumbs) y, ante un
    error JS, una promesa rechazada o un fetch fallido (red o HTTP ≥500), envía todo el
    contexto del instante. Queda persistido y consultable en /admin/. Va aquí arriba para
-   instalar los handlers antes que el JS de la página. #}
+   instalar los handlers antes que el JS de la página. {% endcomment %}
 <script>
 (function () {
     var ENDPOINT = "{% url 'telemetria_error_cliente' %}";
