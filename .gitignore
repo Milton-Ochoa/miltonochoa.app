@@ -15,3 +15,5 @@ backups/
 db.sqlite3.*.bak
 # graphify: artefactos del grafo de conocimiento (regenerables con /graphify)
 graphify-out/
+# Arnés/artefactos de auditoría de rendimiento (local, no versionar)
+_audit_aamo/

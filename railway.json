@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 -k gthread --timeout 60",
+    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 6 --threads 4 -k gthread --worker-tmp-dir /dev/shm --timeout 90 --graceful-timeout 30 --max-requests 800 --max-requests-jitter 200 --keep-alive 5 --access-logfile - --error-logfile -",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
