@@ -88,6 +88,38 @@ según permisos, a qué subdominio/área redirige al usuario.
   `financiera.lvh.me:8000` (áreas).
 - Deploy: push a `main` → Railway (auto). BD en Supabase (PostgreSQL).
 
+## Rendimiento y concurrencia en producción (IMPORTANTE)
+
+Una auditoría de carga reveló lentitud y **502** al usar la app de forma concurrente.
+La causa NO era la lógica sino la **topología de despliegue**. Config actual (no cambiar
+sin medir):
+
+- **Gunicorn** (`railway.json` `startCommand`): `--workers 6 --threads 4 -k gthread`
+  (= 24 slots concurrentes; 6 procesos = paralelismo CPU real bajo el GIL, que es lo que
+  rompe la serialización bajo ráfaga), `--worker-tmp-dir /dev/shm` (heartbeat en tmpfs:
+  evita kills/502 espurios en contenedores), `--max-requests 800 --max-requests-jitter 200`
+  (recicla workers, evita fugas), `--timeout 90 --keep-alive 5`. **Regla:** mantener
+  `workers×threads ≤ pool_size del pooler`.
+- **Pooler de Supabase (transaction) OBLIGATORIO** con tantos workers. `DATABASE_URL` debe
+  apuntar al **transaction pooler de Supavisor**: host `aws-<n>-<region>.pooler.supabase.com`,
+  **puerto 6543**, usuario `postgres.<project_ref>` (NO `db.<ref>.supabase.co`, que Supabase
+  enruta a *session mode* y agota el pool → la app **crashea** al arrancar con
+  `EMAXCONNSESSION`). Con transaction pooler: `CONN_MAX_AGE=600` (conexiones calientes, baja
+  TTFB) y `DISABLE_SERVER_SIDE_CURSORS=True` (psycopg2 no usa prepared statements
+  server-side → compatible). Ambas leídas por env en `core/settings.py`. **`pool_size` del
+  pooler = 30** (Supabase → Database → Connection Pooling; gratis, ≥ workers×threads).
+- **Co-localización de región (clave para el TTFB):** Railway y Supabase deben estar en la
+  **misma región**. Supabase está en `us-west-2` → el servicio Railway se movió a **US West**
+  (`railway service scale us-west=1 us-east=0`). Cross-región añadía ~70 ms por query; en
+  misma región ~10 ms. Si se mueve la BD, mover también el servicio.
+- **Costo por request bajo:** el dashboard ya **no** dispara `sincronizar()` de auditoría
+  (era un barrido global por carga); la reconciliación vive en la vista de auditoría y el
+  comando `ejecutar_auditoria`. La matriz/stats del dashboard se cachean con **single-flight**
+  (`_get_or_build_cached`, lock `cache.add`) para evitar herd de construcción bajo ráfaga, y
+  se **invalidan al guardar Y al eliminar** clase (TTL 300 s).
+- **Medición:** los problemas de concurrencia NO se reproducen con `runserver`. El arnés de
+  carga (Playwright + urllib) vive fuera del repo; medir contra producción ya desplegada.
+
 ## Estructura
 
 ```
