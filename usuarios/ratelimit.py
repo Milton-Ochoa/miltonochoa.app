@@ -37,10 +37,19 @@ def rate_limit(max_calls: int = 60, periodo: int = 60, respuesta: str = 'json'):
         def wrapper(request, *args, **kwargs):
             remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
             if _es_proxy_confiable(remote_addr):
-                # En Render (proxy de un solo salto) tomamos el último XFF,
-                # que fue añadido por el proxy confiable — no es manipulable por el cliente.
+                # Railway tiene DOS rutas de tráfico (directa y vía su capa CDN, que añade
+                # su POP al final del XFF): el último valor sería el POP regional → todos
+                # los usuarios de una región compartirían contador. Railway garantiza que
+                # el PRIMER valor es siempre el cliente real (su edge controla el header),
+                # consistente en ambas rutas. Si no parsea como IP (cadena manipulada sin
+                # pasar por el edge), caemos a remote_addr: solo agrupa a quien manda
+                # basura, nunca a clientes legítimos.
                 xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-                ip = xff.split(',')[-1].strip() or remote_addr
+                primera = xff.split(',')[0].strip()
+                try:
+                    ip = str(ipaddress.ip_address(primera))
+                except ValueError:
+                    ip = remote_addr
             else:
                 ip = remote_addr
 

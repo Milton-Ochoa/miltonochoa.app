@@ -522,6 +522,45 @@ class RateLimitTest(TestCase):
         # …pero el cliente B no se ve afectado (contadores independientes).
         self.assertEqual(peticion('203.0.113.20').status_code, 200)
 
+    def test_cdn_railway_toma_primer_xff(self):
+        """Vía la capa CDN de Railway el XFF llega como 'cliente, pop_cdn': debe usarse
+        el PRIMER valor (el cliente real); con el último todos los usuarios detrás del
+        mismo POP regional compartirían contador."""
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            from django.http import JsonResponse
+            return JsonResponse({'ok': True})
+
+        def peticion(ip_cliente):
+            request = factory.get('/')
+            request.META['REMOTE_ADDR'] = '100.64.0.4'
+            # mismo POP del CDN al final para ambos clientes
+            request.META['HTTP_X_FORWARDED_FOR'] = f'{ip_cliente}, 84.17.44.225'
+            return vista_test(request)
+
+        for _ in range(2):
+            self.assertEqual(peticion('203.0.113.10').status_code, 200)
+        self.assertEqual(peticion('203.0.113.10').status_code, 429)
+        # Cliente distinto detrás del MISMO POP: contador propio.
+        self.assertEqual(peticion('203.0.113.20').status_code, 200)
+
+    def test_xff_invalido_cae_a_remote_addr(self):
+        """Un primer valor de XFF que no parsea como IP no debe romper la vista ni
+        usarse como llave: se cae a REMOTE_ADDR."""
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            from django.http import JsonResponse
+            return JsonResponse({'ok': True})
+
+        request = factory.get('/')
+        request.META['REMOTE_ADDR'] = '100.64.0.4'
+        request.META['HTTP_X_FORWARDED_FOR'] = 'no-soy-una-ip, 84.17.44.225'
+        self.assertEqual(vista_test(request).status_code, 200)
+
 
 # ── Telemetría: capturador de errores del navegador ───────────
 class TelemetriaErrorClienteTest(TestCase):
