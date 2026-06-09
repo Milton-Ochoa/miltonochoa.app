@@ -6,9 +6,11 @@ import ipaddress
 import logging
 from functools import wraps
 from django.core.cache import cache
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 
 logger = logging.getLogger('aamo')
+
+_MENSAJE_429 = 'Demasiadas solicitudes. Espera un momento.'
 
 
 def _es_proxy_confiable(remote_addr: str) -> bool:
@@ -19,7 +21,9 @@ def _es_proxy_confiable(remote_addr: str) -> bool:
         return False
 
 
-def rate_limit(max_calls: int = 60, periodo: int = 60):
+def rate_limit(max_calls: int = 60, periodo: int = 60, respuesta: str = 'json'):
+    """`respuesta='html'` para vistas que renderizan formularios (login, admin):
+    un navegador mostraría el JSON crudo del 429."""
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
@@ -39,10 +43,12 @@ def rate_limit(max_calls: int = 60, periodo: int = 60):
 
             if contador > max_calls:
                 logger.warning('Rate limit superado: %s desde %s', view_func.__name__, ip)
-                return JsonResponse(
-                    {'error': 'Demasiadas solicitudes. Espera un momento.'},
-                    status=429
-                )
+                if respuesta == 'html':
+                    return HttpResponse(
+                        f'<h1>429</h1><p>{_MENSAJE_429}</p>',
+                        status=429, content_type='text/html; charset=utf-8',
+                    )
+                return JsonResponse({'error': _MENSAJE_429}, status=429)
             return view_func(request, *args, **kwargs)
         return wrapper
     return decorator
