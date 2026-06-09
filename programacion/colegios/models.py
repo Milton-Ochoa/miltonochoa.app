@@ -268,6 +268,12 @@ class ClasePersonalizada(models.Model):
         db_table            = 'prog_clases_personalizadas'
         verbose_name        = "Clase Personalizada"
         verbose_name_plural = "Clases Personalizadas"
+        indexes = [
+            # exportar/contar y la exportación filtran por rango de fecha
+            # (y por profesor); sin índice era un scan completo de la tabla.
+            models.Index(fields=['fecha']),
+            models.Index(fields=['profesor', 'fecha']),
+        ]
 
     @property
     def hora(self):

@@ -757,9 +757,12 @@ def exportar_contar(request):
         resultado['clases_colegio']    = q_cl.count()
         resultado['clases_personalizada'] = q_pa.count()
 
+        # DISTINCT en la BD: antes se traían TODOS los profesor_id del año a memoria
+        # (potencialmente miles de filas) para unirlos en un set. Pedir solo los
+        # distintos deja el trabajo en Postgres y transfiere unas pocas filas.
         ids_prof = (
-            set(q_cl.values_list('profesor_id', flat=True))
-            | set(q_pa.values_list('profesor_id', flat=True))
+            set(q_cl.values_list('profesor_id', flat=True).distinct())
+            | set(q_pa.values_list('profesor_id', flat=True).distinct())
         )
         ids_prof.discard(None)
         resultado['n_profesores'] = len(ids_prof)
