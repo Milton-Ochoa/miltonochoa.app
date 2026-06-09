@@ -537,3 +537,102 @@ class TelemetriaErrorClienteTest(TestCase):
 
     def test_get_no_permitido(self):
         self.assertEqual(self.client.get(self.url).status_code, 405)
+
+
+# ── Endurecimiento de seguridad (telemetría, logins, claves) ──
+
+class TelemetriaAbuseTest(TestCase):
+    """El endpoint es público y anónimo (RUTAS_PUBLICAS): sin rate limit ni topes de
+    tamaño, cualquiera podría llenar la BD con megabytes por request."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.url = '/usuarios/telemetria/error/'
+
+    def tearDown(self):
+        cache.clear()
+
+    def _post(self, payload):
+        return self.client.post(self.url, data=json.dumps(payload),
+                                content_type='application/json')
+
+    def test_rate_limit_corta_la_rafaga(self):
+        for _ in range(20):
+            self.assertEqual(self._post({'tipo': 'error', 'mensaje': 'x'}).status_code, 200)
+        r = self._post({'tipo': 'error', 'mensaje': 'x'})
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(ErrorCliente.objects.count(), 20)  # el 21º no se guardó
+
+    def test_extra_gigante_se_descarta_pero_el_error_se_guarda(self):
+        r = self._post({'tipo': 'error', 'mensaje': 'real',
+                        'extra': {'relleno': 'A' * 50000}})
+        self.assertEqual(r.status_code, 200)
+        e = ErrorCliente.objects.first()
+        self.assertEqual(e.mensaje, 'real')   # el reporte no se pierde
+        self.assertEqual(e.extra, {})         # el campo inflado sí
+
+    def test_breadcrumbs_gigantes_se_descartan(self):
+        crumbs = [{'t': 'x', 'tipo': 'click', 'detalle': 'B' * 5000} for _ in range(10)]
+        r = self._post({'tipo': 'error', 'mensaje': 'real', 'breadcrumbs': crumbs})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(ErrorCliente.objects.first().breadcrumbs, [])
+
+    def test_extra_normal_sigue_pasando(self):
+        r = self._post({'tipo': 'fetch', 'mensaje': 'x', 'extra': {'status': 502, 'ms': 1200}})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(ErrorCliente.objects.first().extra, {'status': 502, 'ms': 1200})
+
+
+class LoginRateLimitTest(TestCase):
+    """vista_login responde 429 en HTML (es un form de navegador, no AJAX) y el login
+    de /admin/ (form propio de Django) también queda rate-limited."""
+
+    def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_login_429_es_html(self):
+        for _ in range(10):
+            self.client.post('/usuarios/login/', {'username': 'nadie', 'password': 'mala'})
+        r = self.client.post('/usuarios/login/', {'username': 'nadie', 'password': 'mala'})
+        self.assertEqual(r.status_code, 429)
+        self.assertIn('text/html', r['Content-Type'])
+
+    def test_admin_login_tiene_rate_limit(self):
+        for _ in range(10):
+            self.client.get('/admin/login/')
+        r = self.client.get('/admin/login/')
+        self.assertEqual(r.status_code, 429)
+
+
+class PasswordTemporalMinimaTest(TestCase):
+    """El staff asigna la clave a mano, pero el login es público en internet:
+    se exige un mínimo de 8 caracteres (sin el resto de validadores de Django)."""
+
+    def setUp(self):
+        cache.clear()
+        User.objects.create_superuser(username='admin', password='adminpass')
+        self.client.login(username='admin', password='adminpass')
+        self.colegio = Colegio.objects.create(nombre='Colegio Min', ciudad='Bogotá')
+
+    def test_crear_usuario_con_clave_corta_falla(self):
+        r = self.client.post('/usuarios/ajax/crear/', {
+            'tipo': 'colegio', 'username': 'col_corto',
+            'password': 'corta12',  # 7 caracteres
+            'colegio_id': self.colegio.id,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('8 caracteres', r.json()['error'])
+        self.assertFalse(User.objects.filter(username='col_corto').exists())
+
+    def test_crear_usuario_con_clave_de_8_pasa(self):
+        r = self.client.post('/usuarios/ajax/crear/', {
+            'tipo': 'colegio', 'username': 'col_ok',
+            'password': 'clave123',  # 8 justos
+            'colegio_id': self.colegio.id,
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(User.objects.filter(username='col_ok').exists())
