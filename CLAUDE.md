@@ -415,9 +415,16 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   `_ERR_MAX_JSON_BYTES`; sin esto un anónimo podía insertar ~2.5 MB por request en la BD).
   El login del `/admin/` también tiene rate limit (envuelto en `core/urls.py`, 10/60s por IP);
   `vista_login` y admin responden el 429 en HTML (`respuesta='html'`), el resto en JSON.
-  **Limitación conocida:** con `CACHE_BACKEND=locmem` (default) el contador de rate limit es
-  **por worker de gunicorn** (×6 en prod) y se resetea al reciclar workers; para un límite real
-  global haría falta `CACHE_BACKEND=redis` (soportado en settings, requiere provisionar Redis).
+  **Caché en prod = Redis (desde jun 2026):** hay un servicio **Redis en Railway** y el servicio
+  de la app tiene `CACHE_BACKEND=redis` + `REDIS_URL` (referencia `${{Redis.REDIS_URL}}` → URL
+  privada `redis.railway.internal:6379`) → rate limit **global real** entre los 6 workers y caché
+  del dashboard compartido e invalidado entre todos (con locmem cada worker tenía su copia y la
+  invalidación al guardar/eliminar clase solo aplicaba en el worker que atendió el POST). En
+  dev/tests sigue locmem (default sin la env var). **Ojo proxy Railway:** las requests llegan con
+  `REMOTE_ADDR` en el rango CGNAT `100.64.0.0/10` (no "privado" para `ipaddress`);
+  `_es_proxy_confiable` (`usuarios/ratelimit.py`) acepta ese rango como proxy de confianza para
+  tomar la IP real del cliente del último `X-Forwarded-For` — sin eso todos los usuarios
+  compartían un solo contador global (429 a usuarios legítimos).
   Se consultan en **/admin/** (`ErrorClienteAdmin`, solo lectura). Existe porque los logs de Railway son
   efímeros y `console.log` no sirve para errores intermitentes en producción. (No usa el envoltorio htmx
   porque htmx va por XHR; el dashboard pesado usa `fetch` directo, que sí se instrumenta.)
