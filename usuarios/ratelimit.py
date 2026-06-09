@@ -13,10 +13,18 @@ logger = logging.getLogger('aamo')
 _MENSAJE_429 = 'Demasiadas solicitudes. Espera un momento.'
 
 
+# Railway entrega las requests desde el espacio CGNAT (100.64.0.0/10), que ipaddress
+# NO considera privado (is_private=False) — sin esto el rate limit ignoraba el XFF y
+# contaba a TODOS los usuarios bajo la IP del proxy (límite global compartido).
+_RANGO_CGNAT = ipaddress.ip_network('100.64.0.0/10')
+
+
 def _es_proxy_confiable(remote_addr: str) -> bool:
-    """Verdadero si REMOTE_ADDR es una IP privada, indicando un proxy de confianza (p.ej. Render)."""
+    """Verdadero si REMOTE_ADDR es una IP privada o CGNAT, indicando un proxy de
+    confianza (Render usa rango privado; Railway usa 100.64.0.0/10)."""
     try:
-        return ipaddress.ip_address(remote_addr).is_private
+        ip = ipaddress.ip_address(remote_addr)
+        return ip.is_private or (ip.version == 4 and ip in _RANGO_CGNAT)
     except ValueError:
         return False
 
