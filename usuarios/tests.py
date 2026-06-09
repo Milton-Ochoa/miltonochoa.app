@@ -497,6 +497,31 @@ class RateLimitTest(TestCase):
         r = vista_test(request)
         self.assertEqual(r.status_code, 429)
 
+    def test_proxy_cgnat_railway_usa_xff(self):
+        """El proxy de Railway llega desde 100.64.0.0/10 (CGNAT, no 'privado' para
+        ipaddress): debe tomarse el XFF para que cada cliente tenga su propio contador
+        y no compartan todos el límite bajo la IP del proxy."""
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            from django.http import JsonResponse
+            return JsonResponse({'ok': True})
+
+        def peticion(ip_cliente):
+            request = factory.get('/')
+            request.META['REMOTE_ADDR'] = '100.64.0.4'
+            request.META['HTTP_X_FORWARDED_FOR'] = ip_cliente
+            return vista_test(request)
+
+        # El cliente A agota su límite…
+        for _ in range(2):
+            self.assertEqual(peticion('203.0.113.10').status_code, 200)
+        self.assertEqual(peticion('203.0.113.10').status_code, 429)
+
+        # …pero el cliente B no se ve afectado (contadores independientes).
+        self.assertEqual(peticion('203.0.113.20').status_code, 200)
+
 
 # ── Telemetría: capturador de errores del navegador ───────────
 class TelemetriaErrorClienteTest(TestCase):
