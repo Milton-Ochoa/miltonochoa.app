@@ -137,13 +137,23 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # ─────────────────────────────────────────────────────────────
 # BASE DE DATOS
 # ─────────────────────────────────────────────────────────────
+# CONN_MAX_AGE configurable por env para poder alternar entre conexión directa
+# (persistente, 600 s) y el pooler de Supabase/pgbouncer. Con pgbouncer en modo
+# "transaction" (puerto 6543) hay que poner CONN_MAX_AGE=0 y DISABLE_SERVER_SIDE_CURSORS=True
+# porque cada transacción puede ir a un backend distinto; en modo "session" (5432 del
+# pooler) sí admite conexiones persistentes. Ver CLAUDE.md / .env.example.
+_CONN_MAX_AGE = int(os.environ.get('CONN_MAX_AGE', '600'))
 DATABASES = {
     'default': dj_database_url.config(
         default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
+        conn_max_age=_CONN_MAX_AGE,
         ssl_require=not DEBUG,  # SSL solo en produccion
     )
 }
+# Server-side cursors son incompatibles con pgbouncer en modo transaction.
+# Se desactivan vía env solo cuando se apunta al pooler transaccional.
+if os.environ.get('DISABLE_SERVER_SIDE_CURSORS', 'False').lower() in ('1', 'true', 'yes'):
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
 
 # ─────────────────────────────────────────────────────────────
 # VALIDACIÓN DE CONTRASEÑAS

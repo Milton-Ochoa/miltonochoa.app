@@ -959,12 +959,41 @@ Datos para JS: inyectados como constantes JSON desde Django.
         const btnGuardar = form.querySelector('button[type="submit"]');
         if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
 
+        // El guardado es idempotente (update_or_create por bloque+fecha). Bajo carga,
+        // el proxy (Cloudflare/Railway) puede cortar con 502/503/504 una petición lenta;
+        // antes ese HTML de error terminaba inyectado en la celda y el usuario creía que
+        // "no guardó". Ahora reintentamos en silencio con backoff y solo avisamos si
+        // tras varios intentos sigue fallando.
+        const MAX_INTENTOS = 3;
+
         try {
-            const res = await fetch(URL_GUARDAR_CLASE, {
-                method: 'POST',
-                body: formData,
-                headers: {'HX-Request': 'true', 'HX-Current-URL': window.location.href},
-            });
+            let res = null;
+            for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+                try {
+                    res = await fetch(URL_GUARDAR_CLASE, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {'HX-Request': 'true', 'HX-Current-URL': window.location.href},
+                    });
+                } catch (errRed) {
+                    res = null;  // fallo de red: reintentar
+                }
+                // Éxito o error "real" del servidor (<500, p.ej. 400/403) → no reintentar.
+                if (res && res.status < 500) break;
+                if (intento < MAX_INTENTOS) {
+                    await new Promise(r => setTimeout(r, 400 * intento));
+                    if (btnGuardar) btnGuardar.textContent = `Reintentando (${intento + 1})…`;
+                }
+            }
+
+            if (!res || !res.ok) {
+                const codigo = res ? res.status : 'sin conexión';
+                const msg = `No se pudo guardar (${codigo}). El servidor está saturado; ` +
+                            `verifica si la clase quedó guardada y reintenta en unos segundos.`;
+                if (typeof showBootstrapToast !== 'undefined') showBootstrapToast(msg, 'danger');
+                else alert(msg);
+                return;
+            }
 
             const contentType = res.headers.get('content-type') || '';
 
@@ -1033,7 +1062,9 @@ Datos para JS: inyectados como constantes JSON desde Django.
                 refrescarStats();
             }
         } catch (err) {
-            alert('Error de red al guardar la clase.');
+            // Los fallos de red ya se reintentan arriba; aquí solo caen errores
+            // inesperados al procesar la respuesta (parseo, DOM, etc.).
+            alert('Ocurrió un error al procesar el guardado. Verifica si la clase quedó guardada.');
         } finally {
             if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = 'Guardar'; }
         }

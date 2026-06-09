@@ -1146,7 +1146,11 @@ def dashboard_colegios(request):
         def _sync_safe():
             from django.db import connection
             try:
-                sincronizar()
+                # forzar=True: ya ganamos el lock single-flight abajo, así que
+                # saltamos el re-chequeo de throttle interno (evita una lectura
+                # de caché redundante). El lock garantiza un solo barrido por
+                # ventana, que es justo lo que el throttle pretendía.
+                sincronizar(forzar=True)
             except Exception:
                 logger.exception('Error en sincronizar auditoria (hilo bg dashboard)')
             finally:
@@ -1154,9 +1158,16 @@ def dashboard_colegios(request):
                 # request_finished, así que la cerramos a mano para evitar fugas.
                 connection.close()
 
-        # Lanzar sincronización en hilo separado para no bloquear la respuesta
+        # Single-flight: bajo ráfagas concurrentes, CADA carga del dashboard
+        # disparaba un hilo con un barrido completo de BD (abriendo su propia
+        # conexión a Postgres) → "thundering herd" que saturaba el pool de
+        # Supabase y degradaba toda la concurrencia. cache.add() actúa como lock:
+        # solo la primera carga de la ventana (5 min) gana el slot y sincroniza;
+        # las demás reutilizan las alertas ya persistidas. (Con CACHE_BACKEND=redis
+        # el lock es cluster-wide; con locmem es por-worker, igualmente acota el herd.)
         if not getattr(settings, 'TESTING', False):
-            threading.Thread(target=_sync_safe, daemon=True).start()
+            if cache.add('auditoria_sync_lock', 1, 300):
+                threading.Thread(target=_sync_safe, daemon=True).start()
         sel = ctx['sel_col']
         ctx['alertas_colegio'] = AlertaAuditoria.objects.filter(
             vigente=True,
