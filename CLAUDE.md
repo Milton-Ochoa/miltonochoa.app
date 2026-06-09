@@ -318,9 +318,11 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 - **Contraseñas (dos flujos):**
   - **Colegios/profesores:** el staff de programación **asigna la contraseña a mano** al
     crear y al resetear (ya no es aleatoria). `ajax_crear_usuario`/`ajax_resetear_password`
-    leen `password` del POST; el helper `_limpiar_password_temporal` solo exige que no esté
-    vacía (a propósito **no** aplica `AUTH_PASSWORD_VALIDATORS`: el staff debe poder asignar
-    cualquier clave). No hay cambio forzado ni correo: la clave que escribe el staff es la
+    leen `password` del POST; el helper `_limpiar_password_temporal` exige **mínimo 8
+    caracteres** pero a propósito **no** aplica `AUTH_PASSWORD_VALIDATORS` completos (el
+    staff debe poder asignar la clave que quiera; el mínimo existe porque el login es
+    público en internet y "1234" se adivina por fuerza bruta aunque haya rate limit).
+    No hay cambio forzado ni correo: la clave que escribe el staff es la
     definitiva. `gestionar.html` ya no muestra el modal de "contraseña generada"; hay inputs
     de clave en los modales Crear y Resetear.
   - **Empleados de área** (usuarios de etiqueta): el admin crea el usuario con **clave
@@ -408,6 +410,14 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   todos los hosts). La vista es **tolerante** (nunca 500: parseo/guardado en try/except, tamaños
   acotados) y guarda `usuario` si está autenticado. La ruta está en `RUTAS_PUBLICAS` del
   `ControlAccesoMiddleware` para capturar desde cualquier rol (incl. colegio/profesor) y sin sesión.
+  Por ser pública y anónima está **blindada contra abuso**: `@rate_limit(20/60s)` por IP y topes de
+  tamaño también en los campos JSON (`extra`/`breadcrumbs` se descartan si serializados superan
+  `_ERR_MAX_JSON_BYTES`; sin esto un anónimo podía insertar ~2.5 MB por request en la BD).
+  El login del `/admin/` también tiene rate limit (envuelto en `core/urls.py`, 10/60s por IP);
+  `vista_login` y admin responden el 429 en HTML (`respuesta='html'`), el resto en JSON.
+  **Limitación conocida:** con `CACHE_BACKEND=locmem` (default) el contador de rate limit es
+  **por worker de gunicorn** (×6 en prod) y se resetea al reciclar workers; para un límite real
+  global haría falta `CACHE_BACKEND=redis` (soportado en settings, requiere provisionar Redis).
   Se consultan en **/admin/** (`ErrorClienteAdmin`, solo lectura). Existe porque los logs de Railway son
   efímeros y `console.log` no sirve para errores intermitentes en producción. (No usa el envoltorio htmx
   porque htmx va por XHR; el dashboard pesado usa `fetch` directo, que sí se instrumenta.)

@@ -44,17 +44,24 @@ def _hosts_permitidos(request):
     """Hosts propios (apex + subdominios de áreas) para validar `?next=` cross-subdominio."""
     return {host_apex(request)} | {host_de_area(slug, request) for slug in AREAS}
 
+PASSWORD_TEMPORAL_MIN = 8
+
+
 def _limpiar_password_temporal(password):
     """Valida una contraseña **temporal asignada por el admin** (colegio/profesor o la
     genérica de empleado).
 
-    A propósito NO aplica los AUTH_PASSWORD_VALIDATORS: el staff debe poder asignar la clave
-    que quiera (los empleados igual la cambian en el primer ingreso). Solo se exige que no
-    esté vacía. Devuelve la clave limpia o lanza ValueError con un mensaje legible.
+    A propósito NO aplica los AUTH_PASSWORD_VALIDATORS completos: el staff debe poder
+    asignar la clave que quiera (los empleados igual la cambian en el primer ingreso).
+    Solo se exige un mínimo de 8 caracteres: el login es público en internet y una clave
+    trivial ("1234") se adivina por fuerza bruta aunque haya rate limit por IP.
+    Devuelve la clave limpia o lanza ValueError con un mensaje legible.
     """
     password = (password or '').strip()
     if not password:
         raise ValueError('La contraseña es obligatoria.')
+    if len(password) < PASSWORD_TEMPORAL_MIN:
+        raise ValueError(f'La contraseña debe tener al menos {PASSWORD_TEMPORAL_MIN} caracteres.')
     return password
 
 
@@ -117,7 +124,7 @@ def login_redirect(request):
         pass
     return redirect(url_apex('seleccion_area', request))
 
-@rate_limit(max_calls=10, periodo=60)
+@rate_limit(max_calls=10, periodo=60, respuesta='html')
 def vista_login(request):
     """
     Login con rate limit de 10 intentos / 60 segundos por IP.
@@ -453,6 +460,10 @@ class EmpleadoPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
 # `ErrorCliente`. Disponible en todos los hosts (usuarios/ se incluye en apex y áreas).
 
 _ERR_MAX_BREADCRUMBS = 60
+# Topes de los campos JSON: el endpoint es público (RUTAS_PUBLICAS, sin sesión), así que
+# sin esto cualquier anónimo podría insertar hasta DATA_UPLOAD_MAX_MEMORY_SIZE (~2.5 MB)
+# por request en la BD. Los campos de texto ya se recortan con _recortar.
+_ERR_MAX_JSON_BYTES = 8000
 
 
 def _recortar(valor, limite):
@@ -460,6 +471,18 @@ def _recortar(valor, limite):
     return ('' if valor is None else str(valor))[:limite]
 
 
+def _acotar_json(valor, vacio):
+    """Devuelve `valor` solo si serializado cabe en _ERR_MAX_JSON_BYTES; si no, `vacio`.
+    Preferimos descartar a truncar: un JSON truncado a mano quedaría inválido."""
+    try:
+        if len(json.dumps(valor, ensure_ascii=False)) <= _ERR_MAX_JSON_BYTES:
+            return valor
+    except (TypeError, ValueError):
+        pass
+    return vacio
+
+
+@rate_limit(max_calls=20, periodo=60)
 @require_POST
 def telemetria_error_cliente(request):
     """
@@ -476,7 +499,9 @@ def telemetria_error_cliente(request):
 
     breadcrumbs = payload.get('breadcrumbs')
     breadcrumbs = breadcrumbs[-_ERR_MAX_BREADCRUMBS:] if isinstance(breadcrumbs, list) else []
+    breadcrumbs = _acotar_json(breadcrumbs, [])
     extra = payload.get('extra') if isinstance(payload.get('extra'), dict) else {}
+    extra = _acotar_json(extra, {})
 
     try:
         ErrorCliente.objects.create(
