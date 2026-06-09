@@ -13,6 +13,7 @@ from collections import defaultdict
 import calendar as _calendar
 import json
 import logging
+import time
 
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Unidad, Materia
 from .models import Bloque, Clase, Asignacion, Grado, HistorialCambio
@@ -22,8 +23,8 @@ from usuarios.ratelimit import rate_limit
 
 logger = logging.getLogger('aamo')
 
-_STATS_CACHE_TTL = 120  # segundos
-_MATRIZ_CACHE_TTL = 120  # segundos
+_STATS_CACHE_TTL = 300  # segundos (subido de 120: se invalida al guardar, así que un TTL
+_MATRIZ_CACHE_TTL = 300  # mayor mantiene el dashboard caliente más tiempo sin perder frescura)
 
 
 def _stats_cache_key(colegio_id, anio):
@@ -32,6 +33,41 @@ def _stats_cache_key(colegio_id, anio):
 
 def _matriz_cache_key(colegio_id, anio):
     return f'dashboard_matriz:{colegio_id}:{anio}'
+
+
+def _get_or_build_cached(key, builder, ttl):
+    """Lee `key` de caché; si falta, construye con single-flight para evitar el
+    "thundering herd" de construcción.
+
+    Bajo una ráfaga de cargas concurrentes del dashboard con caché frío, los varios
+    threads de un worker llegaban a la vez al cache-miss y TODOS ejecutaban el build
+    pesado (matriz/stats de un año entero) en paralelo — trabajo redundante que
+    saturaba CPU y DB. Con un lock (cache.add es atómico en LocMemCache), solo el
+    primer thread construye; los demás esperan brevemente a que el resultado aparezca
+    en caché y lo reutilizan. Si el build tarda más que la espera, el rezagado
+    construye igual (nunca se bloquea de forma indefinida).
+    """
+    val = cache.get(key)
+    if val is not None:
+        return val
+    lock_key = f'{key}:building'
+    if cache.add(lock_key, 1, 30):
+        try:
+            val = builder()
+            cache.set(key, val, ttl)
+            return val
+        finally:
+            cache.delete(lock_key)
+    # Otro thread está construyendo: esperar a que publique el resultado (máx ~4s).
+    for _ in range(40):
+        time.sleep(0.1)
+        val = cache.get(key)
+        if val is not None:
+            return val
+    # Fallback: el build se demoró más que la espera; construir sin bloquear.
+    val = builder()
+    cache.set(key, val, ttl)
+    return val
 
 
 @login_required
@@ -1101,10 +1137,11 @@ def dashboard_colegios(request):
         bloques_raw, bloques_agrupados = _construir_bloques_agrupados(sel_col)
         ctx['bloques_agrupados'] = bloques_agrupados
         _ck_matriz = _matriz_cache_key(sel_col.id, anio_sel)
-        matriz = cache.get(_ck_matriz)
-        if matriz is None:
-            matriz = _construir_matriz(sel_col, bloques_raw, inicio, fin)
-            cache.set(_ck_matriz, matriz, _MATRIZ_CACHE_TTL)
+        matriz = _get_or_build_cached(
+            _ck_matriz,
+            lambda: _construir_matriz(sel_col, bloques_raw, inicio, fin),
+            _MATRIZ_CACHE_TTL,
+        )
         ctx['matriz'] = matriz
 
         fechas_con_clases = sorted({
@@ -1123,10 +1160,11 @@ def dashboard_colegios(request):
         ctx['bloques_data'] = bloques_json
 
         _ck_stats = _stats_cache_key(sel_col.id, anio_sel)
-        stats = cache.get(_ck_stats)
-        if stats is None:
-            stats = _construir_stats(sel_col)
-            cache.set(_ck_stats, stats, _STATS_CACHE_TTL)
+        stats = _get_or_build_cached(
+            _ck_stats,
+            lambda: _construir_stats(sel_col),
+            _STATS_CACHE_TTL,
+        )
         # json_script usa DjangoJSONEncoder (fechas ya van como isoformat en stats).
         ctx['stats_data']  = stats
         ctx['stats_vacio'] = not bool(stats)
