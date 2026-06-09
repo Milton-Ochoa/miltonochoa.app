@@ -14,12 +14,14 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="card p-3 shadow-sm">
-                {# HTMX: POST → retorna card HTML → prepend a col-pendientes sin recargar.
+                {% comment %}
+                   HTMX: POST → retorna card HTML → prepend a col-pendientes sin recargar.
                    hx-sync drop + hx-disabled-elt: en envíos rápidos seguidos (fill+Enter),
                    el swap reiniciaba el input y un segundo Enter disparaba contra un estado
                    intermedio → se perdían pendientes (hallazgo de auditoría). Ahora el input
                    y el botón se deshabilitan mientras hay una petición en vuelo y no se
-                   encolan submits concurrentes; al terminar se limpia y se vuelve a enfocar. #}
+                   encolan submits concurrentes; al terminar se limpia y se vuelve a enfocar.
+                {% endcomment %}
                 <form method="POST" class="d-flex gap-2"
                       hx-post="{% url 'home' %}"
                       hx-target="#cards-pendientes"
