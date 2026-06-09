@@ -13,7 +13,14 @@ Variables: tarea (instancia de Tarea), user (request.user)
         <small class="text-muted d-block mb-2" style="font-size: 0.7rem;">Finalizado: {{ tarea.fecha_completado|date:"d/m H:i" }}</small>
         {% endif %}
         <div class="d-flex justify-content-between align-items-center">
-            <span class="badge badge-user">{{ tarea.creado_por.username }}</span>
+            <div class="d-flex gap-1 flex-wrap">
+                <span class="badge badge-user" title="Creó"><i class="fas fa-user-plus me-1"></i>{{ tarea.creado_por.username }}</span>
+                {% if tarea.estado == 'completado' and tarea.completado_por %}
+                    <span class="badge badge-user" title="Completó"><i class="fas fa-check me-1"></i>{{ tarea.completado_por.username }}</span>
+                {% elif tarea.movido_por and tarea.movido_por_id != tarea.creado_por_id %}
+                    <span class="badge badge-user" title="Movió"><i class="fas fa-arrows-alt me-1"></i>{{ tarea.movido_por.username }}</span>
+                {% endif %}
+            </div>
             <div class="btn-group">
                 {% if tarea.estado == 'pendiente' %}
                     <form method="post" action="{% url 'cambiar_estado' tarea.id 'gestion' %}" class="d-inline"

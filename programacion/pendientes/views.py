@@ -64,6 +64,10 @@ def cambiar_estado(request, tarea_id, nuevo_estado):
     if nuevo_estado in ESTADOS_VALIDOS:
         tarea.estado = nuevo_estado
         tarea.completado_por = request.user if nuevo_estado == 'completado' else None
+        # Registrar quién movió la tarjeta (y cuándo): el tablero es de equipo, así
+        # que importa saber el último que la gestionó, no solo quién la creó.
+        tarea.movido_por = request.user
+        tarea.fecha_movido = timezone.now()
         tarea.save()
 
     if bool(request.META.get('HTTP_HX_REQUEST')):

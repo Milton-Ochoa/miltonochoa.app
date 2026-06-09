@@ -607,7 +607,12 @@ def ajax_guardar_clase(request, colegio_id):
         return JsonResponse({'ok': True, 'eliminada': True, 'recalcular': recalcular})
 
     recalcular = _guardar_clase(request, sel_col)
+    # Invalidar AMBOS cachés: crear/editar una clase cambia la matriz (no solo las
+    # stats). Antes solo se borraba el de stats, así que un reload completo del
+    # dashboard dentro del TTL (120s) mostraba la matriz vieja sin el cambio recién
+    # guardado. La ruta de eliminar ya invalidaba ambos; aquí faltaba la matriz.
     cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))
+    cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
 
     if is_htmx:
         clase = (
