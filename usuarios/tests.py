@@ -561,6 +561,52 @@ class RateLimitTest(TestCase):
         request.META['HTTP_X_FORWARDED_FOR'] = 'no-soy-una-ip, 84.17.44.225'
         self.assertEqual(vista_test(request).status_code, 200)
 
+    def test_cloudflare_usa_cf_connecting_ip(self):
+        """miltonochoa.app está proxied por Cloudflare: el primer XFF es el nodo CF
+        (Railway lo pone), y la IP real del usuario viaja en CF-Connecting-IP. Dos
+        usuarios detrás del MISMO nodo CF deben tener contadores independientes."""
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            from django.http import JsonResponse
+            return JsonResponse({'ok': True})
+
+        def peticion(ip_usuario):
+            request = factory.get('/')
+            request.META['REMOTE_ADDR'] = '100.64.0.4'
+            # 172.68.12.53 ∈ 172.64.0.0/13 (rango publicado de Cloudflare)
+            request.META['HTTP_X_FORWARDED_FOR'] = '172.68.12.53, 84.17.44.225'
+            request.META['HTTP_CF_CONNECTING_IP'] = ip_usuario
+            return vista_test(request)
+
+        for _ in range(2):
+            self.assertEqual(peticion('203.0.113.10').status_code, 200)
+        self.assertEqual(peticion('203.0.113.10').status_code, 429)
+        self.assertEqual(peticion('203.0.113.20').status_code, 200)
+
+    def test_cf_connecting_ip_falso_sin_cloudflare_se_ignora(self):
+        """Quien llega DIRECTO a Railway (primer XFF = su IP real, no un nodo CF) no
+        puede evadir el límite rotando un CF-Connecting-IP inventado."""
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            from django.http import JsonResponse
+            return JsonResponse({'ok': True})
+
+        def peticion(cf_falso):
+            request = factory.get('/')
+            request.META['REMOTE_ADDR'] = '100.64.0.4'
+            request.META['HTTP_X_FORWARDED_FOR'] = '203.0.113.66, 84.17.44.225'
+            request.META['HTTP_CF_CONNECTING_IP'] = cf_falso
+            return vista_test(request)
+
+        # Rota el header falso en cada request: igual lo cuenta su IP real → 429.
+        self.assertEqual(peticion('9.9.9.1').status_code, 200)
+        self.assertEqual(peticion('9.9.9.2').status_code, 200)
+        self.assertEqual(peticion('9.9.9.3').status_code, 429)
+
 
 # ── Telemetría: capturador de errores del navegador ───────────
 class TelemetriaErrorClienteTest(TestCase):
