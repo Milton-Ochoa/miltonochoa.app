@@ -28,9 +28,18 @@ class Tarea(models.Model):
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='tareas_completadas'
     )
+    # Último usuario que cambió el estado (movió la tarjeta entre columnas). El Kanban
+    # es un tablero de equipo: antes solo se veía el creador; ahora también quién la
+    # gestiona. Distinto de completado_por (que solo se fija al completar).
+    movido_por      = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tareas_movidas'
+    )
     fecha_creacion   = models.DateTimeField(auto_now_add=True)
     # Null mientras la tarea no esté completada; se auto-rellena en save()
     fecha_completado = models.DateTimeField(blank=True, null=True)
+    # Fecha del último cambio de estado (acompaña a movido_por)
+    fecha_movido     = models.DateTimeField(blank=True, null=True)
 
     def save(self, *args, **kwargs):
         # Sincronizar fecha_completado con el estado para mantener consistencia.
