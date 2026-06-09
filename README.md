@@ -437,7 +437,9 @@ redirige al subdominio del área del usuario (o al `/panel/` si es superusuario)
 | `DEBUG` | No | `False` | `True` para desarrollo local. |
 | `ALLOWED_HOSTS` | No | `localhost,127.0.0.1` | Hosts extra (CSV). El apex y `.BASE_DOMAIN` se añaden solos. |
 | `BASE_DOMAIN` | No | `miltonochoa.app` | Dominio base del enrutado por subdominios (dev: `lvh.me`). |
-| `DATABASE_URL` | Sí | — | URL de PostgreSQL (Supabase) o `sqlite:///db.sqlite3` en local. |
+| `DATABASE_URL` | Sí | — | URL de PostgreSQL. En prod: **transaction pooler** de Supabase (`...pooler.supabase.com:6543`, usuario `postgres.<ref>`). En local: `sqlite:///db.sqlite3`. |
+| `CONN_MAX_AGE` | No | `600` | Vida de conexiones persistentes (s). Con transaction pooler se usa `600` (conexiones calientes). |
+| `DISABLE_SERVER_SIDE_CURSORS` | No | `False` | `True` con el transaction pooler de Supabase (pgbouncer en modo transaction). |
 | `SECURE_SSL_REDIRECT` | No | `False` | `True` en producción si el dominio sirve HTTPS. |
 | `CACHE_BACKEND` | No | `locmem` | `locmem` o `redis`. |
 | `REDIS_URL` | Cond. | `redis://127.0.0.1:6379/1` | Solo si `CACHE_BACKEND=redis`. |
@@ -473,7 +475,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 282 tests OK.**
+**Baseline actual: 299 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -502,23 +504,34 @@ Base de datos en **Supabase** (PostgreSQL). Dominio: `miltonochoa.app`.
 ### 1 · Base de datos (Supabase)
 
 1. Crea un proyecto en Supabase.
-2. Copia la cadena del **Session pooler** (puerto `5432`) y úsala como `DATABASE_URL`.
-   (Settings ya fuerza SSL en producción vía `dj_database_url(ssl_require=not DEBUG)`.)
+2. Usa la cadena del **transaction pooler** (Supavisor, puerto `6543`, host
+   `...pooler.supabase.com`, usuario `postgres.<project_ref>`) como `DATABASE_URL`.
+   Es **obligatorio** con varios workers de gunicorn: multiplexa los backends y evita el
+   agotamiento de conexiones. (NO uses `db.<ref>.supabase.co`: Supabase lo enruta a *session
+   mode* y la app crashea al arrancar con `EMAXCONNSESSION`.) Sube el **Pool Size** del pooler
+   a `30` (Database → Connection Pooling). Settings fuerza SSL en prod (`ssl_require=not DEBUG`).
+3. Acompaña con `CONN_MAX_AGE=600` y `DISABLE_SERVER_SIDE_CURSORS=True`.
 
 ### 2 · App (Railway)
 
 1. **New Project → Deploy from GitHub repo**. Railway construye con **Nixpacks** y respeta
    [`railway.json`](railway.json): en cada deploy ejecuta
-   `migrate` → `collectstatic` → `gunicorn` (2 workers, 4 hilos `gthread`, timeout 60 s).
+   `migrate` → `collectstatic` → `gunicorn` (**6 workers, 4 hilos `gthread`**,
+   `--worker-tmp-dir /dev/shm`, `--max-requests 800`, timeout 90 s).
 2. **Auto-deploy:** branch de despliegue → `main`.
-3. **Variables** mínimas:
+3. **Región:** co-localiza el servicio con Supabase (misma región, p. ej. **US West** si la
+   BD está en `us-west-2`) con `railway service scale us-west=1 us-east=0`. Cross-región añade
+   ~70 ms por query y degrada toda la concurrencia.
+4. **Variables** mínimas:
 
    | Variable | Valor |
    |----------|-------|
    | `SECRET_KEY` | (genérala) |
    | `DEBUG` | `False` |
    | `BASE_DOMAIN` | `miltonochoa.app` |
-   | `DATABASE_URL` | cadena del Session pooler de Supabase |
+   | `DATABASE_URL` | transaction pooler de Supabase (`:6543`, `postgres.<ref>`) |
+   | `CONN_MAX_AGE` | `600` |
+   | `DISABLE_SERVER_SIDE_CURSORS` | `True` |
    | `SECURE_SSL_REDIRECT` | `True` |
 
 ### 3 · Dominio y subdominios (DNS + TLS)
@@ -534,8 +547,10 @@ Añade el apex y cada área en *Settings → Networking → Custom Domain* de Ra
 Railway emite el certificado TLS por dominio automáticamente. Todos los hosts llegan a la
 **misma** app; `EnrutadoPorAreaMiddleware` decide el área por el subdominio.
 
-**Auditoría programada:** crea en Railway un *Cron Service* con
-`python manage.py ejecutar_auditoria` (sugerido cada 30 min).
+**Auditoría programada (recomendado):** el dashboard ya **no** dispara la reconciliación de
+alertas en cada carga (era un barrido global costoso bajo concurrencia). Programa un *Cron
+Service* en Railway con `python manage.py ejecutar_auditoria` (sugerido cada 30 min) para
+mantener las alertas frescas; la vista de Auditoría también las reconcilia al visitarla.
 
 > Filesystem efímero en Railway — todos los Excel/ZIP se generan en `BytesIO` y se
 > devuelven directamente en la respuesta HTTP (sin tocar disco).
@@ -605,7 +620,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
 1. Crea una rama desde `main`: `git checkout -b feat/mi-feature`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 282 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 299 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
