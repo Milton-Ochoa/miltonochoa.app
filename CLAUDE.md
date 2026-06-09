@@ -422,12 +422,15 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   invalidación al guardar/eliminar clase solo aplicaba en el worker que atendió el POST). En
   dev/tests sigue locmem (default sin la env var). **Ojo proxy Railway:** las requests llegan con
   `REMOTE_ADDR` en el rango CGNAT `100.64.0.0/10` (no "privado" para `ipaddress`);
-  `_es_proxy_confiable` (`usuarios/ratelimit.py`) acepta ese rango como proxy de confianza y se
-  toma el **primer** valor del `X-Forwarded-For` (recomendación oficial de Railway: su edge
-  controla el header y el primero es siempre el cliente real en sus DOS rutas de tráfico —
-  directa y vía CDN, donde el CDN añade su POP al **final** del XFF; con el último valor todos
-  los usuarios detrás del mismo POP regional compartirían contador). Sin nada de esto todos los
-  usuarios compartían un solo contador global (429 a usuarios legítimos).
+  la IP real del cliente la resuelve `_ip_cliente` (`usuarios/ratelimit.py`). Cadena real en
+  prod (verificada empíricamente): usuario → **Cloudflare** (el DNS de `miltonochoa.app` está
+  proxied, IPs `104.21.x`/`172.67.x`) → edge de Railway → POP CDN de Railway → app. Railway
+  **descarta el XFF entrante y lo reconstruye**: el primer valor es siempre quien se conectó a
+  su edge (no falsificable; verificado mandando un XFF falso que no apareció). Como ese peer es
+  un nodo de Cloudflare, la IP del usuario solo viaja en **`CF-Connecting-IP`**, que se cree
+  únicamente si el primer XFF cae en los rangos publicados de CF (`_RANGOS_CLOUDFLARE`) — quien
+  llegue directo a Railway con un `CF-Connecting-IP` inventado es contado por su IP real. Sin
+  esto todos los usuarios compartían contador (global con locmem+proxy; por nodo CF después).
   Se consultan en **/admin/** (`ErrorClienteAdmin`, solo lectura). Existe porque los logs de Railway son
   efímeros y `console.log` no sirve para errores intermitentes en producción. (No usa el envoltorio htmx
   porque htmx va por XHR; el dashboard pesado usa `fetch` directo, que sí se instrumenta.)
