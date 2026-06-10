@@ -25,6 +25,7 @@ _STORAGE_LOCAL = {
     'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
 }
 _MEDIA_TMP_PROG = tempfile.mkdtemp()
+_MEDIA_TMP_LEG = tempfile.mkdtemp()
 
 
 class SolicitudViaticoModelTest(TestCase):
@@ -376,3 +377,139 @@ class SoporteDescargaProgramacionTest(TestCase):
         self.client.login(username='gestor_s', password='pass')
         r = self.client.get(f'/viaticos/soporte/{self.soporte.pk}/')
         self.assertEqual(r.status_code, 302)
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_LEG, STORAGES=_STORAGE_LOCAL,
+                   VIATICOS_LEGALIZACION_NOTIFICAR_A='financiero@aamo.test')
+class LegalizacionProgramacionTest(TestCase):
+    """Legalización post-pago: programación adjunta soportes (tipo LEGALIZACION) en
+    PAGADA/LEG_DEVUELTA y los envía a financiera (LEG_ENVIADA + correo)."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.admin = User.objects.create_superuser('admin_l', password='pass')
+        self.client.login(username='admin_l', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Juan', apellido='Pérez', documento='123', cuenta_bancaria='999-888',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='COL-1', nombre='Colegio Norte', departamento='Antioquia', ciudad='Medellín',
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_LEG, ignore_errors=True)
+        super().tearDownClass()
+
+    def _solicitud(self, estado=SolicitudViatico.Estado.PAGADA, **kwargs):
+        s = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=date(2026, 6, 1), fecha_regreso=date(2026, 6, 3),
+            estado=estado, creado_por=self.admin, **kwargs,
+        )
+        s.aplicar_snapshot()
+        s.save()
+        return s
+
+    def _pdf(self, nombre='legalizacion.pdf'):
+        return SimpleUploadedFile(nombre, b'%PDF-1.4 datos', content_type='application/pdf')
+
+    def _soporte_leg(self, s):
+        return SoportePago.objects.create(
+            solicitud=s, tipo=SoportePago.Tipo.LEGALIZACION,
+            archivo=self._pdf(), nombre_original='legalizacion.pdf', subido_por=self.admin,
+        )
+
+    # ── Subir ───────────────────────────────────────────────
+    def test_subir_en_pagada_crea_soporte_legalizacion(self):
+        s = self._solicitud()
+        r = self.client.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(r.status_code, 302)
+        soporte = s.soportes.get()
+        self.assertEqual(soporte.tipo, SoportePago.Tipo.LEGALIZACION)
+        self.assertEqual(soporte.subido_por, self.admin)
+
+    def test_subir_en_leg_devuelta_permitido(self):
+        s = self._solicitud(SolicitudViatico.Estado.LEG_DEVUELTA, motivo_devolucion='Falta recibo')
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(s.soportes.count(), 1)
+
+    def test_subir_en_aprobada_rechazado(self):
+        s = self._solicitud(SolicitudViatico.Estado.APROBADA)
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(s.soportes.count(), 0)
+
+    def test_subir_en_leg_enviada_rechazado(self):
+        """Tras enviar, los soportes quedan congelados hasta que financiera devuelva."""
+        s = self._solicitud(SolicitudViatico.Estado.LEG_ENVIADA)
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(s.soportes.count(), 0)
+
+    # ── Eliminar ────────────────────────────────────────────
+    def test_eliminar_soporte_legalizacion_en_pagada(self):
+        s = self._solicitud()
+        soporte = self._soporte_leg(s)
+        r = self.client.post(f'/viaticos/legalizacion/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(s.soportes.count(), 0)
+
+    def test_eliminar_soporte_tipo_pago_da_404(self):
+        """Programación no puede borrar soportes de pago (son de financiera)."""
+        s = self._solicitud()
+        soporte_pago = SoportePago.objects.create(
+            solicitud=s, archivo=self._pdf('pago.pdf'), nombre_original='pago.pdf',
+        )
+        r = self.client.post(f'/viaticos/legalizacion/soporte/{soporte_pago.pk}/eliminar/')
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(s.soportes.count(), 1)
+
+    def test_eliminar_en_leg_enviada_bloqueado(self):
+        s = self._solicitud(SolicitudViatico.Estado.LEG_ENVIADA)
+        soporte = self._soporte_leg(s)
+        self.client.post(f'/viaticos/legalizacion/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(s.soportes.count(), 1)
+
+    # ── Enviar ──────────────────────────────────────────────
+    def test_enviar_sin_soporte_rechazado(self):
+        s = self._solicitud()
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.PAGADA)
+
+    def test_enviar_con_soporte_pasa_a_leg_enviada_y_notifica(self):
+        s = self._solicitud()
+        self._soporte_leg(s)
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        self.assertEqual(r.status_code, 302)
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_ENVIADA)
+        self.assertIsNotNone(s.legalizacion_enviada_en)
+        self.assertEqual(len(mail.outbox), 1)
+        m = mail.outbox[0]
+        self.assertEqual(m.to, ['financiero@aamo.test'])
+        self.assertIn('Legalización', m.subject)
+
+    def test_reenviar_desde_leg_devuelta_limpia_motivo(self):
+        s = self._solicitud(SolicitudViatico.Estado.LEG_DEVUELTA, motivo_devolucion='Falta recibo')
+        self._soporte_leg(s)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_ENVIADA)
+        self.assertEqual(s.motivo_devolucion, '')
+
+    def test_enviar_desde_aprobada_rechazado(self):
+        s = self._solicitud(SolicitudViatico.Estado.APROBADA)
+        self._soporte_leg(s)
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.APROBADA)
+
+    def test_soporte_pago_no_cuenta_para_enviar(self):
+        """El requisito de ≥1 soporte es de LEGALIZACIÓN: uno de pago no habilita el envío."""
+        s = self._solicitud()
+        SoportePago.objects.create(solicitud=s, archivo=self._pdf('pago.pdf'))
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.PAGADA)

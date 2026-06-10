@@ -25,6 +25,7 @@ _STORAGE_LOCAL = {
     'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
 }
 _MEDIA_TMP_FIN = tempfile.mkdtemp()
+_MEDIA_TMP_FIN_LEG = tempfile.mkdtemp()
 
 
 class FinancieraAccesoTest(TestCase):
@@ -139,6 +140,16 @@ class FinancieraGestionViaticosTest(TestCase):
         self._login_financiera()
         r = self.client.get('/')
         self.assertEqual(r.context['viaticos_pendientes_count'], 1)
+
+    def test_badge_incluye_legalizacion_enviada(self):
+        """El badge suma lo pendiente de gestión: ENVIADA + LEG_ENVIADA (no el resto)."""
+        self._solicitud(estado=SolicitudViatico.Estado.ENVIADA)
+        self._solicitud(estado=SolicitudViatico.Estado.LEG_ENVIADA)
+        self._solicitud(estado=SolicitudViatico.Estado.LEG_DEVUELTA)
+        self._solicitud(estado=SolicitudViatico.Estado.FINALIZADA)
+        self._login_financiera()
+        r = self.client.get('/')
+        self.assertEqual(r.context['viaticos_pendientes_count'], 2)
 
     # ── Devolver ────────────────────────────────────────────
     def test_devolver_con_motivo(self):
@@ -410,6 +421,149 @@ class FinancieraSoporteTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('attachment', r['Content-Disposition'])
         self.assertIn('viatico-ana-gomez-2026-06-01.pdf', r['Content-Disposition'])
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_FIN_LEG, STORAGES=_STORAGE_LOCAL)
+class FinancieraLegalizacionTest(TestCase):
+    """Fase legalización: financiera revisa lo enviado por programación
+    (devolver con motivo / finalizar) y conserva la gestión del soporte de pago
+    hasta FINALIZADA, sin poder tocar los soportes de legalización."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        self.admin = User.objects.create_superuser('fin_leg', password='pass')
+        self.client.login(username='fin_leg', password='pass')
+        self.profesor = Profesor.objects.create(
+            nombre='Ana', apellido='Gómez', documento='555', cuenta_bancaria='111-222',
+        )
+        self.colegio = Colegio.objects.create(
+            codigo='C-9', nombre='Colegio Sur', departamento='Valle', ciudad='Cali',
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_FIN_LEG, ignore_errors=True)
+        super().tearDownClass()
+
+    def _solicitud(self, estado=SolicitudViatico.Estado.LEG_ENVIADA, **kwargs):
+        s = SolicitudViatico(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha_viaje=date(2026, 6, 1), fecha_regreso=date(2026, 6, 3),
+            estado=estado, creado_por=self.admin, **kwargs,
+        )
+        s.aplicar_snapshot()
+        s.save()
+        return s
+
+    def _pdf(self, nombre='archivo.pdf'):
+        return SimpleUploadedFile(nombre, b'%PDF-1.4 datos', content_type='application/pdf')
+
+    # ── Devolver legalización ───────────────────────────────
+    def test_devolver_legalizacion_con_motivo(self):
+        s = self._solicitud()
+        r = self.client.post(f'/viaticos/{s.pk}/legalizacion/devolver/',
+                             {'motivo_devolucion': 'Falta recibo de hotel'})
+        self.assertEqual(r.status_code, 302)
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_DEVUELTA)
+        self.assertEqual(s.motivo_devolucion, 'Falta recibo de hotel')
+        self.assertIsNotNone(s.legalizacion_devuelta_en)
+        self.assertEqual(s.gestionado_por, self.admin)
+
+    def test_devolver_legalizacion_sin_motivo_no_cambia(self):
+        s = self._solicitud()
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/devolver/', {'motivo_devolucion': '  '})
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_ENVIADA)
+
+    def test_devolver_legalizacion_en_pagada_bloqueada(self):
+        s = self._solicitud(SolicitudViatico.Estado.PAGADA)
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/devolver/', {'motivo_devolucion': 'X'})
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.PAGADA)
+
+    # ── Finalizar ───────────────────────────────────────────
+    def test_finalizar_leg_enviada(self):
+        s = self._solicitud()
+        self.client.post(f'/viaticos/{s.pk}/finalizar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.FINALIZADA)
+        self.assertIsNotNone(s.finalizado_en)
+        self.assertEqual(s.gestionado_por, self.admin)
+
+    def test_finalizar_en_pagada_bloqueada(self):
+        """Sin legalización enviada no hay nada que cerrar."""
+        s = self._solicitud(SolicitudViatico.Estado.PAGADA)
+        self.client.post(f'/viaticos/{s.pk}/finalizar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.PAGADA)
+
+    # ── Soporte de pago en los estados nuevos ───────────────
+    def test_subir_soporte_pago_en_leg_enviada_permitido(self):
+        s = self._solicitud(SolicitudViatico.Estado.LEG_ENVIADA)
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        soporte = s.soportes.get()
+        self.assertEqual(soporte.tipo, SoportePago.Tipo.PAGO)
+
+    def test_subir_soporte_pago_en_finalizada_rechazado(self):
+        s = self._solicitud(SolicitudViatico.Estado.FINALIZADA)
+        self.client.post(f'/viaticos/{s.pk}/soporte/', {'archivo': self._pdf()})
+        self.assertEqual(s.soportes.count(), 0)
+
+    def test_eliminar_soporte_legalizacion_da_404(self):
+        """Financiera no puede borrar soportes de legalización (son de programación)."""
+        s = self._solicitud()
+        soporte = SoportePago.objects.create(
+            solicitud=s, tipo=SoportePago.Tipo.LEGALIZACION, archivo=self._pdf('leg.pdf'),
+        )
+        r = self.client.post(f'/viaticos/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(s.soportes.count(), 1)
+
+    def test_eliminar_soporte_pago_en_finalizada_bloqueado(self):
+        s = self._solicitud(SolicitudViatico.Estado.FINALIZADA)
+        soporte = SoportePago.objects.create(solicitud=s, archivo=self._pdf('pago.pdf'))
+        self.client.post(f'/viaticos/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(s.soportes.count(), 1)
+
+    def test_descarga_soporte_legalizacion_en_financiera(self):
+        """Solo lectura sí: financiera ve/descarga los soportes de legalización."""
+        s = self._solicitud()
+        soporte = SoportePago.objects.create(
+            solicitud=s, tipo=SoportePago.Tipo.LEGALIZACION, archivo=self._pdf('leg.pdf'),
+        )
+        r = self.client.get(f'/viaticos/soporte/{soporte.pk}/descargar/')
+        self.assertEqual(r.status_code, 200)
+
+    # ── Flujo completo del ciclo de legalización ────────────
+    def test_flujo_legalizacion_completo(self):
+        """PAGADA → LEG_ENVIADA → LEG_DEVUELTA → LEG_ENVIADA → FINALIZADA, cruzando áreas."""
+        prog = Client(HTTP_HOST='programacion.testserver')
+        prog.login(username='fin_leg', password='pass')
+
+        s = self._solicitud(SolicitudViatico.Estado.PAGADA)
+        prog.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf()})
+        prog.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_ENVIADA)
+
+        self.client.post(f'/viaticos/{s.pk}/legalizacion/devolver/',
+                         {'motivo_devolucion': 'Falta un recibo'})
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_DEVUELTA)
+
+        # Programación ve el motivo, corrige y reenvía.
+        r = prog.get(f'/viaticos/{s.pk}/')
+        self.assertContains(r, 'Falta un recibo')
+        prog.post(f'/viaticos/{s.pk}/legalizacion/soporte/', {'archivo': self._pdf('recibo2.pdf')})
+        prog.post(f'/viaticos/{s.pk}/legalizacion/enviar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.LEG_ENVIADA)
+        self.assertEqual(s.motivo_devolucion, '')
+
+        self.client.post(f'/viaticos/{s.pk}/finalizar/')
+        s.refresh_from_db()
+        self.assertEqual(s.estado, SolicitudViatico.Estado.FINALIZADA)
 
 
 class FinancieraExportTest(TestCase):

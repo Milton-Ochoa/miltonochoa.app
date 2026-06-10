@@ -15,9 +15,34 @@
 
     {% include 'viaticos/_detalle_datos.html' %}
 
-    {# Soportes en solo lectura: programación los consulta, financiera los gestiona #}
-    {% if solicitud.soportes.all %}
-    {% include 'viaticos/_soportes_card.html' with soportes=solicitud.soportes.all descargar_url='viaticos_soporte_descargar' %}
+    {# Soportes de pago en solo lectura: los gestiona financiera #}
+    {% if solicitud.soportes_pago %}
+    {% include 'viaticos/_soportes_card.html' with soportes=solicitud.soportes_pago descargar_url='viaticos_soporte_descargar' %}
+    {% endif %}
+
+    {# Legalización: programación la gestiona en PAGADA/LEG_DEVUELTA; luego solo lectura #}
+    {% if puede_legalizar %}
+    {% include 'viaticos/_soportes_card.html' with titulo='Soportes de legalización' soportes=solicitud.soportes_legalizacion descargar_url='viaticos_soporte_descargar' puede_gestionar=True eliminar_url='viaticos_legalizacion_eliminar_soporte' subir_url='viaticos_legalizacion_subir_soporte' subir_pk=solicitud.pk vacio_msg='Aún no se ha adjuntado ningún soporte de legalización.' %}
+    {% elif solicitud.soportes_legalizacion %}
+    {% include 'viaticos/_soportes_card.html' with titulo='Soportes de legalización' soportes=solicitud.soportes_legalizacion descargar_url='viaticos_soporte_descargar' %}
+    {% endif %}
+
+    {% if puede_legalizar %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-light fw-bold">Gestión</div>
+        <div class="card-body">
+            <form method="post" action="{% url 'viaticos_legalizacion_enviar' solicitud.pk %}" class="m-0"
+                  onsubmit="return confirm('¿Enviar la legalización a financiera? Ya no podrás modificar los soportes.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary" {% if not solicitud.soportes_legalizacion %}disabled title="Adjunta al menos un soporte de legalización"{% endif %}>
+                    <i class="fas fa-paper-plane me-1"></i> Enviar legalización a financiera
+                </button>
+            </form>
+            {% if not solicitud.soportes_legalizacion %}
+            <span class="text-muted small d-block mt-1">Adjunta al menos un soporte para poder enviar.</span>
+            {% endif %}
+        </div>
+    </div>
     {% endif %}
 
     {% include 'viaticos/_detalle_gastos.html' %}

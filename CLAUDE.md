@@ -340,18 +340,30 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
   el middleware) controla el menú en `base_financiera.html` (el badge de "Viáticos" =
-  solicitudes `ENVIADA`, vía el context processor `financiera.viaticos.context_processors`).
+  solicitudes `ENVIADA` + `LEG_ENVIADA`, vía el context processor
+  `financiera.viaticos.context_processors`).
   **Sin** modelos propios: la app importa `SolicitudViatico`/`GastoViatico` de
   `programacion.viaticos` (BD única, mismo patrón que `usuarios`→`configuracion`), y reutiliza
   su form, parseo de gastos y partial `viaticos/_filas_gastos.html`. **Gestión de viáticos:**
-  financiera lista/ve y, según la matriz de estados, **devuelve** (con motivo, `ENVIADA→DEVUELTA`),
+  flujo completo de estados (`SolicitudViatico.Estado`):
+  `ENVIADA ↔ DEVUELTA → APROBADA → PAGADA → LEG_ENVIADA ↔ LEG_DEVUELTA → FINALIZADA` (terminal).
+  Financiera lista/ve y, según la matriz, **devuelve** (con motivo, `ENVIADA→DEVUELTA`),
   **aprueba** (`ENVIADA→APROBADA`), **paga** (`APROBADA→PAGADA`) y **edita** (mientras
-  `ENVIADA`/`APROBADA`; `DEVUELTA` es de programación, `PAGADA` es terminal). En estado
-  **`PAGADA`** financiera **sube/elimina** el **soporte de pago** (modelo `SoportePago`,
-  validado `.pdf/.jpg/.jpeg/.png` y ≤10 MB) y **exporta a Excel** las solicitudes (modal con
-  filtro de estado —default `APROBADA`— y rango de fecha de viaje; openpyxl self-contained en
-  `fin_viaticos_exportar`). Asignación al grupo por ahora vía `/admin/`. El menú financiera
-  tiene además **Pagos** (ver abajo).
+  `ENVIADA`/`APROBADA`; `DEVUELTA` es de programación). **Legalización (post-pago):** tras
+  `PAGADA`, programación adjunta soportes de legalización (`SoportePago.tipo=LEGALIZACION`,
+  vistas `legalizacion_*` en `programacion.viaticos`, permitido en `{PAGADA, LEG_DEVUELTA}`)
+  y **envía** (`legalizacion_enviar`, exige ≥1 soporte de legalización → `LEG_ENVIADA`, correo
+  a `VIATICOS_LEGALIZACION_NOTIFICAR_A` —default financiero@aamocolombia.com— vía
+  `notificar_legalizacion_enviada`); financiera **devuelve la legalización** (con motivo,
+  `LEG_ENVIADA→LEG_DEVUELTA`; reutiliza `motivo_devolucion`, se limpia al reenviar) o
+  **finaliza** (`LEG_ENVIADA→FINALIZADA`, cierre de expediente). El **soporte de pago**
+  (`SoportePago.tipo=PAGO`, default) lo sube/elimina financiera en
+  `{PAGADA, LEG_ENVIADA, LEG_DEVUELTA}` (bloqueado en `FINALIZADA`); cada área solo borra
+  soportes de su tipo (404 si no). Validación común `.pdf/.jpg/.jpeg/.png` y ≤10 MB.
+  Financiera también **exporta a Excel** las solicitudes (modal con filtro de estado —default
+  `APROBADA`— y rango de fecha de viaje; openpyxl self-contained en `fin_viaticos_exportar`).
+  Asignación al grupo por ahora vía `/admin/`. El menú financiera tiene además **Pagos**
+  (ver abajo).
 - **Sub-app `programacion.pagos` (label `pagos`):** módulo propio de los pagos semanales a
   profesores. Dueño de los modelos `PagoRealizado` (tabla `prog_pagos`), `SoportePagoProfesor`
   (`prog_pagos_soportes`), `LotePagos` (`prog_pagos_lotes`) y `ExtraPago` (`prog_pagos_extras`).
@@ -439,7 +451,10 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   toca. **No** dejar bloques `{% if messages %}` en plantillas de financiera.
 - **Soporte de pago (`viaticos.SoportePago` y `pagos.SoportePagoProfesor`):** archivos adjuntos al viático (varios por
   solicitud/pago, con historial: quién subió qué y cuándo). Dos modelos paralelos: `SoportePago`
-  (FK→`SolicitudViatico`, tabla `prog_viaticos_soportes`) y `SoportePagoProfesor`
+  (FK→`SolicitudViatico`, tabla `prog_viaticos_soportes`; campo `tipo` `PAGO`/`LEGALIZACION`,
+  default `PAGO` — un solo modelo para los dos adjuntos del viático; properties
+  `soportes_pago`/`soportes_legalizacion` en `SolicitudViatico` filtran en Python para
+  aprovechar el prefetch) y `SoportePagoProfesor`
   (FK→`PagoRealizado`, tabla `prog_pagos_soportes`). El `FileField` usa el backend de
   `STORAGES['default']` (disco en dev, Supabase Storage/S3 en prod) y un nombre limpio vía
   `_soporte_upload_to` → `viaticos/viatico-<slug-docente>-<fecha-viaje><ext>` (viáticos) y
@@ -450,8 +465,12 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   área por cada flujo (viáticos: `soporte_descargar` @solo_personal / `fin_soporte_descargar`
   @solo_financiera; pagos: `pago_soporte_descargar` @es_personal_programacion /
   `fin_pago_soporte_descargar` @solo_financiera); `?inline=1` abre en pestaña, por defecto
-  descarga. Programación lo ve/descarga (solo lectura); financiera además sube/elimina (viáticos
-  en `PAGADA`; pagos en el detalle de cualquier pago realizado).
+  descarga. Cada área gestiona su tipo y ve el del otro en solo lectura: financiera
+  sube/elimina los `tipo=PAGO` (viáticos en `{PAGADA, LEG_ENVIADA, LEG_DEVUELTA}`; pagos en el
+  detalle de cualquier pago realizado) y programación los `tipo=LEGALIZACION` (en
+  `{PAGADA, LEG_DEVUELTA}`, vistas `legalizacion_*`); en `FINALIZADA` todo queda bloqueado.
+  La tarjeta compartida `viaticos/_soportes_card.html` acepta `titulo` opcional (default
+  "Soporte de pago").
 - **SSO:** sesión y CSRF compartidos vía `SESSION_COOKIE_DOMAIN=.BASE_DOMAIN`. Un
   login vale para todos los subdominios.
 - `usuarios/middleware.py` (`ControlAcceso`) **solo actúa dentro de un área**
@@ -471,7 +490,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 348 tests OK
+python manage.py test                        # baseline: 372 tests OK
 python manage.py runserver
 ```
 
@@ -514,7 +533,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (348 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (372 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

@@ -18,10 +18,15 @@ class SolicitudViatico(models.Model):
     """
 
     class Estado(models.TextChoices):
-        ENVIADA  = 'ENVIADA',  'Enviada'
-        DEVUELTA = 'DEVUELTA', 'Devuelta'
-        APROBADA = 'APROBADA', 'Aprobada'
-        PAGADA   = 'PAGADA',   'Pagada'
+        ENVIADA      = 'ENVIADA',      'Enviada'
+        DEVUELTA     = 'DEVUELTA',     'Devuelta'
+        APROBADA     = 'APROBADA',     'Aprobada'
+        PAGADA       = 'PAGADA',       'Pagada'
+        # Legalización (post-pago): programación rinde cuentas del dinero girado y
+        # financiera la revisa. PAGADA dejó de ser terminal; el cierre es FINALIZADA.
+        LEG_ENVIADA  = 'LEG_ENVIADA',  'Legalización enviada'
+        LEG_DEVUELTA = 'LEG_DEVUELTA', 'Legalización devuelta'
+        FINALIZADA   = 'FINALIZADA',   'Finalizada'
 
     profesor = models.ForeignKey('configuracion.Profesor', on_delete=models.PROTECT,
                                  related_name='viaticos')
@@ -40,8 +45,10 @@ class SolicitudViatico(models.Model):
     fecha_regreso = models.DateField()
     observaciones = models.TextField(blank=True)
 
-    estado            = models.CharField(max_length=10, choices=Estado.choices,
+    estado            = models.CharField(max_length=20, choices=Estado.choices,
                                          default=Estado.ENVIADA)
+    # Compartido por los dos ciclos de devolución (ENVIADA↔DEVUELTA y
+    # LEG_ENVIADA↔LEG_DEVUELTA): se limpia al (re)enviar, igual que el original.
     motivo_devolucion = models.TextField(blank=True)
 
     creado_por     = models.ForeignKey(User, on_delete=models.PROTECT,
@@ -53,6 +60,9 @@ class SolicitudViatico(models.Model):
     devuelto_en    = models.DateTimeField(null=True, blank=True)
     aprobado_en    = models.DateTimeField(null=True, blank=True)
     pagado_en      = models.DateTimeField(null=True, blank=True)
+    legalizacion_enviada_en  = models.DateTimeField(null=True, blank=True)
+    legalizacion_devuelta_en = models.DateTimeField(null=True, blank=True)
+    finalizado_en            = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'prog_viaticos'
@@ -84,6 +94,16 @@ class SolicitudViatico(models.Model):
     @property
     def total(self):
         return sum(g.valor for g in self.gastos.all())
+
+    # Filtrado en Python (no .filter()) para aprovechar el prefetch de 'soportes'
+    # que ya hacen las vistas de detalle sin disparar queries extra.
+    @property
+    def soportes_pago(self):
+        return [s for s in self.soportes.all() if s.tipo == SoportePago.Tipo.PAGO]
+
+    @property
+    def soportes_legalizacion(self):
+        return [s for s in self.soportes.all() if s.tipo == SoportePago.Tipo.LEGALIZACION]
 
 
 class GastoViatico(models.Model):
@@ -123,8 +143,16 @@ class SoportePago(models.Model):
 
     Reutilizable a futuro para otros pagos (profesores, monitores)."""
 
+    class Tipo(models.TextChoices):
+        # Mismo modelo para los dos adjuntos del viático (pago y legalización):
+        # comparten validador, upload_to, proxy de descarga y tarjeta; solo cambia
+        # quién los gestiona (financiera el pago, programación la legalización).
+        PAGO         = 'PAGO',         'Soporte de pago'
+        LEGALIZACION = 'LEGALIZACION', 'Soporte de legalización'
+
     solicitud = models.ForeignKey(SolicitudViatico, on_delete=models.CASCADE,
                                   related_name='soportes')
+    tipo = models.CharField(max_length=15, choices=Tipo.choices, default=Tipo.PAGO)
     archivo = models.FileField(upload_to=_soporte_upload_to)
     nombre_original = models.CharField(max_length=255, blank=True)
     subido_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,

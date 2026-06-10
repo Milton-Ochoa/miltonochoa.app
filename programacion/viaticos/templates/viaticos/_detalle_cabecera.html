@@ -17,6 +17,9 @@ Parámetros (include ... with):
         {% elif solicitud.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark ms-2">Devuelta</span>
         {% elif solicitud.estado == 'APROBADA' %}<span class="badge bg-primary ms-2">Aprobada</span>
         {% elif solicitud.estado == 'PAGADA' %}<span class="badge bg-success ms-2">Pagada</span>
+        {% elif solicitud.estado == 'LEG_ENVIADA' %}<span class="badge bg-info text-dark ms-2">Legalización enviada</span>
+        {% elif solicitud.estado == 'LEG_DEVUELTA' %}<span class="badge bg-warning text-dark ms-2">Legalización devuelta</span>
+        {% elif solicitud.estado == 'FINALIZADA' %}<span class="badge bg-secondary ms-2">Finalizada</span>
         {% endif %}
     </h5>
     <div class="d-flex gap-2">
@@ -32,6 +35,11 @@ Parámetros (include ... with):
 {% if solicitud.estado == 'DEVUELTA' and solicitud.motivo_devolucion %}
 <div class="alert alert-warning">
     <i class="fas fa-undo me-1"></i> <strong>{{ devuelta_label }}</strong>
+    {{ solicitud.motivo_devolucion }}
+</div>
+{% elif solicitud.estado == 'LEG_DEVUELTA' and solicitud.motivo_devolucion %}
+<div class="alert alert-warning">
+    <i class="fas fa-undo me-1"></i> <strong>Legalización devuelta:</strong>
     {{ solicitud.motivo_devolucion }}
 </div>
 {% endif %}

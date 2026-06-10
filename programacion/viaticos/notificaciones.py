@@ -48,3 +48,37 @@ def notificar_solicitud_enviada(solicitud, request):
     except Exception:
         # No romper la petición del usuario por un fallo de correo.
         logger.exception('No se pudo enviar el aviso de viático #%s a financiera', solicitud.pk)
+
+
+def notificar_legalizacion_enviada(solicitud, request):
+    """Avisa a `VIATICOS_LEGALIZACION_NOTIFICAR_A` que hay una legalización por revisar.
+
+    Mismo contrato que `notificar_solicitud_enviada`: se llama vía
+    `transaction.on_commit` y un fallo de correo nunca tumba el guardado.
+    """
+    asunto = f'Legalización de viáticos #{solicitud.pk} — {solicitud.docente_nombre}'
+
+    detalle_url = url_en_area('financiera', 'fin_viaticos_detalle', request, pk=solicitud.pk)
+    colegio = solicitud.colegio_nombre
+    if solicitud.colegio_codigo:
+        colegio = f'{solicitud.colegio_codigo} - {colegio}'
+
+    cuerpo = (
+        'Programación envió la legalización de un viático pagado, pendiente de revisión.\n\n'
+        f'Docente: {solicitud.docente_nombre}\n'
+        f'Colegio: {colegio}\n'
+        f'Fecha de viaje: {solicitud.fecha_viaje} — Regreso: {solicitud.fecha_regreso}\n'
+        f'Total: ${solicitud.total:,.0f} COP\n\n'
+        f'Revísala aquí: {detalle_url}\n'
+    )
+
+    try:
+        send_mail(
+            asunto,
+            cuerpo,
+            settings.DEFAULT_FROM_EMAIL,
+            [settings.VIATICOS_LEGALIZACION_NOTIFICAR_A],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('No se pudo enviar el aviso de legalización del viático #%s', solicitud.pk)
