@@ -1,0 +1,62 @@
+{% comment %}
+Tarjeta "Soporte de pago" (compartida por viáticos y pagos, en ambas áreas):
+lista de adjuntos con ver/descargar y, si puede_gestionar, eliminar + subir.
+Parámetros (include ... with):
+  - soportes:        iterable de soportes (p. ej. solicitud.soportes.all).
+  - descargar_url:   nombre de URL del proxy de descarga (recibe s.pk).
+  - vacio_msg:       texto cuando no hay adjuntos.
+  - puede_gestionar: True → botón eliminar por adjunto + formulario de subida.
+  - eliminar_url:    nombre de URL para eliminar (recibe s.pk; solo si gestiona).
+  - subir_url:       nombre de URL para subir (recibe subir_pk; solo si gestiona).
+  - subir_pk:        pk del objeto dueño (solicitud.pk / pago.pk).
+{% endcomment %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header bg-dark text-white fw-bold">
+        <i class="fas fa-paperclip me-1"></i> Soporte de pago
+    </div>
+    <div class="card-body">
+        {% for s in soportes %}
+        <div class="d-flex justify-content-between align-items-center {% if not forloop.last %}border-bottom pb-2 mb-2{% endif %}">
+            <div>
+                <i class="fas fa-file me-1 text-secondary"></i>
+                <span>{{ s.nombre_original|default:"archivo" }}</span>
+                <span class="text-muted small d-block">
+                    {{ s.subido_en|date:"d/m/Y H:i" }}{% if s.subido_por %} · {{ s.subido_por.get_full_name|default:s.subido_por.username }}{% endif %}
+                </span>
+            </div>
+            <div class="d-flex gap-1">
+                <a href="{% url descargar_url s.pk %}?inline=1" target="_blank" class="btn btn-outline-secondary btn-sm" title="Ver">
+                    <i class="fas fa-eye"></i>
+                </a>
+                <a href="{% url descargar_url s.pk %}" class="btn btn-outline-primary btn-sm" title="Descargar">
+                    <i class="fas fa-download"></i>
+                </a>
+                {% if puede_gestionar %}
+                <form method="post" action="{% url eliminar_url s.pk %}" class="m-0"
+                      onsubmit="return confirm('¿Eliminar este soporte?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-muted {% if puede_gestionar %}mb-3{% else %}mb-0{% endif %}">{{ vacio_msg }}</p>
+        {% endfor %}
+
+        {% if puede_gestionar %}
+        <form method="post" action="{% url subir_url subir_pk %}"
+              enctype="multipart/form-data" class="d-flex gap-2 mt-3">
+            {% csrf_token %}
+            <input type="file" name="archivo" class="form-control form-control-sm"
+                   accept=".pdf,.jpg,.jpeg,.png" required>
+            <button type="submit" class="btn btn-success btn-sm text-nowrap">
+                <i class="fas fa-paperclip me-1"></i> Adjuntar
+            </button>
+        </form>
+        <span class="text-muted small d-block mt-1">PDF, JPG o PNG · máx. 10 MB</span>
+        {% endif %}
+    </div>
+</div>

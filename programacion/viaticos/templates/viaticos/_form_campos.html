@@ -1,0 +1,89 @@
+{% comment %}
+Campos del formulario de viáticos (compartido programación ↔ financiera).
+Va DENTRO del <form> del template contenedor (que pone csrf, header y botones).
+Parámetros (include ... with):
+  - con_banco: True en programación → muestra la columna Banco del docente
+    (y las columnas Cédula/Cuenta se estrechan de col-md-3 a col-md-2).
+{% endcomment %}
+{% if form.non_field_errors %}
+<div class="alert alert-danger">{{ form.non_field_errors }}</div>
+{% endif %}
+
+{# ── Docente ── #}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <label class="form-label fw-bold">Docente</label>
+        <select name="profesor" id="select-profesor" class="form-select" required>
+            <option value="">Seleccionar docente...</option>
+            {% for p in profesores %}
+            <option value="{{ p.pk }}"
+                    data-cedula="{{ p.documento|default:'' }}"
+                    data-cuenta="{{ p.cuenta_bancaria|default:'' }}"
+                    {% if con_banco %}data-banco="{{ p.banco|default:'' }}"
+                    {% endif %}{% if form.profesor.value|stringformat:'s' == p.pk|stringformat:'s' %}selected{% endif %}>
+                {{ p.nombre }} {{ p.apellido|default:'' }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if form.profesor.errors %}<div class="text-danger small">{{ form.profesor.errors|striptags }}</div>{% endif %}
+    </div>
+    <div class="{% if con_banco %}col-md-2{% else %}col-md-3{% endif %}">
+        <label class="form-label">Cédula</label>
+        <input type="text" id="docente-cedula" class="form-control bg-light" readonly placeholder="—">
+    </div>
+    <div class="{% if con_banco %}col-md-2{% else %}col-md-3{% endif %}">
+        <label class="form-label">Cuenta</label>
+        <input type="text" id="docente-cuenta" class="form-control bg-light" readonly placeholder="—">
+    </div>
+    {% if con_banco %}
+    <div class="col-md-2">
+        <label class="form-label">Banco</label>
+        <input type="text" id="docente-banco" class="form-control bg-light" readonly placeholder="—">
+    </div>
+    {% endif %}
+</div>
+
+{# ── Colegio ── #}
+<div class="row g-3 mb-3">
+    <div class="col-md-9">
+        <label class="form-label fw-bold">Colegio</label>
+        <select name="colegio" id="select-colegio" class="form-select" required>
+            <option value="">Seleccionar colegio...</option>
+            {% for c in colegios %}
+            <option value="{{ c.pk }}"
+                    data-codigo="{{ c.codigo|default:'' }}"
+                    {% if form.colegio.value|stringformat:'s' == c.pk|stringformat:'s' %}selected{% endif %}>
+                {{ c.nombre }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if form.colegio.errors %}<div class="text-danger small">{{ form.colegio.errors|striptags }}</div>{% endif %}
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Código</label>
+        <input type="text" id="colegio-codigo" class="form-control bg-light" readonly placeholder="—">
+    </div>
+</div>
+
+{# ── Fechas ── #}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <label class="form-label fw-bold">Fecha de viaje</label>
+        {{ form.fecha_viaje }}
+        {% if form.fecha_viaje.errors %}<div class="text-danger small">{{ form.fecha_viaje.errors|striptags }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+        <label class="form-label fw-bold">Fecha de regreso</label>
+        {{ form.fecha_regreso }}
+        {% if form.fecha_regreso.errors %}<div class="text-danger small">{{ form.fecha_regreso.errors|striptags }}</div>{% endif %}
+    </div>
+</div>
+
+{# ── Gastos (parte variable) ── #}
+{% include 'viaticos/_filas_gastos.html' %}
+
+{# ── Observaciones ── #}
+<div class="mb-3">
+    <label class="form-label fw-bold">Observaciones</label>
+    {{ form.observaciones }}
+</div>

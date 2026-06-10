@@ -1,0 +1,26 @@
+{% comment %}
+JS del formulario de viáticos: rellena los inputs readonly del docente/colegio
+desde los data-* del option elegido. Parámetro con_banco igual que _form_campos.
+{% endcomment %}
+<script>
+(function () {
+    var selProf = document.getElementById('select-profesor');
+    var selCol  = document.getElementById('select-colegio');
+
+    function rellenarDocente() {
+        var opt = selProf.options[selProf.selectedIndex];
+        document.getElementById('docente-cedula').value = opt ? (opt.dataset.cedula || '') : '';
+        document.getElementById('docente-cuenta').value = opt ? (opt.dataset.cuenta || '') : '';
+        {% if con_banco %}document.getElementById('docente-banco').value  = opt ? (opt.dataset.banco  || '') : '';
+        {% endif %}}
+    function rellenarColegio() {
+        var opt = selCol.options[selCol.selectedIndex];
+        document.getElementById('colegio-codigo').value = opt ? (opt.dataset.codigo || '') : '';
+    }
+
+    selProf.addEventListener('change', rellenarDocente);
+    selCol.addEventListener('change', rellenarColegio);
+    rellenarDocente();   // estado inicial (edición o POST con error)
+    rellenarColegio();
+})();
+</script>
