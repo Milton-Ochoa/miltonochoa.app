@@ -12,12 +12,15 @@ from django.contrib.auth.decorators import user_passes_test
 from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from core.areas import es_personal_programacion
 from programacion.configuracion.models import Colegio, Profesor
 from .forms import SolicitudViaticoForm
 from .models import GastoViatico, SolicitudViatico, SoportePago
-from .notificaciones import notificar_solicitud_enviada
+from .notificaciones import notificar_legalizacion_enviada, notificar_solicitud_enviada
+from .soportes import validar_soporte
 
 # Superusuario o staff del área (grupo area:programacion). Mismo predicado que
 # el resto del área; los gestores de colegio/profesor NO pasan → no ven viáticos.
@@ -26,6 +29,10 @@ solo_personal = user_passes_test(es_personal_programacion, login_url='login')
 # Estados en los que programación todavía puede editar/reenviar la solicitud.
 # APROBADA y PAGADA son de solo lectura para programación (las gestiona financiera).
 EDITABLES_PROGRAMACION = {SolicitudViatico.Estado.ENVIADA, SolicitudViatico.Estado.DEVUELTA}
+
+# Estados en los que programación gestiona la legalización (subir/borrar soportes y
+# enviarla a financiera): tras el pago, o cuando financiera la devolvió a corregir.
+LEGALIZABLES = {SolicitudViatico.Estado.PAGADA, SolicitudViatico.Estado.LEG_DEVUELTA}
 
 
 def _parsear_gastos(request):
@@ -167,6 +174,7 @@ def detalle_viatico(request, pk):
     return render(request, 'viaticos/detalle.html', {
         'solicitud': solicitud,
         'puede_editar': solicitud.estado in EDITABLES_PROGRAMACION,
+        'puede_legalizar': solicitud.estado in LEGALIZABLES,
     })
 
 
@@ -186,3 +194,80 @@ def soporte_descargar(request, soporte_id):
     """Ver (``?inline=1``) o descargar el soporte de pago de un viático."""
     soporte = get_object_or_404(SoportePago, pk=soporte_id)
     return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')
+
+
+# ══════════════════════════════════════════════════════════════
+# LEGALIZACIÓN (post-pago: programación rinde cuentas a financiera)
+# ══════════════════════════════════════════════════════════════
+
+@solo_personal
+@require_POST
+def legalizacion_subir_soporte(request, pk):
+    """Adjunta un soporte de legalización (solo en `PAGADA`/`LEG_DEVUELTA`)."""
+    solicitud = get_object_or_404(SolicitudViatico, pk=pk)
+    if solicitud.estado not in LEGALIZABLES:
+        messages.error(request, 'La legalización no se puede modificar en el estado actual.')
+        return redirect('viaticos_detalle', pk=solicitud.pk)
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        messages.error(request, 'Selecciona un archivo para subir.')
+        return redirect('viaticos_detalle', pk=solicitud.pk)
+
+    error = validar_soporte(archivo)
+    if error:
+        messages.error(request, error)
+        return redirect('viaticos_detalle', pk=solicitud.pk)
+
+    SoportePago.objects.create(
+        solicitud=solicitud,
+        tipo=SoportePago.Tipo.LEGALIZACION,
+        archivo=archivo,
+        nombre_original=archivo.name,
+        subido_por=request.user,
+    )
+    messages.success(request, 'Soporte de legalización adjuntado.')
+    return redirect('viaticos_detalle', pk=solicitud.pk)
+
+
+@solo_personal
+@require_POST
+def legalizacion_eliminar_soporte(request, soporte_id):
+    """Elimina un soporte de legalización (solo ese tipo: los de pago son de
+    financiera) mientras la legalización siga en manos de programación."""
+    soporte = get_object_or_404(
+        SoportePago.objects.select_related('solicitud'),
+        pk=soporte_id, tipo=SoportePago.Tipo.LEGALIZACION,
+    )
+    pk = soporte.solicitud_id
+    if soporte.solicitud.estado not in LEGALIZABLES:
+        messages.error(request, 'La legalización no se puede modificar en el estado actual.')
+        return redirect('viaticos_detalle', pk=pk)
+    # Borrar primero el archivo del storage (S3/disco), luego la fila.
+    soporte.archivo.delete(save=False)
+    soporte.delete()
+    messages.success(request, 'Soporte de legalización eliminado.')
+    return redirect('viaticos_detalle', pk=pk)
+
+
+@solo_personal
+@require_POST
+def legalizacion_enviar(request, pk):
+    """`PAGADA`/`LEG_DEVUELTA` → `LEG_ENVIADA`. Exige ≥1 soporte de legalización
+    (sin documentos no hay nada que revisar) y avisa por correo a financiera."""
+    solicitud = get_object_or_404(SolicitudViatico, pk=pk)
+    if solicitud.estado not in LEGALIZABLES:
+        messages.error(request, 'Solo se puede enviar la legalización de una solicitud pagada o devuelta.')
+        return redirect('viaticos_detalle', pk=solicitud.pk)
+    if not solicitud.soportes_legalizacion:
+        messages.error(request, 'Adjunta al menos un soporte de legalización antes de enviar.')
+        return redirect('viaticos_detalle', pk=solicitud.pk)
+
+    with transaction.atomic():
+        solicitud.estado = SolicitudViatico.Estado.LEG_ENVIADA
+        solicitud.legalizacion_enviada_en = timezone.now()
+        solicitud.motivo_devolucion = ''  # mismo ciclo que ENVIADA↔DEVUELTA: reenviar limpia el motivo
+        solicitud.save()
+        transaction.on_commit(lambda: notificar_legalizacion_enviada(solicitud, request))
+    messages.success(request, 'Legalización enviada a financiera.')
+    return redirect('viaticos_detalle', pk=solicitud.pk)

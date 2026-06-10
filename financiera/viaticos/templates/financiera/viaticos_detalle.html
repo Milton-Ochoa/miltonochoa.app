@@ -10,13 +10,20 @@
 
     {% include 'viaticos/_detalle_gastos.html' with con_margen=True %}
 
-    {# ── Soporte de pago (solo en PAGADA: subir, ver, descargar, borrar) ── #}
-    {% if solicitud.estado == 'PAGADA' %}
-    {% include 'viaticos/_soportes_card.html' with soportes=solicitud.soportes.all descargar_url='fin_soporte_descargar' puede_gestionar=True eliminar_url='fin_viaticos_eliminar_soporte' subir_url='fin_viaticos_subir_soporte' subir_pk=solicitud.pk vacio_msg='Aún no se ha adjuntado ningún soporte.' %}
+    {# ── Soporte de pago (gestionable desde PAGADA hasta antes de FINALIZADA) ── #}
+    {% if puede_gestionar_soporte %}
+    {% include 'viaticos/_soportes_card.html' with soportes=solicitud.soportes_pago descargar_url='fin_soporte_descargar' puede_gestionar=True eliminar_url='fin_viaticos_eliminar_soporte' subir_url='fin_viaticos_subir_soporte' subir_pk=solicitud.pk vacio_msg='Aún no se ha adjuntado ningún soporte.' %}
+    {% elif solicitud.soportes_pago %}
+    {% include 'viaticos/_soportes_card.html' with soportes=solicitud.soportes_pago descargar_url='fin_soporte_descargar' %}
+    {% endif %}
+
+    {# ── Soportes de legalización (los gestiona programación; aquí solo lectura) ── #}
+    {% if solicitud.soportes_legalizacion %}
+    {% include 'viaticos/_soportes_card.html' with titulo='Soportes de legalización' soportes=solicitud.soportes_legalizacion descargar_url='fin_soporte_descargar' %}
     {% endif %}
 
     {# ── Acciones de gestión (según el estado) ── #}
-    {% if puede_devolver or puede_aprobar or puede_pagar %}
+    {% if puede_devolver or puede_aprobar or puede_pagar or puede_devolver_legalizacion or puede_finalizar %}
     <div class="card shadow-sm">
         <div class="card-header bg-light fw-bold">Gestión</div>
         <div class="card-body d-flex flex-wrap gap-2">
@@ -41,6 +48,20 @@
                 </button>
             </form>
             {% endif %}
+            {% if puede_finalizar %}
+            <form method="post" action="{% url 'fin_viaticos_finalizar' solicitud.pk %}" class="m-0"
+                  onsubmit="return confirm('¿Finalizar la solicitud? Es el cierre definitivo del expediente.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-flag-checkered me-1"></i> Finalizar
+                </button>
+            </form>
+            {% endif %}
+            {% if puede_devolver_legalizacion %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalDevolverLeg">
+                <i class="fas fa-undo me-1"></i> Devolver legalización
+            </button>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -54,6 +75,32 @@
             {% csrf_token %}
             <div class="modal-header">
                 <h6 class="modal-title"><i class="fas fa-undo me-2"></i>Devolver a programación</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-bold">Motivo de la devolución</label>
+                <textarea name="motivo_devolucion" class="form-control" rows="3" required
+                          placeholder="Explica qué debe corregir programación..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-warning">
+                    <i class="fas fa-paper-plane me-1"></i> Devolver
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{# Modal de devolución de legalización: motivo obligatorio (lo valida también el servidor). #}
+{% if puede_devolver_legalizacion %}
+<div class="modal fade" id="modalDevolverLeg" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'fin_viaticos_legalizacion_devolver' solicitud.pk %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="fas fa-undo me-2"></i>Devolver legalización a programación</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">

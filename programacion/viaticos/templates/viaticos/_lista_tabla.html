@@ -77,6 +77,9 @@ puede intercalar su modal de exportación entre la tabla y el script).
                             {% elif s.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark">Devuelta</span>
                             {% elif s.estado == 'APROBADA' %}<span class="badge bg-primary">Aprobada</span>
                             {% elif s.estado == 'PAGADA' %}<span class="badge bg-success">Pagada</span>
+                            {% elif s.estado == 'LEG_ENVIADA' %}<span class="badge bg-info text-dark">Leg. enviada</span>
+                            {% elif s.estado == 'LEG_DEVUELTA' %}<span class="badge bg-warning text-dark">Leg. devuelta</span>
+                            {% elif s.estado == 'FINALIZADA' %}<span class="badge bg-secondary">Finalizada</span>
                             {% endif %}
                         </td>
                         <td class="text-center">

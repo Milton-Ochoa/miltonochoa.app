@@ -278,6 +278,10 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'AAMO <notificaciones@
 # se sobreescribe con VIATICOS_NOTIFICAR_A=financiero@aamocolombia.com.
 VIATICOS_NOTIFICAR_A = os.environ.get('VIATICOS_NOTIFICAR_A', 'marlon.medina@aamocolombia.com')
 
+# Destinatario del aviso de legalización de viáticos enviada (revisión post-pago).
+VIATICOS_LEGALIZACION_NOTIFICAR_A = os.environ.get(
+    'VIATICOS_LEGALIZACION_NOTIFICAR_A', 'financiero@aamocolombia.com')
+
 # ─────────────────────────────────────────────────────────────
 # ARCHIVOS ESTÁTICOS
 # ─────────────────────────────────────────────────────────────
