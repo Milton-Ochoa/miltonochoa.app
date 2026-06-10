@@ -133,17 +133,26 @@
 
         {% else %}
         {# ── Vista reducida para gestores y profesores ── #}
+        {% if request.user.perfil_profesor %}
+        {# Portal del profesor: la vista ver_horario fuerza su propio cronograma #}
+        <a href="{% url 'ver_horario' %}" class="nav-item {% if request.resolver_match.url_name == 'ver_horario' %}active{% endif %}">
+            <i class="fas fa-user-clock icon-main text-warning"></i> Cronograma
+        </a>
+        <a href="{% url 'lista_informes' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
+            <i class="fas fa-file-alt icon-main text-primary"></i> Informes
+        </a>
+        {# Pagos del profesor: aún no implementado → ítem inerte (sin href), gris, con aviso. #}
+        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+           style="cursor: not-allowed; opacity: .55;">
+            <i class="fas fa-money-check-alt icon-main"></i> Pagos
+            <span class="badge bg-secondary ms-auto" style="font-size:0.6rem;">Pronto</span>
+        </a>
+        {% else %}
         {% if request.user.perfil_colegio %}
         <a href="/colegios/?id_col={{ request.user.perfil_colegio.colegio.id }}" class="nav-item active">
             <i class="fas fa-calendar-alt icon-main text-info"></i> {{ request.user.perfil_colegio.colegio.nombre }}
         </a>
         {% endif %}
-        {% if request.user.perfil_profesor %}
-        <a href="/profesores/?profesor_id={{ request.user.perfil_profesor.profesor.id }}" class="nav-item active">
-            <i class="fas fa-user-clock icon-main text-warning"></i> {{ request.user.perfil_profesor.profesor.nombre_corto }}
-        </a>
-        {% endif %}
-        {% if not request.user.perfil_profesor %}
         <a href="{% url 'lista_informes' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
             <i class="fas fa-file-alt icon-main text-primary"></i> Informes
         </a>

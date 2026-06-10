@@ -146,6 +146,26 @@ AAMO/
 Las piezas de programación (búsqueda global, modales, atajos) viven en `base_chrome` pero
 están gated por `request.es_personal_programacion` → inertes en otras áreas.
 
+**Portal del profesor (perfiles `UsuarioProfesor`):** el sidebar **sí** se muestra a los
+perfiles de profesor (antes `base_chrome` lo ocultaba con `{% if not
+request.user.perfil_profesor %}`; ese gate, el logo-en-vez-de-hamburguesa y el footer
+propio se eliminaron — el chrome es uniforme para todos los roles). Su menú (rama
+`perfil_profesor` del `{% else %}` en `base.html`) tiene 3 ítems: **Cronograma**
+(`ver_horario`, la vista fuerza su propio horario), **Informes** (`lista_informes`, la
+vista ya scopea por rol) y **Pagos** (placeholder inerte "Pronto"; se activa con el
+portal de pagos del profesor). El modal de informe de sesión está extraído a parciales
+compartidos `informes/_modal_informe.html` + `_modal_informe_js.html` (los ids `inf_*` y
+`modalInforme` son contrato entre ambos): los incluyen `profesores/horario.html` (usa
+`profesor_sel` como profesor por defecto) e `informes/lista.html` (cada fila pasa su
+`profesor_id` como 10.º argumento opcional de `abrirInforme`, y el include lleva
+`recargar_al_guardar=True` → la página se recarga tras guardar). Para perfiles de
+profesor el server ignora el `profesor_id` del body (blindaje en `guardar_informe`).
+La lista permite **diligenciar desde la fila** (botón "Informe", oculto a gestores de
+colegio): las filas de `lista_informes` traen `clase_id`/`personalizada_id`/`profesor_id`/
+`tematica`; la clave de caché es `informes_lista:v2:g{gen}:user:{id}` y la invalidación
+rota el contador `informes_lista:gen` (funciona igual en locmem y Redis — ya no usa
+`delete_pattern`, que en locmem era un no-op).
+
 ## Convención CRÍTICA: ruta de import ≠ app_label
 
 Las apps viven dentro de `programacion/` pero **conservan su label original**:
@@ -508,7 +528,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 381 tests OK
+python manage.py test                        # baseline: 388 tests OK
 python manage.py runserver
 ```
 
@@ -551,7 +571,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (381 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (388 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

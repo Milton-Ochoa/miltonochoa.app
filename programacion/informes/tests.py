@@ -227,6 +227,27 @@ class GuardarInformeTest(TestCase):
         r = self.client.get('/informes/ajax/guardar/')
         self.assertEqual(r.status_code, 405)  # Method Not Allowed
 
+    def test_perfil_profesor_ignora_profesor_id_del_body(self):
+        # Blindaje de identidad: aunque el body traiga el id de otro profesor
+        # (p. ej. manipulando el payload del modal de la lista), el informe se
+        # guarda bajo el profesor del perfil autenticado.
+        user = User.objects.create_user(username='prof_blindaje', password='pass')
+        UsuarioProfesor.objects.create(user=user, profesor=self.profesor)
+        otro = Profesor.objects.create(nombre='Suplantado', apellido='Ajeno')
+        self.client.login(username='prof_blindaje', password='pass')
+
+        payload = self._payload(clase_id=self.clase.id)
+        payload['profesor_id'] = otro.id
+        r = self.client.post(
+            '/informes/ajax/guardar/',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+        self.assertTrue(json.loads(r.content)['ok'])
+        self.assertEqual(
+            Informe.objects.get(clase=self.clase).profesor_id, self.profesor.id
+        )
+
 
 # ── Vista: lista_informes ─────────────────────────────────────
 
@@ -284,6 +305,112 @@ class ListaInformesTest(TestCase):
         self.assertEqual(r.status_code, 200)
         for fila in r.context['filas']:
             self.assertEqual(fila['colegio_nombre'], self.colegio.nombre)
+
+
+# ── Modal de diligenciamiento en la lista (portal del profesor) ──
+
+class ListaInformesModalTest(TestCase):
+    """Las filas de la lista traen los datos que el modal compartido necesita
+    (clase_id/personalizada_id/profesor_id/tematica) y la caché se invalida al
+    guardar — el flujo "diligenciar desde la lista → recargar" depende de ambos."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin', password='pass')
+        self.client.login(username='admin', password='pass')
+        self.profesor = Profesor.objects.create(nombre='Rita', apellido='Vega')
+        col = Colegio.objects.create(nombre='Col Modal', departamento='Santander', ciudad='BGA')
+        self.colegio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
+        self.ayer = date.today() - timedelta(days=1)
+        self.clase = crear_clase(self.colegio, self.profesor, fecha=self.ayer)
+
+    def test_fila_pendiente_trae_datos_del_modal(self):
+        r = self.client.get('/informes/')
+        pendientes = [f for f in r.context['filas'] if f['informe_id'] is None]
+        self.assertEqual(len(pendientes), 1)
+        fila = pendientes[0]
+        self.assertEqual(fila['clase_id'], self.clase.id)
+        self.assertIsNone(fila['personalizada_id'])
+        self.assertEqual(fila['profesor_id'], self.profesor.id)
+
+    def test_fila_con_informe_trae_clase_id_para_precargar(self):
+        crear_informe(self.profesor, self.clase, actividades='Hecho.')
+        r = self.client.get('/informes/')
+        completadas = [f for f in r.context['filas'] if f['informe_id'] is not None]
+        self.assertEqual(len(completadas), 1)
+        self.assertEqual(completadas[0]['clase_id'], self.clase.id)
+        self.assertEqual(completadas[0]['profesor_id'], self.profesor.id)
+
+    def test_guardar_invalida_la_cache_de_la_lista(self):
+        # 1.ª visita: la clase aparece pendiente y la respuesta queda cacheada
+        r1 = self.client.get('/informes/')
+        self.assertFalse(r1.context['filas'][0]['completado'])
+
+        # Guardar el informe vía AJAX (mismo flujo del modal)
+        r = self.client.post(
+            '/informes/ajax/guardar/',
+            data=json.dumps({
+                'clase_id': self.clase.id,
+                'profesor_id': self.profesor.id,
+                'fecha_iso': str(self.ayer),
+                'colegio_nombre': 'Col Modal',
+                'grado': '11-1',
+                'materia': 'Lectura Crítica',
+                'tematica': '1',
+                'material': 'Saberes 11 Oro',
+                'actividades': 'Taller de lectura.',
+            }),
+            content_type='application/json',
+        )
+        self.assertTrue(json.loads(r.content)['ok'])
+
+        # 2.ª visita: la fila debe reflejar el informe (la caché rotó de generación)
+        r2 = self.client.get('/informes/')
+        self.assertTrue(r2.context['filas'][0]['completado'])
+        self.assertIsNotNone(r2.context['filas'][0]['informe_id'])
+
+
+# ── Menú lateral por rol (portal del profesor) ────────────────
+
+class MenuPortalProfesorTest(TestCase):
+    """base.html: el perfil de profesor tiene menú propio (Cronograma / Informes /
+    Pagos «Pronto»); gestor de colegio y staff conservan el suyo."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.col = Colegio.objects.create(nombre='Col Menú', departamento='Santander', ciudad='BGA')
+        ColegioAnio.objects.create(colegio=self.col, anio=2026, activo=True)
+        self.profesor = Profesor.objects.create(nombre='Mario', apellido='Lugo')
+
+    def test_profesor_ve_menu_propio_con_pagos_inerte(self):
+        user = User.objects.create_user(username='prof_menu', password='pass')
+        UsuarioProfesor.objects.create(user=user, profesor=self.profesor)
+        self.client.login(username='prof_menu', password='pass')
+        html = self.client.get('/informes/').content.decode()
+        self.assertIn('Cronograma', html)
+        self.assertIn('Informes', html)
+        self.assertIn('Pronto', html)          # placeholder de Pagos (se activa en F4)
+        self.assertNotIn('Configuración', html)  # nada del menú de staff
+
+    def test_gestor_colegio_mantiene_su_menu(self):
+        user = User.objects.create_user(username='gestor_menu', password='pass')
+        UsuarioColegio.objects.create(user=user, colegio=self.col)
+        self.client.login(username='gestor_menu', password='pass')
+        html = self.client.get('/informes/').content.decode()
+        self.assertIn('Col Menú', html)       # acceso directo a su colegio
+        self.assertIn('Informes', html)
+        self.assertNotIn('Cronograma', html)
+        self.assertNotIn('Pronto', html)      # el placeholder es solo del profesor
+
+    def test_staff_mantiene_menu_completo(self):
+        User.objects.create_superuser(username='admin_menu', password='pass')
+        self.client.login(username='admin_menu', password='pass')
+        html = self.client.get('/informes/').content.decode()
+        self.assertIn('Operaciones', html)
+        self.assertIn('Configuración', html)
+        self.assertNotIn('Pronto', html)
 
 
 # ── Acceso por perfil a lista de informes ────────────────────

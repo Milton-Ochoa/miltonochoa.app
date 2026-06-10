@@ -27,22 +27,32 @@ _RE_NUMERO = re.compile(r'\d+')
 _CACHE_TTL_LISTA = 300  # 5 minutos
 
 
+# Contador de "generación": rotarlo invalida de golpe todas las listas cacheadas.
+_GEN_KEY = 'informes_lista:gen'
+
+
 def _cache_key_lista(user):
-    return f'informes_lista:user:{user.id}'
+    # v2: las filas incluyen clase_id/personalizada_id/profesor_id/tematica para el
+    # modal de diligenciamiento. El sufijo de versión evita servir filas con el
+    # esquema viejo desde una caché poblada antes del deploy.
+    gen = cache.get(_GEN_KEY, 0)
+    return f'informes_lista:v2:g{gen}:user:{user.id}'
 
 
 def _invalidar_cache_lista():
-    """Borra todas las versiones cacheadas de la lista de informes.
+    """Invalida todas las listas cacheadas rotando la generación de la clave.
 
-    Llamado tras guardar o eliminar un informe. Como la caché es por usuario,
-    usamos `delete_pattern` cuando esté disponible (Redis) y caemos a un
-    fallback simple en locmem (que ignora el patrón pero el TTL corto compensa).
+    Llamado tras guardar o eliminar un informe. Se usa un contador en vez de
+    `delete_pattern` porque locmem (dev/tests) no lo soporta — y el flujo
+    "guardar desde la lista → recargar" exige que la invalidación funcione en
+    todos los backends, no solo en Redis. Las entradas de generaciones viejas
+    expiran solas por TTL.
     """
     try:
-        cache.delete_pattern('informes_lista:user:*')
-    except (AttributeError, NotImplementedError):
-        # locmem no soporta delete_pattern; el TTL de 5 min asegura coherencia eventual
-        pass
+        cache.incr(_GEN_KEY)
+    except ValueError:
+        # La clave aún no existe (primera invalidación desde el arranque)
+        cache.set(_GEN_KEY, 1, None)
 
 
 def _solo_numero_unidad(valor):
@@ -256,11 +266,13 @@ def lista_informes(request):
         'id', 'fecha', 'colegio_nombre', 'grado', 'materia',
         'tematica', 'material', 'actividades',
         'profesor__nombre', 'profesor__apellido',
+        'clase_id', 'clase_personalizada_id', 'profesor_id',
     )
 
     filas = []
     for (inf_id, fecha, colegio_nombre, grado, materia, tematica, material,
-         actividades, prof_nombre, prof_apellido) in informes_data:
+         actividades, prof_nombre, prof_apellido,
+         clase_id, personalizada_id, profesor_id) in informes_data:
         filas.append({
             'informe_id':     inf_id,
             'fecha':          fecha,
@@ -271,6 +283,11 @@ def lista_informes(request):
             'unidad':         _solo_numero_unidad(tematica),
             'material':       material or '',
             'completado':     bool((actividades or '').strip()),
+            # Datos del modal de diligenciamiento (precarga vía ajax_obtener_informe)
+            'clase_id':        clase_id,
+            'personalizada_id': personalizada_id,
+            'profesor_id':     profesor_id,
+            'tematica':        tematica or '',
         })
 
     # ── 2. Clases pendientes (sin informe, ya dictadas) ──────────────────────
@@ -287,7 +304,7 @@ def lista_informes(request):
         'id', 'fecha', 'colegio__colegio__nombre', 'bloque__grado__nombre',
         'materia__nombre', 'unidad', 'libro_especial__nombre',
         'profesor__nombre', 'profesor__apellido',
-        'colegio_id', 'bloque__grado_id',
+        'colegio_id', 'bloque__grado_id', 'profesor_id',
     )
     # Materializo una sola vez: necesito iterar dos veces (claves de cache + filas)
     clases_data = list(clases_data)
@@ -312,7 +329,8 @@ def lista_informes(request):
         return ''
 
     for (cl_id, fecha, colegio_nombre, grado_nombre, materia_nombre, unidad,
-         libro_especial, prof_nombre, prof_apellido, colegio_id, grado_id) in clases_data:
+         libro_especial, prof_nombre, prof_apellido, colegio_id, grado_id,
+         profesor_id) in clases_data:
         material = libro_especial or _libro_en(colegio_id, grado_id, fecha)
         filas.append({
             'informe_id':     None,
@@ -324,6 +342,10 @@ def lista_informes(request):
             'unidad':         _solo_numero_unidad(unidad),
             'material':       material,
             'completado':     False,
+            'clase_id':        cl_id,
+            'personalizada_id': None,
+            'profesor_id':     profesor_id,
+            'tematica':        str(unidad) if unidad else '',
         })
 
     filas.sort(key=lambda r: (r['fecha'], r['colegio_nombre']), reverse=True)

@@ -184,6 +184,19 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
   por `CheckConstraint` a nivel BD).
 - Datos de cabecera desnormalizados para sobrevivir si se elimina la clase original.
 - Estados: borrador → completado (al rellenar `actividades`).
+- **Diligenciable desde dos lugares** con el mismo modal compartido: el cronograma del
+  profesor y la **lista de informes** (botón por fila que precarga el informe vía AJAX;
+  al guardar, la lista se recarga ya actualizada). Si quien guarda es un perfil de
+  profesor, el servidor ignora cualquier `profesor_id` del payload y usa el del perfil.
+
+### Portal del profesor
+
+Los usuarios con perfil de profesor (`UsuarioProfesor`) tienen un **menú propio** en el
+sidebar con tres ítems:
+
+- **Cronograma** — su horario personal (la vista fuerza su propio profesor).
+- **Informes** — su lista de informes/pendientes, con diligenciamiento desde la fila.
+- **Pagos** — *placeholder* ("Pronto"): consulta de estado de pagos, en desarrollo.
 
 ### Liquidación de pagos semanales
 
@@ -302,7 +315,7 @@ AAMO/
 │   ├── urls.py              #   router del área (agrupa las 9 sub-apps en la raíz /)
 │   ├── configuracion/       #   Catálogos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor
 │   ├── colegios/            #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
-│   ├── profesores/          #   Vista de horario propio del profesor
+│   ├── profesores/          #   Horario del profesor + portal con menú propio (Cronograma/Informes)
 │   ├── auditoria/           #   Motor de detección + AlertaAuditoria + cron command
 │   ├── informes/            #   Informes pedagógicos por sesión
 │   ├── exportar/            #   Generación de Excel de horarios
@@ -355,7 +368,7 @@ comparte en `.miltonochoa.app` (**SSO**).
 | **Superusuario** | `User.is_superuser=True` | Todo |
 | **Staff de área** | Grupo `area:programacion` | Todo el área (como superusuario), incluida gestión de usuarios de colegio/profesor; **salvo** el panel del apex, usuarios de etiqueta, `/admin/` y otras áreas |
 | **Gestor colegio** | `UsuarioColegio` (OneToOne) | `/colegios/`, `/informes/` |
-| **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` |
+| **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` — con menú propio (Cronograma · Informes · Pagos*) |
 
 > El **staff de área financiera** (grupo `area:financiera`) accede a `financiera.miltonochoa.app`.
 
@@ -491,7 +504,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 381 tests OK.**
+**Baseline actual: 388 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -637,7 +650,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 381 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 388 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
