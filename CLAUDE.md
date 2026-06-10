@@ -374,27 +374,43 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   `exportar` queda solo con horarios.
 - **Flujo de revisión (programación → financiera), como BACKLOG:** programación **revisa y envía**;
   financiera **solo ve lo enviado** y paga. El estado vive por **semana (`LotePagos`)**:
-  `BORRADOR → ENVIADO` (una sola vía; **sin "devolver" y sin "reabrir"** — el envío es definitivo).
-  El estado `PAGADO` es **por fila** (`PagoRealizado.fecha_pago`, nullable; histórico =
+  `BORRADOR → ENVIADO` (una sola vía; **sin "devolver" y sin "reabrir"** — el envío es definitivo
+  **por lote**). Pueden coexistir **N lotes ENVIADO por semana** y **máximo 1 BORRADOR**
+  (`UniqueConstraint` parcial `unique_lote_borrador_por_semana`): al enviar, las filas **no
+  enviables** (excluidas o con clases **sin informe completado**) se **desacoplan** (`lote=None`) y
+  un "Preparar pendientes" posterior las re-adopta a un BORRADOR nuevo → pueden ir en un envío
+  posterior; las filas de lotes ENVIADO quedan **congeladas** (ni se adoptan, ni se refrescan, ni se
+  borran). El estado `PAGADO` es **por fila** (`PagoRealizado.fecha_pago`, nullable; histórico =
   `lote IS NULL AND fecha_pago IS NOT NULL`). El desglose son los `ExtraPago` (concepto + valor,
   espejo de `GastoViatico`) colgados de la fila base; el total = `valor_base` (= `valor` calculado;
   el campo `valor_base_editado` queda en el modelo pero **ya no se edita por UI**) + extras.
+  - **Gate por informe:** una fila solo es enviable si su día `(fecha, profesor, colegio)` tiene
+    **todos los informes completados** (`_claves_sin_informe`: clases no canceladas/no evento con
+    `informe IS NULL` o `actividades=''`). En programación hay una **tercera pestaña "Sin informe"**
+    (entre "Por enviar" y "Enviados") con esas filas: siguen en BORRADOR (permiten excluir/extras)
+    pero NO se envían; sirve para recordarle al docente. Al completar el informe pasan a enviables.
+    **Financiera: cero cambios** (la pestaña y el radio del export solo existen en programación,
+    gated por `tab_label_sin_informe` en los parciales compartidos).
   - **Lista = backlog (todas las semanas)**: `construir_contexto_pagos(get, *, modo)` es **por rango**,
     no por una sola semana. Sin filtro (`semana`/`hasta`) muestra **todo** lo pendiente; el filtro de
     fechas solo acota **al darle Aplicar**. Programación: pestaña *pendiente* = filas por enviar (lote
-    BORRADOR, incluye excluidas para re-incluir), *realizado* = ya enviadas; financiera: solo lotes
-    ENVIADO, partidas por `fecha_pago` (por pagar / pagadas).
+    BORRADOR con informe, incluye excluidas para re-incluir), *sin_informe* = no enviables por informe,
+    *realizado* = ya enviadas; financiera: solo lotes ENVIADO, partidas por `fecha_pago`
+    (por pagar / pagadas).
   - **`preparar_pendientes(user)`** materializa el backlog: prepara (idempotente) **todas** las semanas
-    con clases hasta hoy cuyo lote no esté ENVIADO (vía `preparar_lote_semana`, que ancla la semana en
-    su lunes–viernes canónico, no pisa override/excluida ni resucita exclusiones, y limpia
-    autogeneradas de clases canceladas).
+    con clases hasta hoy (vía `preparar_lote_semana`, que obtiene/crea el **BORRADOR** de la semana,
+    la ancla en su lunes–viernes canónico, no pisa override/excluida ni resucita exclusiones, salta
+    las filas congeladas en lotes ENVIADO y limpia autogeneradas de clases canceladas); al final
+    borra los BORRADOR que quedaron sin filas.
   - **Programación** (`programacion.pagos.views`, gate `es_personal_programacion`, POST+redirect):
-    `pagos_preparar` (backlog), `pagos_enviar` (envía **todo lo visible**: lotes BORRADOR con filas no
-    excluidas dentro del rango filtrado, o todo), `pagos_excluir_fila` (toggle `excluida`),
-    `pagos_agregar_extra`/`pagos_eliminar_extra`. `pagos.html` tiene la barra Preparar/Enviar; por fila
-    un modal **(i) de detalle** (horas, valor/hora, extras, total) y un modal de **gestión de costos
-    extra** (agregar/eliminar en el mismo botón); sin editar valor base ni reabrir. Las acciones exigen
-    lote `BORRADOR` (`_pago_editable`). Feedback por **toast** (ver Mensajes abajo).
+    `pagos_preparar` (backlog), `pagos_enviar` (envía **todo lo visible y enviable**: lotes BORRADOR
+    con filas no excluidas y con informe dentro del rango filtrado, o todo; `enviar_lote` desacopla
+    las no enviables y devuelve False si el lote quedó vacío —sigue BORRADOR—), `pagos_excluir_fila`
+    (toggle `excluida`), `pagos_agregar_extra`/`pagos_eliminar_extra`. `pagos.html` tiene la barra
+    Preparar/Enviar; por fila un modal **(i) de detalle** (horas, valor/hora, extras, total) y un
+    modal de **gestión de costos extra** (agregar/eliminar en el mismo botón); sin editar valor base
+    ni reabrir. Las acciones exigen lote `BORRADOR` (`_pago_editable`). Feedback por **toast** (ver
+    Mensajes abajo).
 - **Pagos a profesores en financiera (`financiera.pagos`, sub-app label `fin_pagos`; sin modelos
   propios, reutiliza los de `programacion.pagos`):** `construir_contexto_pagos(..., modo='financiera')`
   → **solo filas de lotes ENVIADO** (sin las excluidas). `fin_pagos_marcar` opera por **`pago_id`**
@@ -470,7 +486,9 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   detalle de cualquier pago realizado) y programación los `tipo=LEGALIZACION` (en
   `{PAGADA, LEG_DEVUELTA}`, vistas `legalizacion_*`); en `FINALIZADA` todo queda bloqueado.
   La tarjeta compartida `viaticos/_soportes_card.html` acepta `titulo` opcional (default
-  "Soporte de pago").
+  "Soporte de pago") y muestra cada adjunto con `nombre_mostrar` (property de `SoportePago` y
+  `SoportePagoProfesor`: el **basename real en storage** —refleja el renombrado del `upload_to`
+  y el sufijo único—, no el `nombre_original` subido).
 - **SSO:** sesión y CSRF compartidos vía `SESSION_COOKIE_DOMAIN=.BASE_DOMAIN`. Un
   login vale para todos los subdominios.
 - `usuarios/middleware.py` (`ControlAcceso`) **solo actúa dentro de un área**
@@ -490,7 +508,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 372 tests OK
+python manage.py test                        # baseline: 381 tests OK
 python manage.py runserver
 ```
 
@@ -533,7 +551,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (372 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (381 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

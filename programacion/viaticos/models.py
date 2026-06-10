@@ -167,3 +167,11 @@ class SoportePago(models.Model):
 
     def __str__(self):
         return f'Soporte de viático #{self.solicitud_id} ({self.nombre_original or self.archivo.name})'
+
+    @property
+    def nombre_mostrar(self):
+        """Nombre visible del adjunto: el nombre real en storage (refleja el renombrado
+        de `_soporte_upload_to` y el sufijo único), no el nombre original subido."""
+        if self.archivo and self.archivo.name:
+            return os.path.basename(self.archivo.name)
+        return self.nombre_original or 'archivo'

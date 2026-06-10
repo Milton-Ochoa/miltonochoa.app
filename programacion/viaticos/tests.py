@@ -378,6 +378,14 @@ class SoporteDescargaProgramacionTest(TestCase):
         r = self.client.get(f'/viaticos/soporte/{self.soporte.pk}/')
         self.assertEqual(r.status_code, 302)
 
+    def test_nombre_mostrar_es_el_basename_en_storage(self):
+        # La tarjeta muestra el nombre real en storage (renombrado por upload_to),
+        # no el nombre original que subió el usuario. Sin tocar storage: basta el name.
+        s = SoportePago(solicitud=self.solicitud,
+                        archivo='viaticos/viatico-juan-perez-2026-06-01.pdf',
+                        nombre_original='comprobante.pdf')
+        self.assertEqual(s.nombre_mostrar, 'viatico-juan-perez-2026-06-01.pdf')
+
 
 @override_settings(MEDIA_ROOT=_MEDIA_TMP_LEG, STORAGES=_STORAGE_LOCAL,
                    VIATICOS_LEGALIZACION_NOTIFICAR_A='financiero@aamo.test')

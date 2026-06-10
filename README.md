@@ -190,7 +190,12 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
 - Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha.
 - **Flujo borrador → enviado (una sola vía):** programación **prepara** el borrador semanal
   (`LotePagos` BORRADOR), **excluye filas**, **agrega costos extra** (`ExtraPago`) y luego
-  **envía a financiera** (BORRADOR→ENVIADO). El envío es definitivo.
+  **envía a financiera** (BORRADOR→ENVIADO). El envío es definitivo **por lote**, pero las
+  filas excluidas o retenidas no mueren con él: se desacoplan y pueden ir en un envío
+  posterior (varios lotes enviados por semana; máximo un borrador).
+- **Gate por informe:** una fila solo se envía si todas las clases de su día tienen el
+  informe pedagógico completado. Las retenidas se listan en la pestaña **"Sin informe"**
+  (con badge por fila) para recordarle al docente; al completar el informe pasan a enviables.
 - Total = valor base + extras (desglose).
 - El backlog muestra todas las semanas pendientes; el filtro de fechas solo acota al aplicar.
 
@@ -486,7 +491,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 372 tests OK.**
+**Baseline actual: 381 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -632,7 +637,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 372 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 381 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
