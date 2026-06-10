@@ -141,11 +141,8 @@
         <a href="{% url 'lista_informes' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
             <i class="fas fa-file-alt icon-main text-primary"></i> Informes
         </a>
-        {# Pagos del profesor: aún no implementado → ítem inerte (sin href), gris, con aviso. #}
-        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-           style="cursor: not-allowed; opacity: .55;">
-            <i class="fas fa-money-check-alt icon-main"></i> Pagos
-            <span class="badge bg-secondary ms-auto" style="font-size:0.6rem;">Pronto</span>
+        <a href="{% url 'profesor_pagos' %}" class="nav-item {% if request.resolver_match.url_name == 'profesor_pagos' %}active{% endif %}">
+            <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos
         </a>
         {% else %}
         {% if request.user.perfil_colegio %}

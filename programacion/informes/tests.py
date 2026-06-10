@@ -375,7 +375,7 @@ class ListaInformesModalTest(TestCase):
 
 class MenuPortalProfesorTest(TestCase):
     """base.html: el perfil de profesor tiene menú propio (Cronograma / Informes /
-    Pagos «Pronto»); gestor de colegio y staff conservan el suyo."""
+    Pagos); gestor de colegio y staff conservan el suyo."""
 
     def setUp(self):
         cache.clear()
@@ -384,14 +384,14 @@ class MenuPortalProfesorTest(TestCase):
         ColegioAnio.objects.create(colegio=self.col, anio=2026, activo=True)
         self.profesor = Profesor.objects.create(nombre='Mario', apellido='Lugo')
 
-    def test_profesor_ve_menu_propio_con_pagos_inerte(self):
+    def test_profesor_ve_menu_propio_con_pagos(self):
         user = User.objects.create_user(username='prof_menu', password='pass')
         UsuarioProfesor.objects.create(user=user, profesor=self.profesor)
         self.client.login(username='prof_menu', password='pass')
         html = self.client.get('/informes/').content.decode()
         self.assertIn('Cronograma', html)
         self.assertIn('Informes', html)
-        self.assertIn('Pronto', html)          # placeholder de Pagos (se activa en F4)
+        self.assertIn('/profesores/pagos/', html)  # portal de pagos del profesor (F4)
         self.assertNotIn('Configuración', html)  # nada del menú de staff
 
     def test_gestor_colegio_mantiene_su_menu(self):
@@ -402,7 +402,7 @@ class MenuPortalProfesorTest(TestCase):
         self.assertIn('Col Menú', html)       # acceso directo a su colegio
         self.assertIn('Informes', html)
         self.assertNotIn('Cronograma', html)
-        self.assertNotIn('Pronto', html)      # el placeholder es solo del profesor
+        self.assertNotIn('/profesores/pagos/', html)  # el portal de pagos es solo del profesor
 
     def test_staff_mantiene_menu_completo(self):
         User.objects.create_superuser(username='admin_menu', password='pass')
@@ -410,7 +410,7 @@ class MenuPortalProfesorTest(TestCase):
         html = self.client.get('/informes/').content.decode()
         self.assertIn('Operaciones', html)
         self.assertIn('Configuración', html)
-        self.assertNotIn('Pronto', html)
+        self.assertNotIn('/profesores/pagos/', html)
 
 
 # ── Acceso por perfil a lista de informes ────────────────────
