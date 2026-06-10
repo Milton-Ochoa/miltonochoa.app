@@ -12,18 +12,25 @@ y se importan con `modo='financiera'` (BD única, sin duplicar lógica).
 
 Gate: superusuario o grupo `area:financiera` (`core.areas.es_personal_financiera`).
 """
+import io
+from datetime import date
+
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from core.areas import es_personal_financiera
+from programacion.configuracion.models import ColegioAnio, Profesor
 from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.pagos.views import (
     construir_contexto_pagos, filas_pagos_por_tab,
-    _generar_excel_pagos, _label_rango, _parse_fecha,
+    _build_filas_pagos, _generar_excel_pagos, _label_rango, _parse_fecha,
 )
 from programacion.viaticos.soportes import validar_soporte
 from programacion.viaticos.views import _responder_soporte
@@ -174,3 +181,158 @@ def fin_pago_soporte_descargar(request, soporte_id):
     if not _lote_enviado(soporte.pago):
         raise Http404
     return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')
+
+
+# ══════════════════════════════════════════════════════════════
+# PROYECCIÓN — SOLO LECTURA
+# ══════════════════════════════════════════════════════════════
+# Costo estimado de las clases PROGRAMADAS (horas × valor hora del colegio), para que
+# financiera anticipe el gasto. Es un cálculo puro desde clases (`_build_filas_pagos`):
+# NUNCA materializa lotes ni filas de pago, no fija fechas de pago ni escribe en BD.
+
+def _filtros_proyeccion(data):
+    """Filtros de la proyección (GET de la página o POST del export).
+
+    `desde` default hoy (lo programado de aquí en adelante); `hasta` y los ids de
+    colegio/profesor son opcionales. Ids inválidos se ignoran (= sin filtro)."""
+    desde = _parse_fecha(data.get('desde', '')) or date.today()
+    hasta = _parse_fecha(data.get('hasta', ''))
+
+    def _id(clave):
+        try:
+            return int(data.get(clave, ''))
+        except (ValueError, TypeError):
+            return None
+
+    return desde, hasta, _id('colegio_id'), _id('profesor_id')
+
+
+def _filas_proyeccion(desde, hasta, colegio_id, profesor_id):
+    """Filas proyectadas: el mismo cálculo (y exclusiones: canceladas, eventos, sin
+    profesor) que alimenta los pagos reales, sin persistir nada.
+
+    `_build_filas_pagos` exige rango cerrado; sin `hasta` se proyecta TODO lo
+    programado (cota `date.max`). Colegio/profesor se filtran en Python para no
+    cambiar la firma del helper compartido (el volumen de clases futuras es chico)."""
+    filas = _build_filas_pagos(desde, hasta or date.max)
+    if colegio_id:
+        filas = [f for f in filas if f['colegio_id'] == colegio_id]
+    if profesor_id:
+        filas = [f for f in filas if f['profesor_id'] == profesor_id]
+    return filas
+
+
+@solo_financiera
+def fin_pagos_proyeccion(request):
+    """Listado de clases programadas con su costo estimado, filtros por colegio/
+    profesor/rango y totales. Solo lectura: no prepara lotes ni marca pagos."""
+    desde, hasta, colegio_id, profesor_id = _filtros_proyeccion(request.GET)
+    filas = _filas_proyeccion(desde, hasta, colegio_id, profesor_id)
+    return render(request, 'financiera/pagos_proyeccion.html', {
+        'filas':        filas,
+        'desde':        desde.isoformat(),
+        'hasta':        hasta.isoformat() if hasta else '',
+        'colegio_id':   colegio_id,
+        'profesor_id':  profesor_id,
+        'total_horas':  sum(f['horas'] for f in filas),
+        'total_valor':  sum(f['valor_total'] for f in filas),
+        'rango_label':  _label_rango(desde, hasta),
+        # Catálogos de los selects. ColegioAnio (no Colegio): la tarifa y las clases
+        # cuelgan del periodo; `periodo_label` desambigua periodos del mismo colegio.
+        'colegios':     ColegioAnio.objects.select_related('colegio')
+                                   .order_by('colegio__nombre', '-anio'),
+        'profesores':   Profesor.objects.order_by('nombre', 'apellido'),
+    })
+
+
+def _generar_excel_proyeccion(filas, rango_label):
+    """Excel de la proyección. Self-contained a propósito (no reutiliza
+    `_generar_excel_pagos`: sus columnas bancarias y el desglose sobran aquí)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Proyección'
+
+    COLS = ['FECHA', 'DOCENTE', 'COLEGIO', 'CODIGO', 'HORAS',
+            'VALOR/HORA', 'VALOR PROYECTADO']
+    NUM_COLS = len(COLS)
+
+    thin = Side(style='thin', color='000000')
+    borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _celda(row, col, valor='', bold=False, fill=None, color='000000',
+               h='center', v='center', fmt=None):
+        cell = ws.cell(row, col, valor)
+        cell.font = Font(name='Arial', size=10, bold=bold, color=color)
+        cell.alignment = Alignment(horizontal=h, vertical=v, wrap_text=True)
+        if fill:
+            cell.fill = PatternFill('solid', fgColor=fill)
+        cell.border = borde
+        if fmt:
+            cell.number_format = fmt
+        return cell
+
+    # Fila 1: título con el rango. Deja claro en el archivo que es una estimación.
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NUM_COLS)
+    _celda(1, 1, f'Proyección de pagos (estimado) — {rango_label}',
+           bold=True, fill='FFD9E1F2', color='FF1F3864')
+    for c in range(1, NUM_COLS + 1):   # borde/relleno de todo el rango combinado
+        ws.cell(1, c).border = borde
+        ws.cell(1, c).fill = PatternFill('solid', fgColor='FFD9E1F2')
+    ws.row_dimensions[1].height = 20
+
+    # Fila 2: cabeceras
+    for ci, nombre in enumerate(COLS, start=1):
+        _celda(2, ci, nombre, bold=True, fill='FFB8CCE4', color='FF1F3864')
+    ws.row_dimensions[2].height = 22
+
+    for i, f in enumerate(filas, start=3):
+        fill_row = 'FFFFFFFF' if i % 2 == 1 else 'FFF2F6FC'
+        _celda(i, 1, f"{f['fecha'].day:02d}/{f['fecha'].month:02d}/{f['fecha'].year}",
+               fill=fill_row)
+        _celda(i, 2, f['docente'], fill=fill_row, h='left')
+        _celda(i, 3, f['colegio'], fill=fill_row, h='left')
+        _celda(i, 4, f['codigo'],  fill=fill_row)
+        _celda(i, 5, f['horas'],   fill=fill_row, h='right', fmt='0.##')
+        _celda(i, 6, f['valor_hora'],  fill=fill_row, h='right', fmt='"$"#,##0')
+        _celda(i, 7, f['valor_total'], fill=fill_row, h='right', fmt='"$"#,##0')
+        ws.row_dimensions[i].height = 18
+
+    # Fila TOTAL (horas y valor como números, para que Excel pueda operar)
+    total_row = 3 + len(filas)
+    ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
+    _celda(total_row, 1, 'TOTAL', bold=True, fill='FFD6DCE4', h='right')
+    for c in range(1, 5):
+        ws.cell(total_row, c).border = borde
+        ws.cell(total_row, c).fill = PatternFill('solid', fgColor='FFD6DCE4')
+    _celda(total_row, 5, sum(f['horas'] for f in filas),
+           bold=True, fill='FFD6DCE4', h='right', fmt='0.##')
+    _celda(total_row, 6, '', fill='FFD6DCE4')
+    _celda(total_row, 7, sum(f['valor_total'] for f in filas),
+           bold=True, fill='FFD6DCE4', h='right', fmt='"$"#,##0')
+    ws.row_dimensions[total_row].height = 22
+
+    anchos = [12, 26, 30, 10, 9, 13, 17]
+    for ci, ancho in enumerate(anchos, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = ancho
+
+    ws.freeze_panes = 'A3'
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@solo_financiera
+@require_POST
+def fin_pagos_proyeccion_exportar(request):
+    """Descarga el `.xlsx` de la proyección con los filtros vigentes de la página."""
+    desde, hasta, colegio_id, profesor_id = _filtros_proyeccion(request.POST)
+    filas = _filas_proyeccion(desde, hasta, colegio_id, profesor_id)
+    excel_bytes = _generar_excel_proyeccion(filas, _label_rango(desde, hasta))
+
+    label = f"{desde.strftime('%Y%m%d')}_{hasta.strftime('%Y%m%d') if hasta else 'adelante'}"
+    response = HttpResponse(
+        excel_bytes,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="Proyeccion_{label}.xlsx"'
+    return response

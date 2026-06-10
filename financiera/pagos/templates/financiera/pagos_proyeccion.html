@@ -1,0 +1,165 @@
+{% extends 'base_financiera.html' %}
+{% load l10n %}
+{% block header_title %}Proyección de pagos{% endblock %}
+
+{% comment %}
+  Proyección SOLO LECTURA: clases programadas con su costo estimado (horas × valor
+  hora del colegio). No materializa lotes ni filas de pago — el cálculo es puro
+  (`_build_filas_pagos`). Filtros server-side (colegio/profesor/rango, form GET) +
+  filtros por columna y paginación client-side (parciales compartidos de pagos).
+{% endcomment %}
+
+{% block header_center %}
+{# Export con los filtros vigentes de la página (los hidden replican el GET actual). #}
+<form method="post" action="{% url 'fin_pagos_proyeccion_exportar' %}" class="d-inline">
+  {% csrf_token %}
+  <input type="hidden" name="desde" value="{{ desde }}">
+  <input type="hidden" name="hasta" value="{{ hasta }}">
+  <input type="hidden" name="colegio_id" value="{{ colegio_id|default_if_none:'' }}">
+  <input type="hidden" name="profesor_id" value="{{ profesor_id|default_if_none:'' }}">
+  <button type="submit" class="btn btn-success btn-sm fw-bold" {% if not filas %}disabled{% endif %}>
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% include 'pagos/_estilos_tabla.html' %}
+
+<div class="container-fluid py-3">
+
+  <div class="alert alert-info py-2 mb-3">
+    <i class="fas fa-info-circle me-1"></i>
+    <strong>Proyección</strong> — costo estimado de las clases programadas (horas × valor hora del colegio).
+    No representa pagos preparados ni fechas de pago.
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white py-2">
+      <form method="get" class="d-flex flex-wrap align-items-end gap-2">
+        <div>
+          <label class="form-label small text-muted mb-1">Colegio</label>
+          <select name="colegio_id" class="form-select form-select-sm" style="min-width:230px;">
+            <option value="">Todos</option>
+            {% for ca in colegios %}
+            <option value="{{ ca.id }}" {% if ca.id == colegio_id %}selected{% endif %}>{{ ca.nombre }} ({{ ca.periodo_label }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Profesor</label>
+          <select name="profesor_id" class="form-select form-select-sm" style="min-width:200px;">
+            <option value="">Todos</option>
+            {% for p in profesores %}
+            <option value="{{ p.id }}" {% if p.id == profesor_id %}selected{% endif %}>{{ p.nombre }} {{ p.apellido }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Desde</label>
+          <input type="date" name="desde" class="form-control form-control-sm" value="{{ desde }}" style="width:145px;">
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Hasta</label>
+          <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta }}" style="width:145px;">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="fas fa-search me-1"></i>Aplicar
+        </button>
+        <span class="small text-muted ms-1 align-self-center">{{ rango_label }}</span>
+      </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-pagos" id="tablaPagos">
+        <thead class="table-dark">
+          <tr>
+            <th>Fecha</th>
+            <th>Docente</th>
+            <th>Colegio</th>
+            <th>Código</th>
+            <th class="text-end">Horas</th>
+            <th class="text-end">Valor/hora</th>
+            <th class="text-end">Valor proyectado</th>
+          </tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="fecha"></th>
+            <th><input type="text" data-filtro="docente"></th>
+            <th><input type="text" data-filtro="colegio"></th>
+            <th><input type="text" data-filtro="codigo"></th>
+            <th></th><th></th><th></th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTablaPagos">
+          {% for f in filas %}
+          <tr class="fila-pago"
+              data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+              data-docente="{{ f.docente|lower }}"
+              data-colegio="{{ f.colegio|lower }}"
+              data-codigo="{{ f.codigo|lower }}"
+              data-horas="{{ f.horas|unlocalize }}"
+              data-valor="{{ f.valor_total|unlocalize }}">
+            <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
+            <td><strong>{{ f.docente }}</strong></td>
+            <td>{{ f.colegio }}</td>
+            <td>{{ f.codigo }}</td>
+            <td class="text-end">{{ f.horas|floatformat:"-2" }}</td>
+            <td class="text-end">{% if f.valor_hora %}${{ f.valor_hora|floatformat:"0" }}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}</td>
+            <td class="text-end fw-bold">${{ f.valor_total|floatformat:"0" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              <i class="fas fa-info-circle me-1"></i>
+              No hay clases programadas en este período.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+      <small class="text-muted">
+        Mostrando <span id="contadorVisiblesPagos">0</span> de {{ filas|length }}
+        · Horas: <strong id="totalHorasProy">{{ total_horas|floatformat:"-2" }}</strong>
+        · Total proyectado: <strong id="totalValorProy">${{ total_valor|floatformat:"0" }}</strong>
+      </small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesPagos"></ul></nav>
+    </div>
+  </div>
+</div>
+
+{% include 'pagos/_tabla_js.html' %}
+
+<script>
+// Totales dinámicos: al filtrar por columna, recalcular horas y valor de TODAS las
+// filas que pasan el filtro (no solo la página visible — la paginación oculta filas).
+(function () {
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaPagos tr.fila-pago'));
+    var elHoras = document.getElementById('totalHorasProy');
+    var elValor = document.getElementById('totalValorProy');
+
+    function recalc() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        var horas = 0, valor = 0;
+        filas.forEach(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return;
+            }
+            horas += parseFloat(tr.dataset.horas || 0);
+            valor += parseInt(tr.dataset.valor || 0, 10);
+        });
+        elHoras.textContent = (+horas.toFixed(2)).toLocaleString('es-CO');
+        elValor.textContent = '$' + valor.toLocaleString('es-CO');
+    }
+
+    inputs.forEach(function (inp) { inp.addEventListener('input', recalc); });
+})();
+</script>
+{% endblock %}
