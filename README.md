@@ -72,7 +72,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores y viáticos. |
-| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar + soportes) y **pagos a profesores** (marcar pago + soportes + Excel), con badge de pendientes. Acceso por grupo `area:financiera`. |
+| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes) y **pagos a profesores** (marcar pago + soportes + Excel), con badge de pendientes. Acceso por grupo `area:financiera`. |
 | **Logística** | `logistica.miltonochoa.app` | Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* visual (sidebar, header, footer)
@@ -198,8 +198,13 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
 
 - Solicitudes de viáticos con datos del docente, fechas, gastos desglosados (`GastoViatico`)
   y notificación por correo al área financiera al enviar.
-- Flujo de estados: `ENVIADA → DEVUELTA` (por financiera, con motivo) o `ENVIADA → APROBADA → PAGADA`.
-- Los soportes de pago (`SoportePago`) se adjuntan en estado `PAGADA` desde financiera.
+- Flujo de estados completo:
+  `ENVIADA ↔ DEVUELTA → APROBADA → PAGADA → LEG_ENVIADA ↔ LEG_DEVUELTA → FINALIZADA`.
+- Los soportes de pago (`SoportePago`, tipo `PAGO`) los adjunta financiera desde `PAGADA`.
+- **Legalización post-pago:** tras `PAGADA`, programación adjunta soportes de legalización
+  (`SoportePago`, tipo `LEGALIZACION`) y los envía a financiera (requiere ≥1 soporte; avisa
+  por correo). Financiera los revisa y devuelve con motivo o **finaliza** la solicitud
+  (cierre definitivo del expediente).
 
 ### Exportación Excel
 
@@ -229,8 +234,13 @@ Financiera **solo ve lo enviado** por programación. Según el estado puede:
 | Aprobar | `ENVIADA` | `APROBADA` |
 | Pagar | `APROBADA` | `PAGADA` |
 | Editar | `ENVIADA` o `APROBADA` | — |
-| Subir/eliminar soporte | `PAGADA` | — |
+| Subir/eliminar soporte de pago | `PAGADA`, `LEG_ENVIADA` o `LEG_DEVUELTA` | — |
+| Devolver legalización (con motivo) | `LEG_ENVIADA` | `LEG_DEVUELTA` |
+| Finalizar | `LEG_ENVIADA` | `FINALIZADA` (terminal) |
 | Exportar a Excel | cualquier estado | — |
+
+Los soportes de **legalización** los gestiona programación (financiera los ve en solo
+lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 
 ### Pagos a profesores
 
@@ -451,6 +461,7 @@ redirige al subdominio del área del usuario (o al `/panel/` si es superusuario)
 | `SUPABASE_S3_SECRET_KEY` | Cond. | — | Secret key S3. Obligatoria si storage en Supabase. |
 | `EMAIL_HOST_PASSWORD` | No | — | API key de Resend (re_…) para envío de correo en producción. |
 | `VIATICOS_NOTIFICAR_A` | No | `marlon.medina@aamocolombia.com` | Destinatario de los avisos de viáticos. |
+| `VIATICOS_LEGALIZACION_NOTIFICAR_A` | No | `financiero@aamocolombia.com` | Destinatario del aviso de legalización de viáticos enviada. |
 | `BACKUP_DIR` | No | `backups/` | Directorio para respaldos. |
 
 > Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin
@@ -475,7 +486,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 348 tests OK.**
+**Baseline actual: 372 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -621,7 +632,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 348 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 372 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
