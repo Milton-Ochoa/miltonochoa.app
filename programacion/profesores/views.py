@@ -1,9 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404
 from datetime import time, date
 from programacion.colegios.models import Clase, Asignacion, ClasePersonalizada, Grado
 from programacion.configuracion.models import Colegio, Profesor, NombreLibro, Unidad, Materia
+from programacion.pagos.models import PagoRealizado, SoportePagoProfesor
+from programacion.viaticos.views import _responder_soporte
 from collections import defaultdict
 
 
@@ -383,4 +385,86 @@ def ver_horario(request):
         'usuario_bloqueado': bool(perfil_prof),
         'hoy':              date.today().isoformat(),
     })
+
+
+# ══════════════════════════════════════════════════════════════
+# PORTAL DEL PROFESOR — MIS PAGOS (estado y soporte, NUNCA montos)
+# ══════════════════════════════════════════════════════════════
+
+@login_required
+def mis_pagos(request):
+    """Estado de los pagos del profesor logueado, agrupado por día de clases.
+
+    Agrupa sus clases dictadas por `(fecha, colegio)` — el mismo grouping de
+    `_build_filas_pagos` (el colegio sale del bloque) — y lo cruza con
+    `PagoRealizado`:
+      - **Pagada**: hay fila con `fecha_pago` → muestra la fecha de pago y sus soportes.
+      - **Pendiente**: todo lo demás, incluidos días aún sin fila materializada y filas
+        excluidas (la exclusión es una decisión interna de programación que el
+        profesor no debe distinguir de "en trámite").
+
+    CONTRATO CRÍTICO: al template van **dicts ya saneados** (fecha/colegio/horas/
+    estado/soportes), nunca objetos `PagoRealizado` — así un cambio futuro del
+    template no puede filtrar `{{ p.valor }}`. El profesor JAMÁS ve montos en pesos.
+    """
+    perfil = getattr(request, 'perfil_profesor', None)
+    if perfil is None:
+        # Staff/superusuario: su página de pagos es la de gestión del área.
+        return redirect('pagos_lista')
+
+    clases = (
+        Clase.objects
+        .filter(profesor_id=perfil.profesor_id, fecha__lte=date.today(),
+                cancelada=False, es_evento=False)
+        .values('fecha', 'bloque__colegio_id',
+                'bloque__colegio__colegio__nombre',
+                'bloque__hora_inicio', 'bloque__hora_fin')
+    )
+    grupos = {}
+    for c in clases:
+        key = (c['fecha'], c['bloque__colegio_id'])
+        hi, hf = c['bloque__hora_inicio'], c['bloque__hora_fin']
+        minutos = 0
+        if hi and hf:
+            minutos = max(0, (hf.hour * 60 + hf.minute) - (hi.hour * 60 + hi.minute))
+        if key not in grupos:
+            grupos[key] = {'minutos': 0,
+                           'colegio': c['bloque__colegio__colegio__nombre'] or ''}
+        grupos[key]['minutos'] += minutos
+
+    pagos_map = {
+        (p.fecha, p.colegio_id): p
+        for p in PagoRealizado.objects
+            .filter(profesor_id=perfil.profesor_id)
+            .prefetch_related('soportes')
+    }
+
+    pendientes, pagadas = [], []
+    for (fecha, colegio_id), g in sorted(grupos.items(), reverse=True):
+        fila = {'fecha': fecha, 'colegio': g['colegio'], 'horas': g['minutos'] / 60}
+        pago = pagos_map.get((fecha, colegio_id))
+        if pago is not None and pago.fecha_pago is not None:
+            fila['fecha_pago'] = pago.fecha_pago
+            fila['soportes'] = [{'id': s.id, 'nombre': s.nombre_mostrar}
+                                for s in pago.soportes.all()]
+            pagadas.append(fila)
+        else:
+            pendientes.append(fila)
+
+    return render(request, 'profesores/mis_pagos.html', {
+        'pendientes': pendientes,
+        'pagadas':    pagadas,
+    })
+
+
+@login_required
+def profesor_soporte_descargar(request, soporte_id):
+    """Ver (``?inline=1``) o descargar un soporte de pago, **solo si es del profesor
+    logueado**. 404 (no 403) cuando no es suyo: no revelar que el soporte existe."""
+    perfil = getattr(request, 'perfil_profesor', None)
+    soporte = get_object_or_404(
+        SoportePagoProfesor.objects.select_related('pago'), pk=soporte_id)
+    if perfil is None or soporte.pago.profesor_id != perfil.profesor_id:
+        raise Http404
+    return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')
 

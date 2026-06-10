@@ -152,8 +152,20 @@ request.user.perfil_profesor %}`; ese gate, el logo-en-vez-de-hamburguesa y el f
 propio se eliminaron — el chrome es uniforme para todos los roles). Su menú (rama
 `perfil_profesor` del `{% else %}` en `base.html`) tiene 3 ítems: **Cronograma**
 (`ver_horario`, la vista fuerza su propio horario), **Informes** (`lista_informes`, la
-vista ya scopea por rol) y **Pagos** (placeholder inerte "Pronto"; se activa con el
-portal de pagos del profesor). El modal de informe de sesión está extraído a parciales
+vista ya scopea por rol) y **Pagos** (`profesor_pagos` → `/profesores/pagos/`, vista
+`mis_pagos` en `programacion.profesores.views`; bajo `/profesores/` a propósito para no
+tocar `_PERMITIDAS_PROFESOR`). **Mis pagos** muestra el estado de sus pagos por día de
+clases — agrupa sus clases dictadas (`fecha__lte=hoy`, no canceladas/no eventos) por
+`(fecha, bloque__colegio_id)`, el mismo grouping de `_build_filas_pagos`, y cruza con
+`PagoRealizado`: *Pagada* = fila con `fecha_pago` (muestra fecha de pago + soportes);
+*Pendiente* = todo lo demás (incluye días sin fila materializada y filas `excluida` —
+la exclusión es interna de programación). **CONTRATO: el profesor NUNCA ve montos en
+pesos** — al template (`profesores/mis_pagos.html`, dos pestañas) van dicts saneados
+(fecha/colegio/horas/estado/soportes), jamás objetos `PagoRealizado`. Staff/superusuario
+en esa URL → redirect a `pagos_lista`. La descarga del soporte la proxia
+`profesor_soporte_descargar` (`/profesores/pagos/soporte/<id>/`), gateada al **dueño**:
+404 (no 403, para no revelar existencia) si el soporte no es de su `profesor_id` o si
+no hay perfil de profesor. El modal de informe de sesión está extraído a parciales
 compartidos `informes/_modal_informe.html` + `_modal_informe_js.html` (los ids `inf_*` y
 `modalInforme` son contrato entre ambos): los incluyen `profesores/horario.html` (usa
 `profesor_sel` como profesor por defecto) e `informes/lista.html` (cada fila pasa su
@@ -528,7 +540,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 388 tests OK
+python manage.py test                        # baseline: 400 tests OK
 python manage.py runserver
 ```
 

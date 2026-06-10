@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block header_title %}Mis pagos{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'ver_horario' %}">Cronograma</a></li>
+    <li class="breadcrumb-item active">Mis pagos</li>
+</ol>
+{% endblock %}
+
+{% comment %}
+  Portal del profesor: estado de sus pagos por día de clases. SOLO estado y soporte —
+  esta página NUNCA muestra montos en pesos (contrato con la vista: llegan dicts
+  saneados sin valores). No agregar columnas de valor/total aquí.
+{% endcomment %}
+
+{% block content %}
+<style>
+    .tabla-mis-pagos th, .tabla-mis-pagos td { font-size: 0.875rem; vertical-align: middle; }
+    .tabla-mis-pagos thead th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+</style>
+
+<div class="container-fluid py-3">
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabPendientes" type="button" role="tab">
+                Pendientes por pagar
+                {% if pendientes %}<span class="badge bg-warning text-dark ms-1">{{ pendientes|length }}</span>{% endif %}
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPagadas" type="button" role="tab">
+                Pagadas
+                {% if pagadas %}<span class="badge bg-success ms-1">{{ pagadas|length }}</span>{% endif %}
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+
+        {# ── Pendientes por pagar ── #}
+        <div class="tab-pane fade show active" id="tabPendientes" role="tabpanel">
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 tabla-mis-pagos">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Colegio</th>
+                                <th class="text-center">Horas</th>
+                                <th class="text-center">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for f in pendientes %}
+                            <tr>
+                                <td>{{ f.fecha|date:"d/m/Y" }}</td>
+                                <td><strong>{{ f.colegio }}</strong></td>
+                                <td class="text-center">{{ f.horas|floatformat:"-2" }}</td>
+                                <td class="text-center"><span class="badge bg-warning text-dark">Pendiente</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No tienes pagos pendientes.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {# ── Pagadas ── #}
+        <div class="tab-pane fade" id="tabPagadas" role="tabpanel">
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 tabla-mis-pagos">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Colegio</th>
+                                <th class="text-center">Horas</th>
+                                <th class="text-center">Estado</th>
+                                <th>Soporte de pago</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for f in pagadas %}
+                            <tr>
+                                <td>{{ f.fecha|date:"d/m/Y" }}</td>
+                                <td><strong>{{ f.colegio }}</strong></td>
+                                <td class="text-center">{{ f.horas|floatformat:"-2" }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-success">Pagada</span>
+                                    <div class="text-muted small mt-1">{{ f.fecha_pago|date:"d/m/Y" }}</div>
+                                </td>
+                                <td>
+                                    {% for s in f.soportes %}
+                                    <div class="d-flex align-items-center gap-2 {% if not forloop.last %}mb-1{% endif %}">
+                                        <i class="fas fa-paperclip text-muted"></i>
+                                        <span class="small text-truncate" style="max-width: 220px;" title="{{ s.nombre }}">{{ s.nombre }}</span>
+                                        <a href="{% url 'profesor_soporte_descargar' s.id %}?inline=1" target="_blank" rel="noopener"
+                                           class="btn btn-outline-info btn-sm py-0 px-2" title="Ver">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <a href="{% url 'profesor_soporte_descargar' s.id %}"
+                                           class="btn btn-outline-secondary btn-sm py-0 px-2" title="Descargar">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                    </div>
+                                    {% empty %}
+                                    <span class="text-muted small">Sin soporte adjunto aún.</span>
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center text-muted py-4">Aún no hay pagos registrados.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+</div>
+</div>
+{% endblock %}

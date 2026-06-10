@@ -196,7 +196,10 @@ sidebar con tres ítems:
 
 - **Cronograma** — su horario personal (la vista fuerza su propio profesor).
 - **Informes** — su lista de informes/pendientes, con diligenciamiento desde la fila.
-- **Pagos** — *placeholder* ("Pronto"): consulta de estado de pagos, en desarrollo.
+- **Pagos** — estado de sus pagos por día de clases, en dos pestañas (*Pendientes por
+  pagar* / *Pagadas*) con fecha, colegio y horas. En las pagadas muestra la fecha de pago
+  y permite **ver/descargar el soporte** (gateado al dueño: el soporte de otro profesor
+  responde 404). **Nunca muestra montos en pesos** — solo estado y comprobante.
 
 ### Liquidación de pagos semanales
 
@@ -504,7 +507,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 388 tests OK.**
+**Baseline actual: 400 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -650,7 +653,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 388 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 400 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
