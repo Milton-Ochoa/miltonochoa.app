@@ -309,21 +309,6 @@
             min-width: 0;
         }
 
-        .header-brand-logo {
-            height: 40px;
-            width: auto;
-            border-radius: 6px;
-        }
-
-        .footer-profesor {
-            background-color: #1a1e21;
-            color: #fff;
-            text-align: center;
-            font-size: 0.85rem;
-            font-weight: bold;
-            padding: 10px;
-        }
-
         /* Breadcrumbs en header */
         .header-breadcrumb {
             margin: 0;
@@ -564,7 +549,6 @@
 <!-- ══════════════════════════════════════════════════
      SIDEBAR
 ══════════════════════════════════════════════════ -->
-{% if not request.user.perfil_profesor %}
 <nav class="sidebar offcanvas-md offcanvas-start" id="sidebarMenu" tabindex="-1"
      aria-label="Menú lateral"
      style="--bs-offcanvas-bg: #212529;">
@@ -586,7 +570,6 @@
         &copy; 2026 Versión Web
     </div>
 </nav>
-{% endif %}
 
 <!-- ══════════════════════════════════════════════════
      CONTENIDO PRINCIPAL
@@ -594,9 +577,6 @@
 <div class="main-wrapper">
     <header class="top-header position-relative">
         <div class="top-header-left">
-            {% if request.user.perfil_profesor %}
-            <img src="{% static 'img/logo_color.png' %}" alt="Logo AAMO" class="header-brand-logo flex-shrink-0">
-            {% else %}
             <button id="sidebarToggle"
                     class="btn btn-outline-secondary border-0 text-dark flex-shrink-0"
                     data-bs-toggle="tooltip"
@@ -605,11 +585,7 @@
                     title="Toggle menú (Ctrl+Shift+S)">
                 <i class="fas fa-bars fa-lg"></i>
             </button>
-            {% endif %}
             <div class="top-header-title">
-                {% if request.user.perfil_profesor %}
-                <small class="d-block text-muted lh-1" style="font-size: 0.7rem;">Programación AAMO</small>
-                {% endif %}
                 <h5 class="mb-0 text-secondary fw-bold lh-sm">{% block header_title %}Dashboard{% endblock %}</h5>
             </div>
         </div>
@@ -645,10 +621,6 @@
     <div class="content-area">
         {% block content %}{% endblock %}
     </div>
-
-    {% if request.user.perfil_profesor %}
-    <footer class="footer-profesor">&copy; 2026 Versión Web</footer>
-    {% endif %}
 </div>
 
 <!-- ══════════════════════════════════════════════════
