@@ -569,20 +569,25 @@ def _guardar_clase(request, sel_col):
     return recalcular
 
 
-def _calcular_enlace_efectivo(clase):
-    """Asigna clase.enlace_efectivo (atributo dinámico) para una sola instancia."""
+def _calcular_enlace_efectivo(clase, unidades_links=None):
+    """Asigna clase.enlace_efectivo (atributo dinámico).
+
+    Con `unidades_links` ({(libro_id, materia_id, numero): link}, pre-cargado en
+    batch por _construir_matriz) resuelve sin tocar la BD; sin él consulta la
+    Unidad puntual (caso de una sola instancia, p. ej. ajax_guardar_clase).
+    """
     if (clase.libro_especial_id and clase.materia_id
             and clase.unidad and str(clase.unidad).isdigit()):
-        link = (
-            Unidad.objects
-            .filter(
-                libro_id=clase.libro_especial_id,
-                materia_id=clase.materia_id,
-                numero=int(clase.unidad),
-            )
-            .values_list('link', flat=True)
-            .first()
-        ) or ''
+        key = (clase.libro_especial_id, clase.materia_id, int(clase.unidad))
+        if unidades_links is not None:
+            link = unidades_links.get(key, '')
+        else:
+            link = (
+                Unidad.objects
+                .filter(libro_id=key[0], materia_id=key[1], numero=key[2])
+                .values_list('link', flat=True)
+                .first()
+            ) or ''
         clase.enlace_efectivo = link or clase.enlace_personalizado or ''
     else:
         clase.enlace_efectivo = clase.enlace_personalizado or ''
@@ -818,12 +823,7 @@ def _construir_matriz(sel_col, bloques_raw, inicio, fin):
             unidades_links[(u['libro_id'], u['materia_id'], u['numero'])] = u['link'] or ''
 
     for c in clases:
-        if c.libro_especial_id and c.materia_id and c.unidad and str(c.unidad).isdigit():
-            key = (c.libro_especial_id, c.materia_id, int(c.unidad))
-            unidad_link = unidades_links.get(key, '')
-            c.enlace_efectivo = unidad_link or c.enlace_personalizado or ''
-        else:
-            c.enlace_efectivo = c.enlace_personalizado or ''
+        _calcular_enlace_efectivo(c, unidades_links)
 
     matriz = {b.id: {} for b in bloques_raw}
     for c in clases:
@@ -1282,15 +1282,36 @@ def configurar_colegio(request, colegio_id):
     if request.method == 'POST':
         accion = request.POST.get('accion')
 
+        # ── Helpers locales: el parseo de horas/fechas y el lookup de libro se
+        #    repetían entre add/edit_bloque y add/edit_asignacion ──────────────
+        def _parse_hora(campo, default=None):
+            """time del POST (HH:MM) o `default` si el campo viene vacío.
+            Propaga ValueError si el formato es inválido."""
+            raw = request.POST.get(campo, '')
+            return datetime.strptime(raw, '%H:%M').time() if raw else default
+
+        def _parse_fechas_asignacion():
+            """(fecha_inicio, fecha_fin) del POST. ValueError si el formato es
+            inválido o el rango está invertido/vacío (inicio >= fin)."""
+            fi_raw = request.POST.get('fecha_inicio')
+            ff_raw = request.POST.get('fecha_fin')
+            fi = datetime.strptime(fi_raw, '%Y-%m-%d').date() if fi_raw else None
+            ff = datetime.strptime(ff_raw, '%Y-%m-%d').date() if ff_raw else None
+            if fi and ff and fi >= ff:
+                raise ValueError('rango de fechas inválido')
+            return fi, ff
+
+        def _libro_del_post():
+            nombre = request.POST.get('libro_titulo', '').strip()
+            return NombreLibro.objects.filter(nombre=nombre).first() if nombre else None
+
         if accion == 'add_bloque':
             grado_nombre = request.POST.get('grado', '').strip()
             if grado_nombre:
                 grado_obj, _ = Grado.objects.get_or_create(nombre=grado_nombre)
                 try:
-                    hi_str = request.POST.get('hora_inicio', '')
-                    hf_str = request.POST.get('hora_fin', '')
-                    hora_inicio = datetime.strptime(hi_str, '%H:%M').time() if hi_str else None
-                    hora_fin    = datetime.strptime(hf_str, '%H:%M').time() if hf_str else None
+                    hora_inicio = _parse_hora('hora_inicio')
+                    hora_fin    = _parse_hora('hora_fin')
                 except ValueError:
                     return redirect('configurar_colegio', colegio_id=colegio.id)
                 bloque = Bloque.objects.create(
@@ -1302,17 +1323,15 @@ def configurar_colegio(request, colegio_id):
                 bloque.refresh_from_db()
                 registrar_cambio(request, 'crear', bloque, colegio=colegio)
                 # Si se proporcionó libro, crear asignación simultáneamente
-                libro_nombre = request.POST.get('libro_titulo', '').strip()
-                if libro_nombre:
-                    libro_obj = NombreLibro.objects.filter(nombre=libro_nombre).first()
-                    if libro_obj:
-                        Asignacion.objects.create(
-                            colegio      = colegio,
-                            grado        = grado_obj,
-                            libro        = libro_obj,
-                            fecha_inicio = request.POST.get('fecha_inicio') or None,
-                            fecha_fin    = request.POST.get('fecha_fin') or None,
-                        )
+                libro_obj = _libro_del_post()
+                if libro_obj:
+                    Asignacion.objects.create(
+                        colegio      = colegio,
+                        grado        = grado_obj,
+                        libro        = libro_obj,
+                        fecha_inicio = request.POST.get('fecha_inicio') or None,
+                        fecha_fin    = request.POST.get('fecha_fin') or None,
+                    )
 
         elif accion == 'edit_bloque':
             b = get_object_or_404(Bloque, id=request.POST.get('bloque_id'), colegio=colegio)
@@ -1321,10 +1340,8 @@ def configurar_colegio(request, colegio_id):
                 grado_obj, _ = Grado.objects.get_or_create(nombre=grado_nombre)
                 b.grado       = grado_obj
                 try:
-                    hi_str = request.POST.get('hora_inicio', '')
-                    hf_str = request.POST.get('hora_fin', '')
-                    b.hora_inicio = datetime.strptime(hi_str, '%H:%M').time() if hi_str else b.hora_inicio
-                    b.hora_fin    = datetime.strptime(hf_str, '%H:%M').time() if hf_str else b.hora_fin
+                    b.hora_inicio = _parse_hora('hora_inicio', default=b.hora_inicio)
+                    b.hora_fin    = _parse_hora('hora_fin', default=b.hora_fin)
                 except ValueError:
                     return redirect('configurar_colegio', colegio_id=colegio.id)
                 b.save()
@@ -1338,20 +1355,15 @@ def configurar_colegio(request, colegio_id):
         elif accion == 'add_asignacion':
             grado_nombre = request.POST.get('grado', '').strip()
             try:
-                fecha_inicio_raw = datetime.strptime(request.POST.get('fecha_inicio', ''), '%Y-%m-%d').date() if request.POST.get('fecha_inicio') else None
-                fecha_fin_raw    = datetime.strptime(request.POST.get('fecha_fin', ''), '%Y-%m-%d').date() if request.POST.get('fecha_fin') else None
+                fecha_inicio_raw, fecha_fin_raw = _parse_fechas_asignacion()
             except ValueError:
                 return redirect('configurar_colegio', colegio_id=colegio.id)
-            if fecha_inicio_raw and fecha_fin_raw and fecha_inicio_raw >= fecha_fin_raw:
-                return redirect('configurar_colegio', colegio_id=colegio.id)
-            libro_nombre = request.POST.get('libro_titulo', '').strip()
-            libro_obj = NombreLibro.objects.filter(nombre=libro_nombre).first() if libro_nombre else None
             if grado_nombre:
                 grado_obj, _ = Grado.objects.get_or_create(nombre=grado_nombre)
                 asignacion = Asignacion.objects.create(
                     colegio      = colegio,
                     grado        = grado_obj,
-                    libro        = libro_obj,
+                    libro        = _libro_del_post(),
                     fecha_inicio = fecha_inicio_raw,
                     fecha_fin    = fecha_fin_raw,
                 )
@@ -1362,18 +1374,13 @@ def configurar_colegio(request, colegio_id):
                                   colegio=colegio)
             grado_nombre = request.POST.get('grado', '').strip()
             try:
-                fecha_inicio_raw = datetime.strptime(request.POST.get('fecha_inicio', ''), '%Y-%m-%d').date() if request.POST.get('fecha_inicio') else None
-                fecha_fin_raw    = datetime.strptime(request.POST.get('fecha_fin', ''), '%Y-%m-%d').date() if request.POST.get('fecha_fin') else None
+                fecha_inicio_raw, fecha_fin_raw = _parse_fechas_asignacion()
             except ValueError:
                 return redirect('configurar_colegio', colegio_id=colegio.id)
-            if fecha_inicio_raw and fecha_fin_raw and fecha_inicio_raw >= fecha_fin_raw:
-                return redirect('configurar_colegio', colegio_id=colegio.id)
-            libro_nombre = request.POST.get('libro_titulo', '').strip()
-            libro_obj = NombreLibro.objects.filter(nombre=libro_nombre).first() if libro_nombre else None
             if grado_nombre:
                 grado_obj, _   = Grado.objects.get_or_create(nombre=grado_nombre)
                 a.grado        = grado_obj
-                a.libro        = libro_obj
+                a.libro        = _libro_del_post()
                 a.fecha_inicio = fecha_inicio_raw
                 a.fecha_fin    = fecha_fin_raw
                 a.save()

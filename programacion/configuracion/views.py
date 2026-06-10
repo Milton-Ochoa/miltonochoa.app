@@ -487,9 +487,7 @@ def configuracion_profesores(request):
     profesores = Profesor.objects.prefetch_related('materias').order_by('nombre')
 
     # Valores únicos para los filtros
-    nombres       = sorted(set(f"{p.nombre.split()[0]} {p.apellido.split()[0]}".strip()
-                               if p.apellido else p.nombre.split()[0]
-                               for p in profesores))
+    nombres       = sorted(set(p.nombre_corto for p in profesores))
     documentos    = sorted(set(p.documento for p in profesores if p.documento))
     ciudades_p    = sorted(set(p.ciudad for p in profesores if p.ciudad))
     deptos_p      = sorted(set(p.departamento for p in profesores if p.departamento))
