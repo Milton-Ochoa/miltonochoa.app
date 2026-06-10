@@ -487,7 +487,23 @@ checkboxes de tipo y rango de fechas). Tests en
   soportes (archivos del storage + filas) pero **conserva la fila** (sigue en el lote enviado);
   rechaza filas de lotes no enviados. `fin_pagos_exportar` (Excel del tab, con columna DESGLOSE),
   `fin_pagos_detalle` (datos + desglose + gestión de soportes `SoportePagoProfesor`). En el menú
-  financiera **Pagos** es un desplegable con **Profesores** (funcional) y **Monitores** (placeholder).
+  financiera **Pagos** es un desplegable con **Profesores** (funcional), **Proyección** (ver abajo)
+  y **Monitores** (placeholder).
+- **Proyección de pagos (financiera, SOLO LECTURA):** `/pagos/proyeccion/` (names
+  `fin_pagos_proyeccion` / `fin_pagos_proyeccion_exportar`, en `financiera.pagos.views`, gate
+  `solo_financiera`). Lista las **clases programadas** con su costo estimado (horas × `valor_hora`
+  del `ColegioAnio`) para anticipar el gasto: es el cálculo puro de `_build_filas_pagos` (mismas
+  exclusiones que los pagos reales: canceladas, eventos, sin profesor) y **NUNCA escribe en BD**
+  (no llama `preparar_*` ni crea `LotePagos`/`PagoRealizado`); **no proyecta fecha de pago**
+  (decisión del usuario). Filtros server-side por GET: `desde` (default hoy), `hasta` opcional
+  (sin `hasta` proyecta todo lo programado, cota `date.max`), `colegio_id` (id de **`ColegioAnio`**,
+  el select muestra `periodo_label`) y `profesor_id` — los ids se post-filtran en Python para no
+  cambiar la firma del helper compartido. Template `financiera/pagos_proyeccion.html`: aviso
+  "no representa pagos preparados ni fechas de pago", filtros por columna + paginación (parciales
+  `pagos/_*.html`) y **totales dinámicos client-side** (horas y valor de las filas que pasan el
+  filtro, vía `data-horas`/`data-valor`). Export a Excel (`_generar_excel_proyeccion`, openpyxl
+  self-contained — sin columnas bancarias ni desglose) con los filtros vigentes (form POST con
+  hidden). Sin badge en el menú.
 - **Badges de Pagos (COUNT directo, todo el backlog):** financiera
   (`financiera.pagos.context_processors`) = filas **enviadas y no pagadas** (lote ENVIADO,
   `fecha_pago IS NULL`, no excluidas); programación (`programacion.pagos.context_processors`) = filas
@@ -577,7 +593,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 418 tests OK
+python manage.py test                        # baseline: 430 tests OK
 python manage.py runserver
 ```
 
@@ -620,7 +636,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (418 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (430 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

@@ -5,16 +5,19 @@ Financiera **solo gestiona filas de lotes ENVIADO** por programación: marca el 
 borrar la fila) y sube/elimina soportes. El cálculo semanal y la materialización los
 cubren los tests de programación; aquí se valida la gestión propia y el gate de área.
 """
+import io
 import shutil
 import tempfile
-from datetime import date
+from datetime import date, time, timedelta
 
 from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User, Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from openpyxl import load_workbook
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_PROGRAMACION
+from programacion.colegios.models import Bloque, Clase, Grado
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
 from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 
@@ -259,3 +262,141 @@ class FinPagosLoteNoEnviadoTest(TestCase):
         soporte = self._soporte_borrador()
         r = self.client.get(f'/pagos/soporte/{soporte.pk}/descargar/')
         self.assertEqual(r.status_code, 404)
+
+
+class FinPagosProyeccionTest(TestCase):
+    """Proyección de pagos: cálculo puro desde clases programadas (horas × valor hora),
+    SOLO LECTURA (nunca materializa lotes ni filas), con filtros y export a Excel."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        grupo_fin = Group.objects.get(name=GRUPO_STAFF_FINANCIERA)
+        self.finan = User.objects.create_user(username='finan', password='pass')
+        self.finan.groups.add(grupo_fin)
+        self.client.login(username='finan', password='pass')
+
+        self.hoy = date.today()
+        anio = self.hoy.year
+
+        colegio_a = Colegio.objects.create(
+            nombre='Colegio Central', codigo='CC1',
+            departamento='Santander', ciudad='Bucaramanga')
+        colegio_b = Colegio.objects.create(
+            nombre='Colegio Norte', codigo='CN1',
+            departamento='Santander', ciudad='Bucaramanga')
+        self.ca_a = ColegioAnio.objects.create(colegio=colegio_a, anio=anio, valor_hora=40000)
+        self.ca_b = ColegioAnio.objects.create(colegio=colegio_b, anio=anio, valor_hora=50000)
+
+        self.ana  = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.luis = Profesor.objects.create(nombre='Luis', apellido='Gómez')
+
+        grado = Grado.objects.create(nombre='11-1')
+        # Bloque de 2 h en A y de 1 h en B → proyecciones 80.000 y 50.000.
+        self.bloque_a = Bloque.objects.create(
+            colegio=self.ca_a, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        self.bloque_b = Bloque.objects.create(
+            colegio=self.ca_b, grado=grado, hora_inicio=time(8, 0), hora_fin=time(9, 0))
+
+        Clase.objects.create(colegio=self.ca_a, bloque=self.bloque_a,
+                             profesor=self.ana, fecha=self.hoy + timedelta(days=5))
+        Clase.objects.create(colegio=self.ca_b, bloque=self.bloque_b,
+                             profesor=self.luis, fecha=self.hoy + timedelta(days=6))
+        # Excluidas del cálculo (mismas reglas que los pagos reales):
+        Clase.objects.create(colegio=self.ca_a, bloque=self.bloque_a, profesor=self.ana,
+                             fecha=self.hoy + timedelta(days=7), cancelada=True)
+        Clase.objects.create(colegio=self.ca_a, bloque=self.bloque_a, profesor=self.ana,
+                             fecha=self.hoy + timedelta(days=8), es_evento=True,
+                             titulo_evento='Izada de bandera')
+        Clase.objects.create(colegio=self.ca_a, bloque=self.bloque_a, profesor=None,
+                             fecha=self.hoy + timedelta(days=9))
+        # Pasada: fuera con el default `desde=hoy`, visible si el usuario amplía el rango.
+        Clase.objects.create(colegio=self.ca_a, bloque=self.bloque_a,
+                             profesor=self.ana, fecha=self.hoy - timedelta(days=5))
+
+    # ── Cálculo y exclusiones ─────────────────────────────────
+    def test_calcula_horas_por_valor_hora(self):
+        r = self.client.get('/pagos/proyeccion/')
+        self.assertEqual(r.status_code, 200)
+        filas = r.context['filas']
+        self.assertEqual(len(filas), 2)  # canceladas/eventos/sin profesor/pasadas fuera
+        por_prof = {f['profesor_id']: f for f in filas}
+        self.assertEqual(por_prof[self.ana.id]['valor_total'], 80000)   # 2 h × 40.000
+        self.assertEqual(por_prof[self.luis.id]['valor_total'], 50000)  # 1 h × 50.000
+        self.assertEqual(r.context['total_valor'], 130000)
+        self.assertEqual(r.context['total_horas'], 3)
+
+    def test_pasadas_entran_solo_si_se_amplia_el_rango(self):
+        desde = (self.hoy - timedelta(days=10)).isoformat()
+        r = self.client.get(f'/pagos/proyeccion/?desde={desde}')
+        fechas = {f['fecha'] for f in r.context['filas']}
+        self.assertIn(self.hoy - timedelta(days=5), fechas)
+
+    # ── Filtros ───────────────────────────────────────────────
+    def test_filtro_por_colegio(self):
+        r = self.client.get(f'/pagos/proyeccion/?colegio_id={self.ca_b.id}')
+        filas = r.context['filas']
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]['colegio_id'], self.ca_b.id)
+        self.assertEqual(r.context['total_valor'], 50000)
+
+    def test_filtro_por_profesor(self):
+        r = self.client.get(f'/pagos/proyeccion/?profesor_id={self.ana.id}')
+        filas = r.context['filas']
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]['profesor_id'], self.ana.id)
+
+    def test_filtro_hasta_acota(self):
+        hasta = (self.hoy + timedelta(days=5)).isoformat()
+        r = self.client.get(f'/pagos/proyeccion/?hasta={hasta}')
+        filas = r.context['filas']
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]['profesor_id'], self.ana.id)
+
+    # ── Solo lectura ──────────────────────────────────────────
+    def test_no_escribe_lotes_ni_pagos(self):
+        self.client.get('/pagos/proyeccion/')
+        self.assertEqual(LotePagos.objects.count(), 0)
+        self.assertEqual(PagoRealizado.objects.count(), 0)
+
+    # ── Gates ─────────────────────────────────────────────────
+    def test_rechaza_usuario_solo_programacion(self):
+        grupo_prog = Group.objects.get(name=GRUPO_STAFF_PROGRAMACION)
+        u = User.objects.create_user(username='prog', password='pass')
+        u.groups.add(grupo_prog)
+        self.client.logout()
+        self.client.login(username='prog', password='pass')
+        r = self.client.get('/pagos/proyeccion/')
+        self.assertNotEqual(r.status_code, 200)
+
+    def test_rechaza_anonimo(self):
+        self.client.logout()
+        r = self.client.get('/pagos/proyeccion/')
+        self.assertNotEqual(r.status_code, 200)
+
+    # ── Export ────────────────────────────────────────────────
+    def test_exportar_devuelve_xlsx_con_total(self):
+        r = self.client.post('/pagos/proyeccion/exportar/', {'desde': self.hoy.isoformat()})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('spreadsheetml', r['Content-Type'])
+        self.assertIn('attachment', r['Content-Disposition'])
+        ws = load_workbook(io.BytesIO(r.content)).active
+        # título + cabecera + 2 filas + TOTAL
+        self.assertEqual(ws.max_row, 5)
+        self.assertEqual(ws.cell(5, 7).value, 130000)
+        self.assertEqual(ws.cell(5, 5).value, 3)
+
+    def test_exportar_respeta_filtros(self):
+        r = self.client.post('/pagos/proyeccion/exportar/', {
+            'desde': self.hoy.isoformat(), 'profesor_id': self.ana.id})
+        ws = load_workbook(io.BytesIO(r.content)).active
+        self.assertEqual(ws.max_row, 4)  # título + cabecera + 1 fila + TOTAL
+        self.assertEqual(ws.cell(3, 7).value, 80000)
+
+    def test_exportar_exige_post(self):
+        r = self.client.get('/pagos/proyeccion/exportar/')
+        self.assertEqual(r.status_code, 405)
+
+    # ── Menú ──────────────────────────────────────────────────
+    def test_menu_enlaza_proyeccion(self):
+        r = self.client.get('/pagos/')
+        self.assertContains(r, '/pagos/proyeccion/')

@@ -72,7 +72,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores y viáticos. |
-| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes) y **pagos a profesores** (marcar pago + soportes + Excel), con badge de pendientes. Acceso por grupo `area:financiera`. |
+| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badge de pendientes. Acceso por grupo `area:financiera`. |
 | **Logística** | `logistica.miltonochoa.app` | Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* visual (sidebar, header, footer)
@@ -285,6 +285,17 @@ lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 - Exporta a Excel por tab (por pagar / pagadas), con columna de desglose.
 - Badge en el menú: filas enviadas y no pagadas.
 
+### Proyección de pagos
+
+- **Solo lectura**: lista las **clases programadas** con su costo estimado
+  (horas × valor hora del colegio) para anticipar el gasto — no prepara lotes,
+  no marca pagos ni proyecta fechas de pago.
+- Filtros por colegio (periodo), profesor y rango de fechas (default: de hoy en
+  adelante), con totales dinámicos al filtrar.
+- Exporta a Excel con los filtros vigentes (fecha, docente, colegio, horas,
+  valor/hora, valor proyectado + fila TOTAL).
+- En el menú **Pagos → Proyección** (sin badge).
+
 ---
 
 ## Stack tecnológico
@@ -343,6 +354,7 @@ AAMO/
 │   ├── urls.py              #   router del área (raíz /): viaticos + pagos
 │   ├── viaticos/            #   Inicio + gestión: devolver/aprobar/pagar/editar + soportes + Excel
 │   └── pagos/               #   Pagos a profesores: semanas enviadas → marcar + soportes + Excel
+│                            #   + proyección de pagos (clases programadas, solo lectura)
 │                            #   (sin modelos propios — importa de programacion.pagos)
 │
 ├── logistica/              # PLACEHOLDER de área futura (solo __init__.py + README)
@@ -520,7 +532,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 418 tests OK.**
+**Baseline actual: 430 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -666,7 +678,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 418 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 430 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
