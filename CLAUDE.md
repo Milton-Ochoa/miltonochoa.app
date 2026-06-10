@@ -222,7 +222,7 @@ Registro actual (modelo → tabla):
 | `Profesor` | `prog_profesores` | | `Tarea` | `prog_tareas` |
 | `DocumentoProfesor` | `prog_profesores_documentos` | | `UsuarioColegio` | `usuarios_colegio` |
 | `Grado` | `prog_grados` | | `UsuarioProfesor` | `usuarios_profesor` |
-| `Bloque` | `prog_bloques` | | | |
+| `Bloque` | `prog_bloques` | | `CancelacionClase` | `prog_clases_cancelaciones` |
 | | | | `PerfilEmpleado` | `usuarios_empleados` |
 | | | | `ErrorCliente` | `usuarios_errores_cliente` |
 | `Asignacion` | `prog_asignaciones` | | `SolicitudViatico` | `prog_viaticos` |
@@ -308,6 +308,43 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   guard para no mover la ventana de un periodo con clases). La lista muestra un badge
   "Cal A"/"Cal B" por colegio y `periodo_label` en los badges de años (tabla + modal
   "Gestionar Años", vía `anios_json`).
+
+## Cancelación de clases por colegio o por profesor (`colegios.CancelacionClase`, tabla `prog_clases_cancelaciones`)
+
+Al marcar "Clase Cancelada" en el modal del dashboard se elige **quién cancela** (radio
+`cancelada_por`; default `COLEGIO` para compatibilidad con POSTs sin el campo). La lógica
+vive en `_guardar_clase` (`programacion/colegios/views.py`), así cubre la ruta AJAX y la
+no-JS, y pasa por la misma invalidación de caché del dashboard:
+
+- **COLEGIO** (comportamiento histórico): `Clase.cancelada=True` (+ motivo en
+  `comentarios`) y se crea un registro `CancelacionClase(tipo=COLEGIO)` **vigente**:
+  des-cancelar (checkbox off) lo elimina; editar la clase aún cancelada **refresca su
+  motivo** (no duplica registro).
+- **PROFESOR**: la clase **NO muere** — `cancelada` queda `False`, `profesor=None`
+  (pendiente de reasignar; reasignar = edición normal del modal) y se crea un registro
+  `tipo=PROFESOR` con **snapshot** del profesor que cancela (el del select del modal, o
+  el guardado si el POST no trae profesor). Es **histórico**: NUNCA se borra (ni al
+  reasignar; A cancela → reasignan a B → B cancela = 2 registros). Mientras está sin
+  profesor no genera fila de pago (`_build_filas_pagos` salta `profesor_id` nulo) y NO
+  cuenta como cancelada para la secuencia de unidades (sigue ocupando su unidad: en
+  `_guardar_clase` la regularidad usa la cancelación *efectiva*, no el checkbox).
+- El registro guarda snapshots (`profesor_nombre`, `colegio_nombre` —FK a `Colegio`, no
+  a `ColegioAnio`—, `fecha_clase`, `motivo`, `registrado_por`) → el reporte sobrevive a
+  reasignaciones y borrados (todas las FK son SET_NULL; borrar la clase conserva el
+  registro). `registrar_cambio` lleva tipo/motivo en el `detalle` del historial.
+- **Backfill** (migración `colegios.0019`): cada `Clase` con `cancelada=True`
+  preexistente tiene su registro COLEGIO con `registrado_por=None`.
+
+**Reporte "Cancelaciones"** (sidebar → Reportes): `/reportes/cancelaciones/` (names
+`reporte_cancelaciones` / `reporte_cancelaciones_excel`), vistas en
+`programacion/colegios/views.py` (la app dueña del modelo; no se creó sub-app), gate
+`es_personal_programacion`. OJO: la URL cuelga de `/reportes/`, **no** de `/colegios/`
+(ese prefijo lo abre el `ControlAccesoMiddleware` a los gestores de colegio; con
+`/reportes/` el middleware los bloquea y el gate de vista es la segunda barrera). Tabla
+con filtros client-side (tipo, profesor, colegio, motivo + rango sobre `fecha_clase`;
+patrón `viaticos/lista.html`) y export a Excel (openpyxl self-contained, modal con
+checkboxes de tipo y rango de fechas). Tests en
+`programacion/colegios/tests_cancelaciones.py`.
 
 ## Enrutado por subdominios y login
 
@@ -540,7 +577,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 400 tests OK
+python manage.py test                        # baseline: 418 tests OK
 python manage.py runserver
 ```
 
@@ -583,7 +620,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (388 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (418 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

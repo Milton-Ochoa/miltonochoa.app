@@ -178,6 +178,19 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
 - Throttle de 5 minutos para evitar barridos concurrentes.
 - Comando de cron: `python manage.py ejecutar_auditoria`.
 
+### Cancelaciones de clase
+
+- Al cancelar una clase desde el modal del dashboard se indica **quién cancela**:
+  - **Colegio** (comportamiento clásico): la clase queda cancelada y conserva su profesor.
+  - **Profesor**: la clase **no** se cancela — queda **sin profesor** (pendiente de
+    reasignar desde el mismo modal) y no genera fila de pago hasta la reasignación.
+- Cada cancelación deja un registro histórico (`CancelacionClase`) con snapshot de
+  profesor, colegio, fecha y motivo, que sobrevive a reasignaciones y borrados. Las de
+  tipo Profesor son permanentes (una clase puede acumular varias); las de tipo Colegio se
+  retiran si la clase se des-cancela.
+- **Reporte "Cancelaciones"** (menú Reportes): tabla con filtros por tipo, profesor,
+  colegio, motivo y rango de fecha de clase, paginación y **export a Excel**.
+
 ### Informes pedagógicos
 
 - Un `Informe` está vinculado a **exactamente una** clase regular o particular (garantizado
@@ -507,7 +520,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 400 tests OK.**
+**Baseline actual: 418 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -653,7 +666,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 400 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 418 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.

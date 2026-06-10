@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+{% block header_title %}Cancelaciones{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Reportes</li>
+    <li class="breadcrumb-item active">Cancelaciones</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarCanc">
+    <i class="fas fa-file-excel me-1"></i> Exportar
+</button>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-cancelaciones { table-layout: fixed; width: 100%; }
+    .tabla-cancelaciones th, .tabla-cancelaciones td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-cancelaciones td.col-motivo { white-space: normal; }
+    .tabla-cancelaciones thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-cancelaciones thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-cancelaciones thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-cancelaciones tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-cancelaciones tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .col-fecha    { width: 10%; }
+    .col-tipo     { width: 9%;  text-align: center; }
+    .col-profesor { width: 19%; }
+    .col-colegio  { width: 19%; }
+    .col-motivo   { width: 23%; }
+    .col-usuario  { width: 10%; }
+    .col-registro { width: 10%; }
+</style>
+
+<div class="container-fluid py-3">
+
+    {# Rango de fecha de clase (client-side, complementa los filtros por columna) #}
+    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+        <span class="fw-bold" style="font-size:0.85rem;"><i class="fas fa-calendar-alt me-1"></i>Fecha de clase:</span>
+        <input type="date" id="fechaDesdeCanc" class="form-control form-control-sm" style="width:auto;">
+        <span class="text-muted">—</span>
+        <input type="date" id="fechaHastaCanc" class="form-control form-control-sm" style="width:auto;">
+        <button type="button" id="limpiarFechasCanc" class="btn btn-outline-secondary btn-sm">Limpiar</button>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-cancelaciones" id="tablaCancelaciones">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-fecha">Fecha clase</th>
+                        <th class="col-tipo">Tipo</th>
+                        <th class="col-profesor">Profesor</th>
+                        <th class="col-colegio">Colegio</th>
+                        <th class="col-motivo">Motivo</th>
+                        <th class="col-usuario">Registrado por</th>
+                        <th class="col-registro">Registrado en</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th></th>
+                        <th><input type="text" data-filtro="tipo"></th>
+                        <th><input type="text" data-filtro="profesor"></th>
+                        <th><input type="text" data-filtro="colegio"></th>
+                        <th><input type="text" data-filtro="motivo"></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaCanc">
+                    {% for c in cancelaciones %}
+                    <tr data-fecha="{{ c.fecha_clase|date:'Y-m-d' }}"
+                        data-tipo="{{ c.get_tipo_display|lower }}"
+                        data-profesor="{{ c.profesor_nombre|lower }}"
+                        data-colegio="{{ c.colegio_nombre|lower }}"
+                        data-motivo="{{ c.motivo|lower }}">
+                        <td>{{ c.fecha_clase|date:"d/m/Y" }}</td>
+                        <td class="text-center">
+                            {% if c.tipo == 'PROFESOR' %}
+                            <span class="badge bg-warning text-dark">Profesor</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Colegio</span>
+                            {% endif %}
+                        </td>
+                        <td><strong>{{ c.profesor_nombre|default:"—" }}</strong></td>
+                        <td>{{ c.colegio_nombre|default:"—" }}</td>
+                        <td class="col-motivo">{{ c.motivo|default:"—" }}</td>
+                        <td>{% if c.registrado_por %}{{ c.registrado_por.get_full_name|default:c.registrado_por.username }}{% else %}—{% endif %}</td>
+                        <td>{{ c.registrado_en|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-ban me-1"></i> No hay cancelaciones registradas todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisiblesCanc">0</span> de {{ cancelaciones|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesCanc"></ul></nav>
+        </div>
+    </div>
+</div>
+
+{# Modal de exportación a Excel #}
+<div class="modal fade" id="modalExportarCanc" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{% url 'reporte_cancelaciones_excel' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-file-excel me-2"></i>Exportar cancelaciones</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-bold">Tipo de cancelación</label>
+                <div class="d-flex gap-4 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="tipos" value="COLEGIO" id="exp_tipo_colegio" checked>
+                        <label class="form-check-label" for="exp_tipo_colegio">Colegio</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="tipos" value="PROFESOR" id="exp_tipo_profesor" checked>
+                        <label class="form-check-label" for="exp_tipo_profesor">Profesor</label>
+                    </div>
+                </div>
+                <label class="form-label fw-bold">Fecha de clase (opcional)</label>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm">
+                    <span class="text-muted">—</span>
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-download me-1"></i> Descargar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// ── Filtrado + paginación inline (mismo patrón que viaticos/_lista_js.html,
+//    con el extra del rango de fechas: compara ISO lexicográficamente) ──
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var desdeEl = document.getElementById('fechaDesdeCanc');
+    var hastaEl = document.getElementById('fechaHastaCanc');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaCanc tr[data-fecha]'));
+    var ctrl   = document.getElementById('paginaControlesCanc');
+    var cont   = document.getElementById('contadorVisiblesCanc');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        var desde = desdeEl.value, hasta = hastaEl.value;
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            if (desde && tr.dataset.fecha < desde) return false;
+            if (hasta && tr.dataset.fecha > hasta) return false;
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+    [desdeEl, hastaEl].forEach(function (el) {
+        el.addEventListener('change', function () { pagina = 1; render(); });
+    });
+    document.getElementById('limpiarFechasCanc').addEventListener('click', function () {
+        desdeEl.value = ''; hastaEl.value = ''; pagina = 1; render();
+    });
+
+    render();
+})();
+</script>
+{% endblock %}

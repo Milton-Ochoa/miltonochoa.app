@@ -334,6 +334,30 @@ onsubmit intercepta el submit normal y lo reemplaza por guardarClaseAjax().
                     <input type="text" name="titulo_evento" id="modal_titulo_evento" class="form-control" placeholder="Ej: Simulacro ICFES, Izada de Bandera...">
                 </div>
 
+                <div id="campos_cancelada_por" class="d-none mb-3">
+                    <label class="form-label fw-bold">¿Quién cancela?</label>
+                    <div class="d-flex gap-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="cancelada_por"
+                                   id="cancelada_por_colegio" value="COLEGIO" checked>
+                            <label class="form-check-label" for="cancelada_por_colegio">
+                                <i class="fas fa-school me-1"></i>Colegio
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="cancelada_por"
+                                   id="cancelada_por_profesor" value="PROFESOR">
+                            <label class="form-check-label" for="cancelada_por_profesor">
+                                <i class="fas fa-chalkboard-teacher me-1"></i>Profesor
+                            </label>
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        Por profesor: la clase NO se cancela — queda <strong>sin profesor</strong>
+                        (pendiente de reasignar) y la cancelación se registra en el reporte.
+                    </small>
+                </div>
+
                 <div id="campos_comentarios" class="d-none mb-3">
                     <label class="form-label fw-bold">Comentarios / Notas</label>
                     <textarea name="comentarios" id="modal_comentarios" class="form-control" rows="2" placeholder="Explica el motivo de cancelación o detalles..."></textarea>
@@ -489,6 +513,7 @@ Datos para JS: inyectados como constantes JSON desde Django.
 
         document.getElementById('modal_es_evento').checked = false;
         document.getElementById('modal_cancelada').checked = false;
+        document.getElementById('cancelada_por_colegio').checked = true;
         document.getElementById('modal_titulo_evento').value = "";
         document.getElementById('modal_comentarios').value = "";
         document.getElementById('aviso_sin_libro').classList.add('d-none');
@@ -927,11 +952,17 @@ Datos para JS: inyectados como constantes JSON desde Django.
     function toggleCamposCancelada() {
         let esEvento = document.getElementById('modal_es_evento').checked;
         let estaCancelada = document.getElementById('modal_cancelada').checked;
-        
+
         if (esEvento || estaCancelada) {
             document.getElementById('campos_comentarios').classList.remove('d-none');
         } else {
             document.getElementById('campos_comentarios').classList.add('d-none');
+        }
+        // El radio "¿Quién cancela?" solo aplica cuando se está cancelando
+        if (estaCancelada) {
+            document.getElementById('campos_cancelada_por').classList.remove('d-none');
+        } else {
+            document.getElementById('campos_cancelada_por').classList.add('d-none');
         }
     }
 
