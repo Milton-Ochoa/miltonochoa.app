@@ -206,3 +206,56 @@ class FinPagosSoporteTest(TestCase):
         self.assertIsNone(self.pago.fecha_pago)
         self.assertEqual(PagoRealizado.objects.count(), 1)
         self.assertEqual(SoportePagoProfesor.objects.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_PAGOS, STORAGES=_STORAGE_LOCAL)
+class FinPagosLoteNoEnviadoTest(TestCase):
+    """Regresión: financiera solo ve lo enviado. Detalle, soportes y descarga deben
+    rechazar filas cuyo lote no esté ENVIADO (mismo guard que fin_pagos_marcar)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_PAGOS, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        grupo_fin = Group.objects.get(name=GRUPO_STAFF_FINANCIERA)
+        self.finan = User.objects.create_user(username='finan', password='pass')
+        self.finan.groups.add(grupo_fin)
+        self.client.login(username='finan', password='pass')
+
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        colegio_anio = ColegioAnio.objects.create(colegio=colegio, anio=2025)
+        profesor = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.pago = _crear_pago(colegio_anio, profesor, estado=LotePagos.Estado.BORRADOR)
+
+    def _archivo(self):
+        return SimpleUploadedFile('comprobante.pdf', b'%PDF-1.4 fake',
+                                  content_type='application/pdf')
+
+    def _soporte_borrador(self):
+        return SoportePagoProfesor.objects.create(
+            pago=self.pago, archivo=self._archivo(),
+            nombre_original='comprobante.pdf', subido_por=self.finan)
+
+    def test_detalle_rechaza_lote_borrador(self):
+        r = self.client.get(f'/pagos/{self.pago.pk}/')
+        self.assertEqual(r.status_code, 302)  # redirect a la lista, no muestra la fila
+
+    def test_subir_soporte_rechaza_lote_borrador(self):
+        r = self.client.post(f'/pagos/{self.pago.pk}/soporte/', {'archivo': self._archivo()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.pago.soportes.count(), 0)
+
+    def test_eliminar_soporte_rechaza_lote_borrador(self):
+        soporte = self._soporte_borrador()
+        r = self.client.post(f'/pagos/soporte/{soporte.pk}/eliminar/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.pago.soportes.count(), 1)  # sigue existiendo
+
+    def test_descargar_soporte_rechaza_lote_borrador(self):
+        soporte = self._soporte_borrador()
+        r = self.client.get(f'/pagos/soporte/{soporte.pk}/descargar/')
+        self.assertEqual(r.status_code, 404)

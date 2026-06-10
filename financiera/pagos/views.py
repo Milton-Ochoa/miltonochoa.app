@@ -13,7 +13,7 @@ Gate: superusuario o grupo `area:financiera` (`core.areas.es_personal_financiera
 """
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -28,6 +28,12 @@ from programacion.viaticos.soportes import validar_soporte
 from programacion.viaticos.views import _responder_soporte
 
 solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
+
+
+def _lote_enviado(pago):
+    """Financiera solo ve lo enviado: cualquier acceso a una fila cuyo lote no esté
+    ENVIADO (BORRADOR, o histórico sin lote) se rechaza. Mismo guard que fin_pagos_marcar."""
+    return pago.lote is not None and pago.lote.estado == LotePagos.Estado.ENVIADO
 
 
 @solo_financiera
@@ -56,7 +62,7 @@ def fin_pagos_marcar(request):
     pago = get_object_or_404(
         PagoRealizado.objects.select_related('lote').prefetch_related('soportes'),
         pk=pago_id)
-    if not pago.lote or pago.lote.estado != LotePagos.Estado.ENVIADO:
+    if not _lote_enviado(pago):
         return JsonResponse(
             {'ok': False, 'error': 'El pago no está disponible para financiera.'}, status=400)
 
@@ -109,10 +115,13 @@ def fin_pagos_detalle(request, pago_id):
     (subir/ver/descargar/eliminar). Espejo del detalle de viáticos en `PAGADA`."""
     pago = get_object_or_404(
         PagoRealizado.objects
-        .select_related('profesor', 'colegio__colegio', 'marcado_por')
+        .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote')
         .prefetch_related('soportes', 'soportes__subido_por'),
         pk=pago_id,
     )
+    if not _lote_enviado(pago):
+        messages.error(request, 'El pago no está disponible para financiera.')
+        return redirect('fin_pagos_lista')
     return render(request, 'financiera/pagos_detalle.html', {'pago': pago})
 
 
@@ -120,7 +129,10 @@ def fin_pagos_detalle(request, pago_id):
 @require_POST
 def fin_pagos_subir_soporte(request, pago_id):
     """Adjunta un comprobante a un pago realizado (mismo validador que viáticos)."""
-    pago = get_object_or_404(PagoRealizado, pk=pago_id)
+    pago = get_object_or_404(PagoRealizado.objects.select_related('lote'), pk=pago_id)
+    if not _lote_enviado(pago):
+        messages.error(request, 'El pago no está disponible para financiera.')
+        return redirect('fin_pagos_lista')
     archivo = request.FILES.get('archivo')
     if not archivo:
         messages.error(request, 'Selecciona un archivo para subir.')
@@ -141,7 +153,11 @@ def fin_pagos_subir_soporte(request, pago_id):
 @require_POST
 def fin_pagos_eliminar_soporte(request, soporte_id):
     """Elimina un soporte (y su archivo en storage) subido por error."""
-    soporte = get_object_or_404(SoportePagoProfesor.objects.select_related('pago'), pk=soporte_id)
+    soporte = get_object_or_404(
+        SoportePagoProfesor.objects.select_related('pago__lote'), pk=soporte_id)
+    if not _lote_enviado(soporte.pago):
+        messages.error(request, 'El pago no está disponible para financiera.')
+        return redirect('fin_pagos_lista')
     pago_id = soporte.pago_id
     soporte.archivo.delete(save=False)  # primero el storage, luego la fila
     soporte.delete()
@@ -152,5 +168,8 @@ def fin_pagos_eliminar_soporte(request, soporte_id):
 @solo_financiera
 def fin_pago_soporte_descargar(request, soporte_id):
     """Ver (`?inline=1`) o descargar un soporte. Mismo proxy server-side que viáticos."""
-    soporte = get_object_or_404(SoportePagoProfesor, pk=soporte_id)
+    soporte = get_object_or_404(
+        SoportePagoProfesor.objects.select_related('pago__lote'), pk=soporte_id)
+    if not _lote_enviado(soporte.pago):
+        raise Http404
     return _responder_soporte(soporte, inline=request.GET.get('inline') == '1')

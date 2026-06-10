@@ -109,6 +109,12 @@ def obtener_informe(request):
     elif personalizada_id:
         informe = Informe.objects.filter(clase_personalizada_id=personalizada_id).first()
 
+    # Mismo scoping que detalle_informe: un perfil de profesor solo puede leer
+    # informes de su propio profesor (el informe trae texto pedagógico privado).
+    perfil_profesor, _ = _resolver_perfil(request)
+    if informe and perfil_profesor and informe.profesor_id != perfil_profesor.profesor_id:
+        return JsonResponse({'ok': False, 'error': 'Sin permiso'}, status=403)
+
     if informe:
         data = {
             'existe':          True,
@@ -349,6 +355,7 @@ def lista_informes(request):
 # ── Eliminar informe (solo superusuario) ──────────────────────────────────────
 
 @login_required
+@require_POST
 def eliminar_informe(request, informe_id):
     """
     Elimina un informe. Restringido a superusuario para proteger el historial pedagógico.
