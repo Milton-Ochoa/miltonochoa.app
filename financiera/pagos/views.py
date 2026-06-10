@@ -1,13 +1,14 @@
 """Vistas del área **financiera** para los pagos de clases a profesores.
 
-Espejo del flujo de viáticos, pero **sin emails** y con grano por fila
-`(profesor, colegio, día)`: el sistema **calcula** (helpers de `programacion.exportar`)
-y financiera **gestiona** —marca el pago (PENDIENTE→PAGADA) y, por fila pagada,
-sube/elimina los soportes (comprobantes)—. Programación solo ve (solo lectura).
+Flujo por **lotes**: programación materializa y revisa las filas `PagoRealizado`
+(grano `(profesor, colegio, día)`) en un `LotePagos` BORRADOR y lo **envía**;
+financiera **solo ve las filas de lotes ENVIADO** (guard `_lote_enviado`) y las
+**gestiona**: marca/desmarca el pago (`fecha_pago`/`marcado_por`) y sube/elimina
+los soportes (comprobantes). Programación las consulta en solo lectura.
 
-PENDIENTE = no existe `PagoRealizado` para esa fila; PAGADA = existe. Marcar crea el
-registro; desmarcar lo borra (y, en cascada, sus soportes; los archivos se limpian del
-storage antes para no dejar huérfanos).
+El cálculo y los helpers compartidos (`construir_contexto_pagos`,
+`filas_pagos_por_tab`, `_generar_excel_pagos`) viven en `programacion.pagos.views`
+y se importan con `modo='financiera'` (BD única, sin duplicar lógica).
 
 Gate: superusuario o grupo `area:financiera` (`core.areas.es_personal_financiera`).
 """

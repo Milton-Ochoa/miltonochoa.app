@@ -850,7 +850,7 @@ def _construir_stats(sel_col):
     Estados de unidad: 'dado' (cnt=1), 'repetido' (cnt>1), 'pendiente' (cnt=0),
     'invalido' (en conteo pero fuera del universo del libro asignado).
 
-    Meses en español via _MESES_ES — no strftime (Render no tiene locale es configurado).
+    Meses en español via _MESES_ES — no strftime (Railway no tiene locale es configurado).
     """
     MESES_ES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
                 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
