@@ -1,13 +1,13 @@
 def pagos_pendientes(request):
-    """Contador de filas de pago **pendientes de la semana actual** para el badge
-    del menú financiera.
+    """Contador de pagos por pagar (todo el **backlog**) para el badge del menú
+    financiera: COUNT directo de las filas enviadas y aún no pagadas (lote
+    ENVIADO, `fecha_pago IS NULL`, no excluidas) — coincide con la pestaña
+    Pendientes, que también es por backlog y no por semana.
 
     Solo se calcula en el subdominio financiera y para su personal
-    (`request.es_personal_financiera`, que fija usuarios.middleware) → en el apex y en
-    programación no corre el cálculo. Reutiliza `construir_contexto_pagos` (semana por
-    defecto = la actual) para que el conteo coincida exactamente con la pestaña
-    Pendientes. Coste consciente: arma las filas de la semana en curso; aceptable por
-    ser solo esa ventana.
+    (`request.es_personal_financiera`, que fija usuarios.middleware) → en el apex
+    y en programación no corre el cálculo. Es un único COUNT indexado, no arma
+    filas: coste despreciable por request.
     """
     if getattr(request, 'area', None) != 'financiera':
         return {}

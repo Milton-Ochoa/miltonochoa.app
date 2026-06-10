@@ -224,15 +224,10 @@ def vista_general(request):
         'materia__nombre',
     )
 
-    def _nombre_corto(nombre, apellido):
-        """Replica la lógica de Profesor.nombre_corto sobre valores planos de .values()."""
-        p1 = nombre.split()[0] if nombre else ''
-        p2 = apellido.split()[0] if apellido else ''
-        return f"{p1} {p2}".strip()
-
     matriz = defaultdict(dict)
     for c in clases_raw:
-        c['profesor__nombre_corto'] = _nombre_corto(c['profesor__nombre'], c['profesor__apellido'])
+        c['profesor__nombre_corto'] = Profesor.nombre_corto_de(
+            c['profesor__nombre'], c['profesor__apellido'])
         matriz[c['bloque_id']][str(c['fecha'])] = c
 
     # Solo fechas que realmente tienen clases

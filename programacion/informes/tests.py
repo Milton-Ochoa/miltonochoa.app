@@ -4,9 +4,10 @@ Modelo: Informe
 Vistas: obtener_informe, guardar_informe, lista_informes, eliminar_informe, detalle_informe
 """
 import json
+from django.core.cache import cache
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
-from datetime import date
+from datetime import date, timedelta
 from datetime import time as dt_time
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, Materia
 from programacion.colegios.models import Bloque, Clase, ClasePersonalizada, Grado
@@ -130,6 +131,25 @@ class ObtenerInformeTest(TestCase):
         r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
         self.assertEqual(r.status_code, 302)
 
+    def test_profesor_no_puede_leer_informe_ajeno(self):
+        # Regresión: obtener_informe debe aplicar el mismo scoping que detalle_informe.
+        crear_informe(self.profesor, self.clase, actividades='Privado.')
+        otro = Profesor.objects.create(nombre='Otro', apellido='Prof')
+        user = User.objects.create_user(username='otro_prof', password='pass')
+        UsuarioProfesor.objects.create(user=user, profesor=otro)
+        self.client.login(username='otro_prof', password='pass')
+        r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
+        self.assertEqual(r.status_code, 403)
+
+    def test_profesor_si_puede_leer_su_propio_informe(self):
+        crear_informe(self.profesor, self.clase, actividades='Mío.')
+        user = User.objects.create_user(username='luis_prof', password='pass')
+        UsuarioProfesor.objects.create(user=user, profesor=self.profesor)
+        self.client.login(username='luis_prof', password='pass')
+        r = self.client.get(f'/informes/ajax/obtener/?clase_id={self.clase.id}')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(json.loads(r.content)['existe'])
+
 
 # ── Vista AJAX: guardar_informe ───────────────────────────────
 
@@ -211,8 +231,11 @@ class GuardarInformeTest(TestCase):
 # ── Vista: lista_informes ─────────────────────────────────────
 
 class ListaInformesTest(TestCase):
+    """La vista entrega TODO el dataset como dicts en `filas` (el filtrado fino
+    es responsabilidad del JS del template)."""
 
     def setUp(self):
+        cache.clear()  # la lista se cachea por user id; evita fugas entre tests
         self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser(username='admin', password='pass')
         self.profesor = Profesor.objects.create(nombre='Jorge', apellido='Pérez')
@@ -225,29 +248,21 @@ class ListaInformesTest(TestCase):
         self.client.login(username='admin', password='pass')
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['informes'].count(), 1)
+        self.assertEqual(len(r.context['filas']), 1)
+        self.assertEqual(r.context['filas'][0]['colegio_nombre'], 'Col Lista')
 
-    def test_filtro_por_colegio(self):
+    def test_clase_pasada_sin_informe_aparece_como_pendiente(self):
+        ayer = date.today() - timedelta(days=1)
+        crear_clase(self.colegio, self.profesor, fecha=ayer)
         self.client.login(username='admin', password='pass')
-        r = self.client.get('/informes/?colegio=Col Lista')
-        self.assertEqual(r.context['informes'].count(), 1)
-
-    def test_filtro_colegio_que_no_existe_devuelve_cero(self):
-        self.client.login(username='admin', password='pass')
-        r = self.client.get('/informes/?colegio=Inexistente')
-        self.assertEqual(r.context['informes'].count(), 0)
-
-    def test_filtro_solo_completos(self):
-        self.client.login(username='admin', password='pass')
-        r = self.client.get('/informes/?completos=1')
-        # El informe de setUp tiene actividades → aparece
-        self.assertEqual(r.context['informes'].count(), 1)
+        r = self.client.get('/informes/')
+        pendientes = [f for f in r.context['filas'] if f['informe_id'] is None]
+        self.assertEqual(len(pendientes), 1)
+        self.assertFalse(pendientes[0]['completado'])
 
     def test_usuario_profesor_solo_ve_sus_informes(self):
         user = User.objects.create_user(username='jorge', password='pass')
-        UsuarioProfesor.objects.create(
-            user=user, profesor=self.profesor
-        )
+        UsuarioProfesor.objects.create(user=user, profesor=self.profesor)
         otro_profesor = Profesor.objects.create(nombre='Otro', apellido='Prof')
         otro_col = Colegio.objects.create(nombre='Col Otro', departamento='Santander', ciudad='BGA')
         otro_colegio = ColegioAnio.objects.create(colegio=otro_col, anio=2026, activo=True)
@@ -258,19 +273,17 @@ class ListaInformesTest(TestCase):
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
         # Solo debe ver su propio informe, no el del otro profesor
-        for inf in r.context['informes']:
-            self.assertEqual(inf.profesor, self.profesor)
+        self.assertEqual(len(r.context['filas']), 1)
+        self.assertEqual(r.context['filas'][0]['profesor'], 'Jorge Pérez')
 
     def test_usuario_colegio_solo_ve_informes_de_su_colegio(self):
         user = User.objects.create_user(username='user_col', password='pass')
-        UsuarioColegio.objects.create(
-            user=user, colegio=self.colegio.colegio
-        )
+        UsuarioColegio.objects.create(user=user, colegio=self.colegio.colegio)
         self.client.login(username='user_col', password='pass')
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
-        for inf in r.context['informes']:
-            self.assertEqual(inf.colegio_nombre, self.colegio.nombre)
+        for fila in r.context['filas']:
+            self.assertEqual(fila['colegio_nombre'], self.colegio.nombre)
 
 
 # ── Acceso por perfil a lista de informes ────────────────────
@@ -278,45 +291,46 @@ class ListaInformesTest(TestCase):
 class ListaInformesAccesoTest(TestCase):
 
     def setUp(self):
+        cache.clear()
         self.client = Client(HTTP_HOST='programacion.testserver')
         self.admin = User.objects.create_superuser('admin_inf', password='pass')
         col = Colegio.objects.create(
             nombre='Col Inf', departamento='Santander', ciudad='BGA'
         )
         self.colegio = col
+        self.colegio_anio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
+        otro_col = Colegio.objects.create(
+            nombre='Otro Colegio', departamento='Valle', ciudad='Cali'
+        )
+        self.otro_anio = ColegioAnio.objects.create(colegio=otro_col, anio=2026, activo=True)
         self.profesor = Profesor.objects.create(nombre='Ana', apellido='López')
         user_col  = User.objects.create_user('user_col_inf', password='pass')
         user_prof = User.objects.create_user('user_prof_inf', password='pass')
         UsuarioColegio.objects.create(user=user_col, colegio=self.colegio)
         UsuarioProfesor.objects.create(user=user_prof, profesor=self.profesor)
-        Informe.objects.create(
-            profesor=self.profesor, colegio_nombre='Col Inf',
-            grado='11-1', fecha=date.today(),
-            materia='Matemáticas', tematica='Álgebra', material='Libro X',
-        )
-        Informe.objects.create(
-            profesor=self.profesor, colegio_nombre='Otro Colegio',
-            grado='10-1', fecha=date.today(),
-            materia='Física', tematica='Mecánica', material='Libro Y',
-        )
+        crear_informe(self.profesor, crear_clase(self.colegio_anio, self.profesor),
+                      actividades='Álgebra.')
+        crear_informe(self.profesor, crear_clase(self.otro_anio, self.profesor),
+                      actividades='Mecánica.')
 
     def test_admin_ve_todos_los_informes(self):
         self.client.login(username='admin_inf', password='pass')
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['informes'].paginator.count, 2)
+        self.assertEqual(len(r.context['filas']), 2)
 
     def test_usuario_colegio_solo_ve_sus_informes(self):
         self.client.login(username='user_col_inf', password='pass')
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['informes'].paginator.count, 1)
+        self.assertEqual(len(r.context['filas']), 1)
+        self.assertEqual(r.context['filas'][0]['colegio_nombre'], 'Col Inf')
 
     def test_usuario_profesor_solo_ve_sus_informes(self):
         self.client.login(username='user_prof_inf', password='pass')
         r = self.client.get('/informes/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['informes'].paginator.count, 2)
+        self.assertEqual(len(r.context['filas']), 2)
 
 
 # ── Vista: eliminar_informe ───────────────────────────────────
@@ -354,3 +368,10 @@ class EliminarInformeTest(TestCase):
         self.client.login(username='admin', password='pass')
         r = self.client.post('/informes/99999/eliminar/')
         self.assertEqual(r.status_code, 404)
+
+    def test_get_no_elimina(self):
+        # Regresión: la vista es destructiva, un GET no debe ejecutarla (405).
+        self.client.login(username='admin', password='pass')
+        r = self.client.get(f'/informes/{self.informe.id}/eliminar/')
+        self.assertEqual(r.status_code, 405)
+        self.assertTrue(Informe.objects.filter(id=self.informe.id).exists())

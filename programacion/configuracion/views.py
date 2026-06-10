@@ -1,7 +1,9 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test, login_required
+from django.db import transaction
 from django.http import JsonResponse, FileResponse
-from django.db.models import Count, Prefetch
+from django.db.models import Count, Prefetch, ProtectedError
 from django.template.defaultfilters import filesizeformat
 from django.urls import reverse
 from datetime import date
@@ -130,7 +132,12 @@ def ajax_eliminar_libro(request, libro_id):
     if request.method != 'POST':
         return JsonResponse({'ok': False}, status=405)
     libro = get_object_or_404(NombreLibro, id=libro_id)
-    libro.delete()
+    try:
+        libro.delete()
+    except ProtectedError:
+        # Asignacion.libro y ClasePersonalizada.libro usan on_delete=PROTECT:
+        # borrar un libro en uso lanzaría un 500. Error legible, como en materias.
+        return JsonResponse({'ok': False, 'error': 'No se puede eliminar: el libro está asignado a colegios o clases'})
     return JsonResponse({'ok': True})
 
 
@@ -363,7 +370,15 @@ def configuracion_colegios(request):
                 )
 
         elif accion == 'del':
-            Colegio.objects.filter(id=request.POST.get('colegio_id')).delete()
+            try:
+                Colegio.objects.filter(id=request.POST.get('colegio_id')).delete()
+            except ProtectedError:
+                # PagoRealizado.colegio (vía ColegioAnio) usa PROTECT: borrar un
+                # colegio con pagos registrados lanzaría un 500.
+                messages.error(
+                    request,
+                    'No se puede eliminar el colegio: tiene pagos registrados asociados.'
+                )
 
         else:  # add
             form = ColegioForm(request.POST)
@@ -448,8 +463,18 @@ def configuracion_profesores(request):
         elif accion == 'del':
             p_del = Profesor.objects.filter(id=request.POST.get('profesor_id')).first()
             if p_del:
-                registrar_cambio(request, 'eliminar', p_del)
-            Profesor.objects.filter(id=request.POST.get('profesor_id')).delete()
+                try:
+                    # atomic: si el delete falla por PROTECT, también se revierte
+                    # la entrada 'eliminar' del historial (el profesor sigue vivo).
+                    with transaction.atomic():
+                        registrar_cambio(request, 'eliminar', p_del)
+                        p_del.delete()
+                except ProtectedError:
+                    # SolicitudViatico.profesor y PagoRealizado.profesor usan PROTECT.
+                    messages.error(
+                        request,
+                        'No se puede eliminar el profesor: tiene viáticos o pagos asociados.'
+                    )
 
         else:  # add
             form = ProfesorForm(request.POST)
@@ -462,9 +487,7 @@ def configuracion_profesores(request):
     profesores = Profesor.objects.prefetch_related('materias').order_by('nombre')
 
     # Valores únicos para los filtros
-    nombres       = sorted(set(f"{p.nombre.split()[0]} {p.apellido.split()[0]}".strip()
-                               if p.apellido else p.nombre.split()[0]
-                               for p in profesores))
+    nombres       = sorted(set(p.nombre_corto for p in profesores))
     documentos    = sorted(set(p.documento for p in profesores if p.documento))
     ciudades_p    = sorted(set(p.ciudad for p in profesores if p.ciudad))
     deptos_p      = sorted(set(p.departamento for p in profesores if p.departamento))

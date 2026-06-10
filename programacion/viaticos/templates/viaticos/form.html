@@ -11,16 +11,7 @@
 {% block content %}
 <div class="container-fluid py-3" style="max-width: 900px;">
 
-    {% if messages %}
-    <div class="mb-3">
-        {% for message in messages %}
-        <div class="alert alert-{% if 'error' in message.tags %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
+    {% include 'viaticos/_mensajes.html' %}
 
     {% if solicitud.estado == 'DEVUELTA' and solicitud.motivo_devolucion %}
     <div class="alert alert-warning">
@@ -38,86 +29,7 @@
             <form method="post" novalidate>
                 {% csrf_token %}
 
-                {% if form.non_field_errors %}
-                <div class="alert alert-danger">{{ form.non_field_errors }}</div>
-                {% endif %}
-
-                {# ── Docente ── #}
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label fw-bold">Docente</label>
-                        <select name="profesor" id="select-profesor" class="form-select" required>
-                            <option value="">Seleccionar docente...</option>
-                            {% for p in profesores %}
-                            <option value="{{ p.pk }}"
-                                    data-cedula="{{ p.documento|default:'' }}"
-                                    data-cuenta="{{ p.cuenta_bancaria|default:'' }}"
-                                    data-banco="{{ p.banco|default:'' }}"
-                                    {% if form.profesor.value|stringformat:'s' == p.pk|stringformat:'s' %}selected{% endif %}>
-                                {{ p.nombre }} {{ p.apellido|default:'' }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% if form.profesor.errors %}<div class="text-danger small">{{ form.profesor.errors|striptags }}</div>{% endif %}
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Cédula</label>
-                        <input type="text" id="docente-cedula" class="form-control bg-light" readonly placeholder="—">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Cuenta</label>
-                        <input type="text" id="docente-cuenta" class="form-control bg-light" readonly placeholder="—">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Banco</label>
-                        <input type="text" id="docente-banco" class="form-control bg-light" readonly placeholder="—">
-                    </div>
-                </div>
-
-                {# ── Colegio ── #}
-                <div class="row g-3 mb-3">
-                    <div class="col-md-9">
-                        <label class="form-label fw-bold">Colegio</label>
-                        <select name="colegio" id="select-colegio" class="form-select" required>
-                            <option value="">Seleccionar colegio...</option>
-                            {% for c in colegios %}
-                            <option value="{{ c.pk }}"
-                                    data-codigo="{{ c.codigo|default:'' }}"
-                                    {% if form.colegio.value|stringformat:'s' == c.pk|stringformat:'s' %}selected{% endif %}>
-                                {{ c.nombre }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% if form.colegio.errors %}<div class="text-danger small">{{ form.colegio.errors|striptags }}</div>{% endif %}
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Código</label>
-                        <input type="text" id="colegio-codigo" class="form-control bg-light" readonly placeholder="—">
-                    </div>
-                </div>
-
-                {# ── Fechas ── #}
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label fw-bold">Fecha de viaje</label>
-                        {{ form.fecha_viaje }}
-                        {% if form.fecha_viaje.errors %}<div class="text-danger small">{{ form.fecha_viaje.errors|striptags }}</div>{% endif %}
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label fw-bold">Fecha de regreso</label>
-                        {{ form.fecha_regreso }}
-                        {% if form.fecha_regreso.errors %}<div class="text-danger small">{{ form.fecha_regreso.errors|striptags }}</div>{% endif %}
-                    </div>
-                </div>
-
-                {# ── Gastos (parte variable) ── #}
-                {% include 'viaticos/_filas_gastos.html' %}
-
-                {# ── Observaciones ── #}
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Observaciones</label>
-                    {{ form.observaciones }}
-                </div>
+                {% include 'viaticos/_form_campos.html' with con_banco=True %}
 
                 <div class="d-flex justify-content-end gap-2">
                     <a href="{% url 'viaticos_lista' %}" class="btn btn-outline-secondary">Cancelar</a>
@@ -143,26 +55,5 @@
     </div>
 </div>
 
-<script>
-(function () {
-    var selProf = document.getElementById('select-profesor');
-    var selCol  = document.getElementById('select-colegio');
-
-    function rellenarDocente() {
-        var opt = selProf.options[selProf.selectedIndex];
-        document.getElementById('docente-cedula').value = opt ? (opt.dataset.cedula || '') : '';
-        document.getElementById('docente-cuenta').value = opt ? (opt.dataset.cuenta || '') : '';
-        document.getElementById('docente-banco').value  = opt ? (opt.dataset.banco  || '') : '';
-    }
-    function rellenarColegio() {
-        var opt = selCol.options[selCol.selectedIndex];
-        document.getElementById('colegio-codigo').value = opt ? (opt.dataset.codigo || '') : '';
-    }
-
-    selProf.addEventListener('change', rellenarDocente);
-    selCol.addEventListener('change', rellenarColegio);
-    rellenarDocente();   // estado inicial (edición o POST con error)
-    rellenarColegio();
-})();
-</script>
+{% include 'viaticos/_form_js.html' with con_banco=True %}
 {% endblock %}

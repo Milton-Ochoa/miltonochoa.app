@@ -31,12 +31,19 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from programacion.colegios.models import Clase
+from programacion.configuracion.models import Profesor
 from programacion.pagos.models import ExtraPago, LotePagos, PagoRealizado, SoportePagoProfesor
 from programacion.viaticos.views import _responder_soporte
 
 
 MESES_ES_LARGO = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
                   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+
+def _tipo_cuenta_display(banco, tipo_cuenta):
+    """Tipo de cuenta para la tabla/Excel: Daviplata no maneja Ahorros/Corriente,
+    su producto se reporta como "Ahorros a la mano"."""
+    return 'Ahorros a la mano' if banco == 'Daviplata' else tipo_cuenta
 
 
 def _semana_label(fecha_inicio, fecha_fin):
@@ -102,16 +109,11 @@ def _build_filas_pagos(fecha_inicio, fecha_fin):
         valor_hora = info['bloque__colegio__valor_hora'] or 0
         valor_total = round(horas * valor_hora)
 
-        nombre   = info['profesor__nombre'] or ''
-        apellido = info['profesor__apellido'] or ''
-        pn = nombre.split()[0] if nombre else ''
-        pa = apellido.split()[0] if apellido else ''
-        nombre_corto = f"{pn} {pa}".strip()
+        nombre_corto = Profesor.nombre_corto_de(
+            info['profesor__nombre'], info['profesor__apellido'])
 
-        # Tipo de cuenta: "Ahorros a la mano" si Daviplata, else valor normal
-        banco      = info['profesor__banco'] or ''
-        tipo_raw   = info['profesor__tipo_cuenta'] or ''
-        tipo_cuenta = 'Ahorros a la mano' if banco == 'Daviplata' else tipo_raw
+        banco       = info['profesor__banco'] or ''
+        tipo_cuenta = _tipo_cuenta_display(banco, info['profesor__tipo_cuenta'] or '')
 
         filas.append({
             'fecha':       fecha,
@@ -138,15 +140,10 @@ def _fila_desde_pago(p):
 
     `valor_total` = total (valor base —posiblemente editado— + extras), para que la
     tabla/Excel sigan mostrando el monto final en la columna VALOR."""
-    nombre   = p.profesor.nombre or ''
-    apellido = p.profesor.apellido or ''
-    pn = nombre.split()[0] if nombre else ''
-    pa = apellido.split()[0] if apellido else ''
-    nombre_corto = f"{pn} {pa}".strip()
+    nombre_corto = p.profesor.nombre_corto
 
-    banco      = p.profesor.banco or ''
-    tipo_raw   = p.profesor.tipo_cuenta or ''
-    tipo_cuenta = 'Ahorros a la mano' if banco == 'Daviplata' else tipo_raw
+    banco       = p.profesor.banco or ''
+    tipo_cuenta = _tipo_cuenta_display(banco, p.profesor.tipo_cuenta or '')
 
     extras = [{'id': e.id, 'concepto': e.concepto, 'valor': e.valor} for e in p.extras.all()]
     total_extras = sum(e['valor'] for e in extras)

@@ -137,11 +137,13 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # ─────────────────────────────────────────────────────────────
 # BASE DE DATOS
 # ─────────────────────────────────────────────────────────────
-# CONN_MAX_AGE configurable por env para poder alternar entre conexión directa
-# (persistente, 600 s) y el pooler de Supabase/pgbouncer. Con pgbouncer en modo
-# "transaction" (puerto 6543) hay que poner CONN_MAX_AGE=0 y DISABLE_SERVER_SIDE_CURSORS=True
-# porque cada transacción puede ir a un backend distinto; en modo "session" (5432 del
-# pooler) sí admite conexiones persistentes. Ver CLAUDE.md / .env.example.
+# CONN_MAX_AGE configurable por env. En producción DATABASE_URL apunta al
+# **transaction pooler de Supavisor** (puerto 6543) con CONN_MAX_AGE=600: la
+# conexión Django→pooler puede ser persistente (baja TTFB) porque es el pooler
+# quien multiplexa hacia los backends por transacción. Lo que sí exige el modo
+# transaction es DISABLE_SERVER_SIDE_CURSORS=True (cada transacción puede ir a
+# un backend distinto y los cursores server-side no sobreviven el salto).
+# Ver CLAUDE.md ("Rendimiento y concurrencia en producción") / .env.example.
 _CONN_MAX_AGE = int(os.environ.get('CONN_MAX_AGE', '600'))
 DATABASES = {
     'default': dj_database_url.config(

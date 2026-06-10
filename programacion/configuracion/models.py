@@ -374,16 +374,26 @@ class Profesor(models.Model):
     class Meta:
         db_table = 'prog_profesores'
 
+    @staticmethod
+    def nombre_corto_de(nombre, apellido):
+        """Primer nombre + primer apellido a partir de strings sueltos.
+
+        Misma regla que la property nombre_corto, para listados masivos que
+        traen nombre/apellido vía .values()/.values_list() sin instanciar el
+        modelo (acepta None/'' en cualquiera de los dos).
+        """
+        primer_nombre   = nombre.split()[0] if nombre else ''
+        primer_apellido = apellido.split()[0] if apellido else ''
+        return f"{primer_nombre} {primer_apellido}".strip()
+
     @property
     def nombre_corto(self):
         """Primer nombre + primer apellido. Solo para display, no existe en BD.
 
         NUNCA usar en queryset lookups (.filter, .values, .order_by).
-        Para listas masivas, calcular con: f"{nombre.split()[0]} {apellido.split()[0]}".
+        Para listas masivas, usar Profesor.nombre_corto_de(nombre, apellido).
         """
-        primer_nombre   = self.nombre.split()[0] if self.nombre else ''
-        primer_apellido = self.apellido.split()[0] if self.apellido else ''
-        return f"{primer_nombre} {primer_apellido}".strip()
+        return self.nombre_corto_de(self.nombre, self.apellido)
 
     def __str__(self):
         return self.nombre_corto

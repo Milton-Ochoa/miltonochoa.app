@@ -475,7 +475,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 299 tests OK.**
+**Baseline actual: 348 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -617,15 +617,17 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
 
 ## Contribuir
 
-1. Crea una rama desde `main`: `git checkout -b feat/mi-feature`.
+1. Sincroniza `dev` (`git checkout dev && git pull --ff-only origin dev`) y crea una rama
+   desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 299 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 348 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
 7. Para actualizar este README, usa el skill `/readme` de Claude Code.
-8. Abre un PR contra `main` con descripción clara del cambio y su motivación.
+8. Abre un PR contra `dev` con descripción clara del cambio y su motivación.
+   `dev` se promociona a `main` (deploy automático en Railway) por su propio PR.
 
 ---
 

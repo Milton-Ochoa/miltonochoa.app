@@ -130,7 +130,7 @@ AAMO/
 ├── usuarios/          # GLOBAL: login único, perfiles, middleware de acceso, ratelimit
 ├── programacion/      # ÁREA: paquete Python con urls.py + sus sub-apps
 │   ├── urls.py        #   agrupa las rutas del área en la RAÍZ de su subdominio
-│   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ api/ viaticos/
+│   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
 ├── logistica/         # placeholder
@@ -254,9 +254,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   **Fase 4 (cerrada):** los defaults de filtro de `exportar/views.py` (`_parsear_fechas`,
   GET de `exportar_view`) **se dejan** en ene–dic del año natural a propósito —la
   exportación es un rango libre que cruza varios colegios a la vez, así que no hay una
-  única ventana de periodo aplicable; es solo el valor inicial y el usuario lo ajusta. El
-  helper genérico `utils.calcular_rango_fechas('Año', …)` es un modo-vista por año natural,
-  **no** la ventana del periodo, y queda intacto por el mismo motivo.
+  única ventana de periodo aplicable; es solo el valor inicial y el usuario lo ajusta.
 - **Etiqueta:** `ColegioAnio.periodo_label` → A `"2025"`, B `"2025-2026"`. Úsala en
   selectores/títulos/exports en vez del `anio` crudo. El selector de colegios de la
   exportación (`exportar.html`) la muestra junto al nombre para desambiguar periodos del
@@ -360,7 +358,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   Expone los helpers de cálculo compartidos (`construir_contexto_pagos(get, *, modo)`,
   `filas_pagos_por_tab(..., *, modo)`, `_generar_excel_pagos`, `_semana_label`) más los de
   materialización (`_build_filas_pagos`, `_filas_desde_lote`, `preparar_lote_semana`,
-  `enviar_lote`, `desenviar_lote`). En el menú de programación **Pagos** vive bajo **Reportes**;
+  `enviar_lote`). En el menú de programación **Pagos** vive bajo **Reportes**;
   `exportar` queda solo con horarios.
 - **Flujo de revisión (programación → financiera), como BACKLOG:** programación **revisa y envía**;
   financiera **solo ve lo enviado** y paga. El estado vive por **semana (`LotePagos`)**:
@@ -473,7 +471,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 289 tests OK
+python manage.py test                        # baseline: 348 tests OK
 python manage.py runserver
 ```
 
@@ -516,7 +514,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (289 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (348 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

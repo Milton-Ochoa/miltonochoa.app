@@ -109,6 +109,12 @@ def obtener_informe(request):
     elif personalizada_id:
         informe = Informe.objects.filter(clase_personalizada_id=personalizada_id).first()
 
+    # Mismo scoping que detalle_informe: un perfil de profesor solo puede leer
+    # informes de su propio profesor (el informe trae texto pedagógico privado).
+    perfil_profesor, _ = _resolver_perfil(request)
+    if informe and perfil_profesor and informe.profesor_id != perfil_profesor.profesor_id:
+        return JsonResponse({'ok': False, 'error': 'Sin permiso'}, status=403)
+
     if informe:
         data = {
             'existe':          True,
@@ -173,40 +179,30 @@ def guardar_informe(request):
         'bibliografia':    body.get('bibliografia', '').strip(),
     }
 
+    # Lookup dinámico: el informe cuelga de una Clase regular o de una
+    # ClasePersonalizada (exactamente una de las dos, ver CHECK del modelo).
     if clase_id:
-        informe, creado = Informe.objects.update_or_create(
-            clase_id=clase_id,
-            defaults={
-                'profesor_id':    profesor_id,
-                'colegio_nombre': body.get('colegio_nombre', ''),
-                'grado':          body.get('grado', ''),
-                'fecha':          body.get('fecha_iso'),
-                'materia':        body.get('materia', ''),
-                'tematica':       body.get('tematica', ''),
-                'material':       body.get('material', ''),
-                **campos_texto,
-            }
-        )
-        logger.info(f'Informe guardado: id={informe.id} (por {request.user.username})')
-        registrar_cambio(request, 'crear' if creado else 'editar', informe)
+        lookup = {'clase_id': clase_id}
     elif personalizada_id:
-        informe, creado = Informe.objects.update_or_create(
-            clase_personalizada_id=personalizada_id,
-            defaults={
-                'profesor_id':    profesor_id,
-                'colegio_nombre': body.get('colegio_nombre', ''),
-                'grado':          body.get('grado', ''),
-                'fecha':          body.get('fecha_iso'),
-                'materia':        body.get('materia', ''),
-                'tematica':       body.get('tematica', ''),
-                'material':       body.get('material', ''),
-                **campos_texto,
-            }
-        )
-        logger.info(f'Informe guardado: id={informe.id} (por {request.user.username})')
-        registrar_cambio(request, 'crear' if creado else 'editar', informe)
+        lookup = {'clase_personalizada_id': personalizada_id}
     else:
         return JsonResponse({'ok': False, 'error': 'Falta clase_id o personalizada_id'}, status=400)
+
+    informe, creado = Informe.objects.update_or_create(
+        **lookup,
+        defaults={
+            'profesor_id':    profesor_id,
+            'colegio_nombre': body.get('colegio_nombre', ''),
+            'grado':          body.get('grado', ''),
+            'fecha':          body.get('fecha_iso'),
+            'materia':        body.get('materia', ''),
+            'tematica':       body.get('tematica', ''),
+            'material':       body.get('material', ''),
+            **campos_texto,
+        }
+    )
+    logger.info(f'Informe guardado: id={informe.id} (por {request.user.username})')
+    registrar_cambio(request, 'crear' if creado else 'editar', informe)
 
     _invalidar_cache_lista()
     return JsonResponse({'ok': True, 'informe_id': informe.id})
@@ -265,12 +261,10 @@ def lista_informes(request):
     filas = []
     for (inf_id, fecha, colegio_nombre, grado, materia, tematica, material,
          actividades, prof_nombre, prof_apellido) in informes_data:
-        primer_nombre   = (prof_nombre or '').split(' ', 1)[0]
-        primer_apellido = (prof_apellido or '').split(' ', 1)[0]
         filas.append({
             'informe_id':     inf_id,
             'fecha':          fecha,
-            'profesor':       f"{primer_nombre} {primer_apellido}".strip(),
+            'profesor':       Profesor.nombre_corto_de(prof_nombre, prof_apellido),
             'colegio_nombre': colegio_nombre,
             'grado':          grado,
             'materia':        materia,
@@ -319,13 +313,11 @@ def lista_informes(request):
 
     for (cl_id, fecha, colegio_nombre, grado_nombre, materia_nombre, unidad,
          libro_especial, prof_nombre, prof_apellido, colegio_id, grado_id) in clases_data:
-        primer_nombre   = (prof_nombre or '').split(' ', 1)[0]
-        primer_apellido = (prof_apellido or '').split(' ', 1)[0]
         material = libro_especial or _libro_en(colegio_id, grado_id, fecha)
         filas.append({
             'informe_id':     None,
             'fecha':          fecha,
-            'profesor':       f"{primer_nombre} {primer_apellido}".strip(),
+            'profesor':       Profesor.nombre_corto_de(prof_nombre, prof_apellido),
             'colegio_nombre': colegio_nombre or '',
             'grado':          grado_nombre or '',
             'materia':        materia_nombre or '',
@@ -349,6 +341,7 @@ def lista_informes(request):
 # ── Eliminar informe (solo superusuario) ──────────────────────────────────────
 
 @login_required
+@require_POST
 def eliminar_informe(request, informe_id):
     """
     Elimina un informe. Restringido a superusuario para proteger el historial pedagógico.

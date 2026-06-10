@@ -1,0 +1,37 @@
+{% comment %}
+Cabecera del detalle de un viático (compartida programación ↔ financiera):
+messages + título con badge de estado + botones Volver/Editar + alerta de devolución.
+Parámetros (include ... with):
+  - icono:          clase FA del ícono del título ('fa-plane-departure' / 'fa-receipt').
+  - lista_url:      nombre de URL del botón Volver.
+  - editar_url:     nombre de URL del botón Editar (se muestra si puede_editar).
+  - devuelta_label: texto en negrita de la alerta DEVUELTA
+                    ('Devuelta por financiera:' / 'Devuelta a programación:').
+{% endcomment %}
+{% include 'viaticos/_mensajes.html' %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0 text-secondary fw-bold">
+        <i class="fas {{ icono }} me-1"></i> Solicitud #{{ solicitud.pk }}
+        {% if solicitud.estado == 'ENVIADA' %}<span class="badge bg-info text-dark ms-2">Enviada</span>
+        {% elif solicitud.estado == 'DEVUELTA' %}<span class="badge bg-warning text-dark ms-2">Devuelta</span>
+        {% elif solicitud.estado == 'APROBADA' %}<span class="badge bg-primary ms-2">Aprobada</span>
+        {% elif solicitud.estado == 'PAGADA' %}<span class="badge bg-success ms-2">Pagada</span>
+        {% endif %}
+    </h5>
+    <div class="d-flex gap-2">
+        <a href="{% url lista_url %}" class="btn btn-outline-secondary btn-sm">Volver</a>
+        {% if puede_editar %}
+        <a href="{% url editar_url solicitud.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-pen me-1"></i> Editar
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if solicitud.estado == 'DEVUELTA' and solicitud.motivo_devolucion %}
+<div class="alert alert-warning">
+    <i class="fas fa-undo me-1"></i> <strong>{{ devuelta_label }}</strong>
+    {{ solicitud.motivo_devolucion }}
+</div>
+{% endif %}
