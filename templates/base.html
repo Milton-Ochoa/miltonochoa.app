@@ -48,10 +48,13 @@
             <span><i class="fas fa-chart-line icon-main text-primary"></i> Reportes</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}show{% endif %}" id="collapseReportes">
+        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'reporte_cancelaciones' %}show{% endif %}" id="collapseReportes">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'lista_informes' %}" class="{% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
                     <i class="fas fa-file-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Informes
+                </a>
+                <a href="{% url 'reporte_cancelaciones' %}" class="{% if request.resolver_match.url_name == 'reporte_cancelaciones' %}active{% endif %}">
+                    <i class="fas fa-ban" style="width: 20px; text-align: center; margin-right: 8px;"></i> Cancelaciones
                 </a>
                 <a href="{% url 'pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
                     <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>

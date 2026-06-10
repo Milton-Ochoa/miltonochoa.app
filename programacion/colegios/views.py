@@ -3,20 +3,27 @@ from django.urls import reverse
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.core.cache import cache
 from django.db import transaction, IntegrityError
 from django.db.models import Q
+from django.utils import timezone
 from datetime import date, timedelta, datetime
 from collections import defaultdict
 import calendar as _calendar
+import io
 import json
 import logging
 import time
 
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+from core.areas import es_personal_programacion
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Unidad, Materia
-from .models import Bloque, Clase, Asignacion, Grado, HistorialCambio
+from .models import Bloque, Clase, Asignacion, Grado, HistorialCambio, CancelacionClase
 from .historial import registrar_cambio, aplicar_filtros_historial
 from .utils import extraer_numero_grado, ordenar_grados
 from usuarios.ratelimit import rate_limit
@@ -471,6 +478,31 @@ def _guardar_clase(request, sel_col):
     old_es_cancelada  = bool(clase_anterior.cancelada) if clase_anterior else False
     old_libro_esp_id  = clase_anterior.libro_especial_id if clase_anterior else None
 
+    # ── Cancelación: ¿quién cancela? ──
+    # COLEGIO (default, compatible con POSTs viejos sin el campo): la clase muere
+    # (cancelada=True). PROFESOR: la clase sigue viva pero queda SIN profesor
+    # (pendiente de reasignar); cancelada queda False para que la celda siga
+    # contando en la secuencia y vuelva a generar fila de pago al reasignar.
+    es_cancelada_post = request.POST.get('cancelada') == 'on'
+    cancelada_por     = request.POST.get('cancelada_por') or CancelacionClase.Tipo.COLEGIO
+    cancelacion_profesor = (es_cancelada_post
+                            and cancelada_por == CancelacionClase.Tipo.PROFESOR)
+    es_cancelada = es_cancelada_post and not cancelacion_profesor
+    motivo_cancelacion = (request.POST.get('comentarios') or '').strip()
+
+    profesor_cancela = None
+    if cancelacion_profesor:
+        # Snapshot de quién cancela: lo que muestra el select del modal (POST) o,
+        # si no vino, el profesor que tenía la clase guardada.
+        profesor_cancela_id = profesor_id or (
+            clase_anterior.profesor_id if clase_anterior else None
+        )
+        profesor_cancela = (
+            Profesor.objects.filter(id=profesor_cancela_id).first()
+            if profesor_cancela_id else None
+        )
+        profesor_id = None  # la clase queda pendiente de reasignar
+
     clase, created = Clase.objects.update_or_create(
         colegio=sel_col,
         bloque_id=bloque_id,
@@ -483,16 +515,66 @@ def _guardar_clase(request, sel_col):
             'enlace_personalizado': enlace_personalizado,
             'es_evento':          request.POST.get('es_evento') == 'on',
             'titulo_evento':      request.POST.get('titulo_evento'),
-            'cancelada':          request.POST.get('cancelada') == 'on',
+            'cancelada':          es_cancelada,
             'comentarios':        request.POST.get('comentarios'),
         }
     )
+
+    # ── Materializar el registro histórico de cancelación ──
+    if old_es_cancelada and not es_cancelada:
+        # Checkbox des-marcado (o la cancelación cambió a tipo PROFESOR): el
+        # registro COLEGIO vigente deja de aplicar. Los PROFESOR nunca se tocan.
+        clase.cancelaciones.filter(tipo=CancelacionClase.Tipo.COLEGIO).delete()
+
+    detalle_historial = ''
+    if cancelacion_profesor:
+        nombre_prof = (f'{profesor_cancela.nombre} {profesor_cancela.apellido}'.strip()
+                       if profesor_cancela else '')
+        CancelacionClase.objects.create(
+            clase=clase,
+            tipo=CancelacionClase.Tipo.PROFESOR,
+            profesor=profesor_cancela,
+            profesor_nombre=nombre_prof,
+            colegio=sel_col.colegio,
+            colegio_nombre=sel_col.colegio.nombre,
+            fecha_clase=clase.fecha,
+            motivo=motivo_cancelacion,
+            registrado_por=request.user if request.user.is_authenticated else None,
+        )
+        detalle_historial = (f'Cancelación por profesor ({nombre_prof or "sin profesor"}). '
+                             f'Motivo: {motivo_cancelacion or "—"}')
+    elif es_cancelada and not old_es_cancelada:
+        CancelacionClase.objects.create(
+            clase=clase,
+            tipo=CancelacionClase.Tipo.COLEGIO,
+            profesor_id=profesor_id,
+            profesor_nombre=(
+                f'{clase.profesor.nombre} {clase.profesor.apellido}'.strip()
+                if clase.profesor else ''
+            ),
+            colegio=sel_col.colegio,
+            colegio_nombre=sel_col.colegio.nombre,
+            fecha_clase=clase.fecha,
+            motivo=motivo_cancelacion,
+            registrado_por=request.user if request.user.is_authenticated else None,
+        )
+        detalle_historial = f'Cancelación por colegio. Motivo: {motivo_cancelacion or "—"}'
+    elif es_cancelada and old_es_cancelada:
+        # Sigue cancelada por colegio: refrescar el motivo del registro vigente
+        # para que el reporte no muestre un texto desactualizado.
+        clase.cancelaciones.filter(
+            tipo=CancelacionClase.Tipo.COLEGIO
+        ).update(motivo=motivo_cancelacion)
+    elif old_es_cancelada and not es_cancelada_post:
+        detalle_historial = 'Cancelación retirada'
+
     logger.info(f'Clase guardada: {clase} colegio={sel_col} (por {request.user.username})')
     registrar_cambio(
         request,
         'crear' if created else 'editar',
         clase,
         colegio=sel_col,
+        detalle=detalle_historial,
     )
     # Invalidar aquí (y no solo en ajax_guardar_clase) cubre también la ruta
     # no-JS de dashboard_colegios, que llama _guardar_clase directo y antes
@@ -505,8 +587,9 @@ def _guardar_clase(request, sel_col):
     # distinta de 'S' (no socialización), con materia asignada.
     # Si la regularidad o la (materia, unidad) cambió respecto al estado anterior, las
     # clases futuras de la(s) materia(s) afectada(s) pueden necesitar renumerarse.
+    # OJO: `es_cancelada` es la cancelación EFECTIVA calculada arriba (la de tipo
+    # PROFESOR no cuenta: la clase sigue viva y conserva su lugar en la secuencia).
     es_evento    = request.POST.get('es_evento') == 'on'
-    es_cancelada = request.POST.get('cancelada') == 'on'
     new_materia  = materia_obj.nombre if materia_obj else None
     new_unidad   = unidad_valor
     new_libro_esp_id = libro_especial_obj.id if libro_especial_obj else None
@@ -1533,3 +1616,121 @@ def historial_colegio(request, colegio_id):
         **filtros,
     })
 
+
+
+# ─────────────────────────────────────────────────────────────
+# REPORTE DE CANCELACIONES
+# ─────────────────────────────────────────────────────────────
+# Viven aquí (y no en una sub-app "reportes") porque colegios es la app dueña
+# de CancelacionClase; una app nueva solo añadiría boilerplate. La URL se monta
+# en programacion/urls.py bajo /reportes/ (NO /colegios/: ese prefijo lo abre
+# el ControlAccesoMiddleware a los gestores de colegio).
+
+@user_passes_test(es_personal_programacion, login_url='login')
+def reporte_cancelaciones(request):
+    """Tabla de solo-lectura con todas las cancelaciones registradas.
+
+    Los filtros (tipo, profesor, colegio, rango de fecha de clase) son
+    client-side, mismo patrón que viaticos/lista.html.
+    """
+    cancelaciones = (
+        CancelacionClase.objects
+        .select_related('registrado_por')
+    )
+    return render(request, 'colegios/reporte_cancelaciones.html', {
+        'cancelaciones': cancelaciones,
+    })
+
+
+def _generar_excel_cancelaciones(cancelaciones):
+    """Genera (en memoria) el Excel del reporte de cancelaciones.
+
+    Self-contained a propósito (patrón de _generar_excel_viaticos en
+    financiera): imita el estilo de exportar/pagos sin acoplarse a sus helpers.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Cancelaciones'
+
+    COLS = ['Fecha clase', 'Tipo', 'Profesor', 'Colegio', 'Motivo',
+            'Registrado por', 'Registrado en']
+
+    thin = Side(style='thin', color='000000')
+    borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _celda(row, col, valor='', bold=False, fill=None, color='000000',
+               h='center', v='center'):
+        cell = ws.cell(row, col, valor)
+        cell.font = Font(name='Arial', size=10, bold=bold, color=color)
+        cell.alignment = Alignment(horizontal=h, vertical=v, wrap_text=True)
+        if fill:
+            cell.fill = PatternFill('solid', fgColor=fill)
+        cell.border = borde
+        return cell
+
+    for ci, nombre in enumerate(COLS, start=1):
+        _celda(1, ci, nombre, bold=True, fill='FFB8CCE4', color='FF1F3864')
+    ws.row_dimensions[1].height = 22
+
+    for i, c in enumerate(cancelaciones, start=2):
+        fill_row = 'FFFFFFFF' if i % 2 == 0 else 'FFF2F6FC'
+        usuario = ''
+        if c.registrado_por:
+            usuario = c.registrado_por.get_full_name() or c.registrado_por.username
+        _celda(i, 1, c.fecha_clase.strftime('%d/%m/%Y') if c.fecha_clase else '', fill=fill_row)
+        _celda(i, 2, c.get_tipo_display(), fill=fill_row)
+        _celda(i, 3, c.profesor_nombre,    fill=fill_row, h='left')
+        _celda(i, 4, c.colegio_nombre,     fill=fill_row, h='left')
+        _celda(i, 5, c.motivo,             fill=fill_row, h='left')
+        _celda(i, 6, usuario,              fill=fill_row)
+        _celda(i, 7, timezone.localtime(c.registrado_en).strftime('%d/%m/%Y %H:%M')
+                     if c.registrado_en else '', fill=fill_row)
+        ws.row_dimensions[i].height = 18
+
+    anchos = [13, 11, 26, 28, 40, 18, 16]
+    for ci, ancho in enumerate(anchos, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = ancho
+
+    ws.freeze_panes = 'A2'
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@user_passes_test(es_personal_programacion, login_url='login')
+@require_POST
+def reporte_cancelaciones_excel(request):
+    """Descarga un ``.xlsx`` de cancelaciones filtradas por tipo y rango de fecha de clase."""
+    tipos_validos = set(CancelacionClase.Tipo.values)
+    tipos = [t for t in request.POST.getlist('tipos') if t in tipos_validos]
+    if not tipos:
+        tipos = list(tipos_validos)
+
+    qs = (
+        CancelacionClase.objects
+        .filter(tipo__in=tipos)
+        .select_related('registrado_por')
+    )
+
+    def _fecha(clave):
+        try:
+            return datetime.strptime(request.POST.get(clave, ''), '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    desde, hasta = _fecha('fecha_desde'), _fecha('fecha_hasta')
+    if desde:
+        qs = qs.filter(fecha_clase__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha_clase__lte=hasta)
+
+    excel_bytes = _generar_excel_cancelaciones(qs)
+
+    partes = [desde.strftime('%Y%m%d') if desde else 'inicio',
+              hasta.strftime('%Y%m%d') if hasta else 'fin']
+    response = HttpResponse(
+        excel_bytes,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="Cancelaciones_{partes[0]}_{partes[1]}.xlsx"'
+    return response
