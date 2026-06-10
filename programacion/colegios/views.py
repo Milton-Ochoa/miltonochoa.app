@@ -35,6 +35,12 @@ def _matriz_cache_key(colegio_id, anio):
     return f'dashboard_matriz:{colegio_id}:{anio}'
 
 
+def _invalidar_cache_dashboard(sel_col):
+    """Borra la matriz y las stats cacheadas del dashboard de un ColegioAnio."""
+    cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))
+    cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
+
+
 def _get_or_build_cached(key, builder, ttl):
     """Lee `key` de caché; si falta, construye con single-flight para evitar el
     "thundering herd" de construcción.
@@ -425,6 +431,7 @@ def _guardar_clase(request, sel_col):
         Clase.objects.filter(
             colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase
         ).delete()
+        _invalidar_cache_dashboard(sel_col)
         return
 
     profesor_id = request.POST.get('profesor') or None
@@ -487,6 +494,10 @@ def _guardar_clase(request, sel_col):
         clase,
         colegio=sel_col,
     )
+    # Invalidar aquí (y no solo en ajax_guardar_clase) cubre también la ruta
+    # no-JS de dashboard_colegios, que llama _guardar_clase directo y antes
+    # dejaba matriz/stats cacheadas sin el cambio recién guardado.
+    _invalidar_cache_dashboard(sel_col)
 
     # Detectar si se debe ofrecer recalcular secuencias.
     # Una clase "regular" es la que cuenta en la numeración secuencial de su materia:
@@ -631,8 +642,7 @@ def ajax_guardar_clase(request, colegio_id):
         if clase_a_eliminar:
             registrar_cambio(request, 'eliminar', clase_a_eliminar, colegio=sel_col)
             clase_a_eliminar.delete()
-        cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))
-        cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
+        _invalidar_cache_dashboard(sel_col)
         if is_htmx:
             resp = HttpResponse('')  # celda vacía
             triggers = {'showToast': {'msg': 'Clase eliminada', 'level': 'warning'}}
@@ -642,13 +652,9 @@ def ajax_guardar_clase(request, colegio_id):
             return resp
         return JsonResponse({'ok': True, 'eliminada': True, 'recalcular': recalcular})
 
+    # La invalidación de matriz/stats vive dentro de _guardar_clase (cubre también
+    # la ruta no-JS de dashboard_colegios).
     recalcular = _guardar_clase(request, sel_col)
-    # Invalidar AMBOS cachés: crear/editar una clase cambia la matriz (no solo las
-    # stats). Antes solo se borraba el de stats, así que un reload completo del
-    # dashboard dentro del TTL (120s) mostraba la matriz vieja sin el cambio recién
-    # guardado. La ruta de eliminar ya invalidaba ambos; aquí faltaba la matriz.
-    cache.delete(_stats_cache_key(sel_col.id, sel_col.anio))
-    cache.delete(_matriz_cache_key(sel_col.id, sel_col.anio))
 
     if is_htmx:
         clase = (
@@ -755,6 +761,12 @@ def ajax_recalcular_secuencia(request, colegio_id):
     for i, c in enumerate(clases):
         c.unidad = str(unidad_inicio + i)
     Clase.objects.bulk_update(clases, ['unidad'])
+
+    # bulk_update no dispara signals → la caché de vista_general (que invalidan los
+    # signals de Clase) y la matriz/stats del dashboard quedarían desfasadas.
+    from core.views import invalidar_vista_general
+    invalidar_vista_general()
+    _invalidar_cache_dashboard(sel_col)
 
     logger.info(f'Recálculo secuencia: {len(clases)} clases de {materia}/{grado} desde {fecha_desde} (por {request.user.username})')
     return JsonResponse({'ok': True, 'actualizadas': len(clases)})
@@ -1383,6 +1395,9 @@ def configurar_colegio(request, colegio_id):
             colegio.valor_hora = valor
             colegio.save(update_fields=['valor_hora'])
 
+        # Bloques, asignaciones y valor_hora alimentan la matriz y las stats del
+        # dashboard: cualquier POST exitoso debe invalidar ambas cachés.
+        _invalidar_cache_dashboard(colegio)
         return redirect('configurar_colegio', colegio_id=colegio.id)
 
     # GET ────────────────────────────────────────────────────

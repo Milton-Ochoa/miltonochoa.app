@@ -370,3 +370,70 @@ class DocumentoProfesorTest(TestCase):
         r = self._subir()
         self.assertEqual(r.status_code, 302)
         self.assertEqual(self.profesor.documentos.count(), 0)
+
+
+# ── Eliminación protegida (ProtectedError → error legible) ───────
+
+class EliminacionProtegidaTest(TestCase):
+    """Regresión: borrar entidades referenciadas por FKs PROTECT debe devolver un
+    error legible (JSON o messages), nunca un 500 por ProtectedError sin manejar."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        self.user = User.objects.create_superuser(username='admin_prot', password='pass')
+        self.client.login(username='admin_prot', password='pass')
+        self.colegio = Colegio.objects.create(
+            nombre='Col Protegido', departamento='Santander', ciudad='BGA')
+        self.colegio_anio = ColegioAnio.objects.create(
+            colegio=self.colegio, anio=2026, activo=True)
+        self.profesor = Profesor.objects.create(nombre='Prote', apellido='Gido')
+
+    def test_eliminar_libro_asignado_devuelve_error_legible(self):
+        from programacion.colegios.models import Asignacion, Grado
+        libro = NombreLibro.objects.create(nombre='Libro en uso')
+        grado, _ = Grado.objects.get_or_create(nombre='11-1')
+        Asignacion.objects.create(
+            colegio=self.colegio_anio, grado=grado, libro=libro,
+            fecha_inicio=date(2026, 1, 1), fecha_fin=date(2026, 6, 30))
+        r = self.client.post(f'/configuracion/ajax/libros/{libro.id}/eliminar/')
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertFalse(data['ok'])
+        self.assertIn('error', data)
+        self.assertTrue(NombreLibro.objects.filter(id=libro.id).exists())
+
+    def test_eliminar_colegio_con_pagos_devuelve_error_legible(self):
+        from programacion.pagos.models import PagoRealizado
+        PagoRealizado.objects.create(
+            profesor=self.profesor, colegio=self.colegio_anio,
+            fecha=date(2026, 3, 2), horas=2, valor=100000)
+        r = self.client.post('/configuracion/colegios/', {
+            'accion': 'del', 'colegio_id': self.colegio.id})
+        self.assertEqual(r.status_code, 302)  # redirect, no 500
+        self.assertTrue(Colegio.objects.filter(id=self.colegio.id).exists())
+
+    def test_eliminar_profesor_con_viaticos_devuelve_error_legible(self):
+        from programacion.viaticos.models import SolicitudViatico
+        SolicitudViatico.objects.create(
+            profesor=self.profesor, colegio=self.colegio,
+            docente_nombre='Prote Gido', colegio_nombre=self.colegio.nombre,
+            fecha_viaje=date(2026, 3, 2), fecha_regreso=date(2026, 3, 3),
+            creado_por=self.user)
+        r = self.client.post('/configuracion/profesores/', {
+            'accion': 'del', 'profesor_id': self.profesor.id})
+        self.assertEqual(r.status_code, 302)  # redirect, no 500
+        self.assertTrue(Profesor.objects.filter(id=self.profesor.id).exists())
+
+    def test_eliminar_profesor_protegido_no_deja_historial_espurio(self):
+        from programacion.viaticos.models import SolicitudViatico
+        from programacion.colegios.models import HistorialCambio
+        SolicitudViatico.objects.create(
+            profesor=self.profesor, colegio=self.colegio,
+            docente_nombre='Prote Gido', colegio_nombre=self.colegio.nombre,
+            fecha_viaje=date(2026, 3, 2), fecha_regreso=date(2026, 3, 3),
+            creado_por=self.user)
+        antes = HistorialCambio.objects.count()
+        self.client.post('/configuracion/profesores/', {
+            'accion': 'del', 'profesor_id': self.profesor.id})
+        # El atomic revierte la entrada 'eliminar' si el delete falla por PROTECT
+        self.assertEqual(HistorialCambio.objects.count(), antes)
