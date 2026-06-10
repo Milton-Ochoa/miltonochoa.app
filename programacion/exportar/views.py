@@ -637,6 +637,42 @@ def _parsear_fechas(fecha_inicio_str, fecha_fin_str):
     return fi, ff
 
 
+def _filtros_exportacion(params):
+    """Lee los filtros del GET/POST y construye los querysets base de la
+    exportación (compartido por exportar_view y exportar_contar para que el
+    conteo previo y el ZIP generado usen exactamente los mismos filtros).
+
+    Returns:
+        (tipo, fecha_inicio, fecha_fin, q_cl, q_pa, q_col) donde q_cl son las
+        clases de colegio por profesor (sin canceladas/eventos), q_pa las
+        personalizadas y q_col las clases por colegio (incluye todo).
+    """
+    tipo = params.get('tipo', 'ambos')
+    fecha_inicio, fecha_fin = _parsear_fechas(
+        params.get('fecha_inicio', ''),
+        params.get('fecha_fin', ''),
+    )
+    profesores_ids = [int(x) for x in params.getlist('profesores_ids') if x.isdigit()]
+    colegios_ids   = [int(x) for x in params.getlist('colegios_ids') if x.isdigit()]
+
+    q_cl = Clase.objects.filter(
+        fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
+        cancelada=False, es_evento=False,
+    )
+    q_pa = ClasePersonalizada.objects.filter(
+        fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
+    )
+    if profesores_ids:
+        q_cl = q_cl.filter(profesor_id__in=profesores_ids)
+        q_pa = q_pa.filter(profesor_id__in=profesores_ids)
+
+    q_col = Clase.objects.filter(fecha__gte=fecha_inicio, fecha__lte=fecha_fin)
+    if colegios_ids:
+        q_col = q_col.filter(colegio_id__in=colegios_ids)
+
+    return tipo, fecha_inicio, fecha_fin, q_cl, q_pa, q_col
+
+
 # ══════════════════════════════════════════════════════════════
 # VISTAS
 # ══════════════════════════════════════════════════════════════
@@ -669,29 +705,12 @@ def exportar_view(request):
         })
 
     # ── POST: generar ZIP ──────────────────────────────────────
-    tipo = request.POST.get('tipo', 'ambos')
-    fecha_inicio, fecha_fin = _parsear_fechas(
-        request.POST.get('fecha_inicio', ''),
-        request.POST.get('fecha_fin', ''),
-    )
-    profesores_ids = [int(x) for x in request.POST.getlist('profesores_ids') if x.isdigit()]
-    colegios_ids   = [int(x) for x in request.POST.getlist('colegios_ids') if x.isdigit()]
+    tipo, fecha_inicio, fecha_fin, q_cl, q_pa, q_col = _filtros_exportacion(request.POST)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
 
         if tipo in ('profesores', 'ambos'):
-            q_cl = Clase.objects.filter(
-                fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-                cancelada=False, es_evento=False,
-            )
-            q_pa = ClasePersonalizada.objects.filter(
-                fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-            )
-            if profesores_ids:
-                q_cl = q_cl.filter(profesor_id__in=profesores_ids)
-                q_pa = q_pa.filter(profesor_id__in=profesores_ids)
-
             ids_prof = (
                 set(q_cl.values_list('profesor_id', flat=True))
                 | set(q_pa.values_list('profesor_id', flat=True))
@@ -703,12 +722,6 @@ def exportar_view(request):
                 zf.writestr(f"Profesores/Horario {profesor.nombre_corto}.xlsx", excel_bytes)
 
         if tipo in ('colegios', 'ambos'):
-            q_col = Clase.objects.filter(
-                fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-            )
-            if colegios_ids:
-                q_col = q_col.filter(colegio_id__in=colegios_ids)
-
             ids_col = set(q_col.values_list('colegio_id', flat=True).distinct())
 
             for colegio in (ColegioAnio.objects
@@ -728,13 +741,7 @@ def exportar_view(request):
 @user_passes_test(es_personal_programacion, login_url='login')
 def exportar_contar(request):
     """AJAX: cuenta clases según filtros activos (solo COUNT queries, sin generar Excels)."""
-    tipo = request.GET.get('tipo', 'ambos')
-    fecha_inicio, fecha_fin = _parsear_fechas(
-        request.GET.get('fecha_inicio', ''),
-        request.GET.get('fecha_fin', ''),
-    )
-    profesores_ids = [int(x) for x in request.GET.getlist('profesores_ids') if x.isdigit()]
-    colegios_ids   = [int(x) for x in request.GET.getlist('colegios_ids') if x.isdigit()]
+    tipo, _fecha_inicio, _fecha_fin, q_cl, q_pa, q_col = _filtros_exportacion(request.GET)
 
     resultado = {
         'n_profesores': 0, 'clases_colegio': 0, 'clases_personalizada': 0,
@@ -743,17 +750,6 @@ def exportar_contar(request):
     }
 
     if tipo in ('profesores', 'ambos'):
-        q_cl = Clase.objects.filter(
-            fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-            cancelada=False, es_evento=False,
-        )
-        q_pa = ClasePersonalizada.objects.filter(
-            fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-        )
-        if profesores_ids:
-            q_cl = q_cl.filter(profesor_id__in=profesores_ids)
-            q_pa = q_pa.filter(profesor_id__in=profesores_ids)
-
         resultado['clases_colegio']    = q_cl.count()
         resultado['clases_personalizada'] = q_pa.count()
 
@@ -768,12 +764,6 @@ def exportar_contar(request):
         resultado['n_profesores'] = len(ids_prof)
 
     if tipo in ('colegios', 'ambos'):
-        q_col = Clase.objects.filter(
-            fecha__gte=fecha_inicio, fecha__lte=fecha_fin,
-        )
-        if colegios_ids:
-            q_col = q_col.filter(colegio_id__in=colegios_ids)
-
         resultado['clases_colegios'] = q_col.count()
         resultado['n_colegios'] = q_col.values('colegio_id').distinct().count()
 
