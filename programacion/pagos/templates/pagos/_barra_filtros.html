@@ -16,6 +16,16 @@
         <span class="badge {% if tab == 'pendiente' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{ filas_pendientes|length }}</span>
       </a>
     </li>
+    {% if tab_label_sin_informe %}
+    {# Solo programación define este label: filas en BORRADOR no enviables por informe. #}
+    <li class="nav-item">
+      <a class="nav-link {% if tab == 'sin_informe' %}active{% endif %}"
+         href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=sin_informe">
+        <i class="fas fa-exclamation-triangle me-1"></i> {{ tab_label_sin_informe }}
+        <span class="badge {% if tab == 'sin_informe' %}bg-light text-dark{% else %}bg-danger{% endif %} ms-1">{{ filas_sin_informe|length }}</span>
+      </a>
+    </li>
+    {% endif %}
     <li class="nav-item">
       <a class="nav-link {% if tab == 'realizado' %}active{% endif %}"
          href="?semana={{ fecha_inicio }}&hasta={{ fecha_fin }}&tab=realizado">

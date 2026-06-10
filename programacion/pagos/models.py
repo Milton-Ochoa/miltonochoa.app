@@ -15,9 +15,15 @@ class LotePagos(models.Model):
     "Enviar" sea un solo UPDATE; el estado `PAGADO` es ortogonal y vive por fila
     (`PagoRealizado.fecha_pago`).
 
-    Flujo de una sola vía: `BORRADOR → ENVIADO` — **el envío es definitivo** (no
-    existe "des-enviar" ni "devolver"). Financiera **solo ve** las filas de lotes
-    `ENVIADO`. La semana se ancla en su lunes–viernes canónico (`unique_together`).
+    Flujo de una sola vía: `BORRADOR → ENVIADO` — **el envío es definitivo POR LOTE**
+    (no existe "des-enviar" ni "devolver"). Financiera **solo ve** las filas de lotes
+    `ENVIADO`. La semana se ancla en su lunes–viernes canónico.
+
+    Pueden coexistir **N lotes ENVIADO por semana** (cada envío congela exactamente lo
+    que se envió) pero **máximo un BORRADOR** (constraint parcial): al enviar, las
+    filas no enviables (excluidas o con clases sin informe) se desacoplan
+    (`lote=None`) y un "Preparar pendientes" posterior las re-adopta a un BORRADOR
+    nuevo, de modo que pueden ir en un envío posterior.
     """
 
     class Estado(models.TextChoices):
@@ -38,10 +44,18 @@ class LotePagos(models.Model):
 
     class Meta:
         db_table            = 'prog_pagos_lotes'
-        unique_together     = ('fecha_inicio', 'fecha_fin')
         ordering            = ['-fecha_inicio']
         verbose_name        = 'Lote de pagos'
         verbose_name_plural = 'Lotes de pagos'
+        constraints = [
+            # Varios ENVIADO por semana (re-envíos de filas rezagadas), pero un solo
+            # BORRADOR: es el lote "vivo" que preparar/enviar sincronizan.
+            models.UniqueConstraint(
+                fields=['fecha_inicio', 'fecha_fin'],
+                condition=models.Q(estado='BORRADOR'),
+                name='unique_lote_borrador_por_semana',
+            ),
+        ]
 
     def __str__(self):
         return f'Lote {self.fecha_inicio}–{self.fecha_fin} ({self.get_estado_display()})'
@@ -192,3 +206,11 @@ class SoportePagoProfesor(models.Model):
 
     def __str__(self):
         return f'Soporte de pago #{self.pago_id} ({self.nombre_original or self.archivo.name})'
+
+    @property
+    def nombre_mostrar(self):
+        """Nombre visible del adjunto: el nombre real en storage (refleja el renombrado
+        de `_pago_soporte_upload_to` y el sufijo único), no el nombre original subido."""
+        if self.archivo and self.archivo.name:
+            return os.path.basename(self.archivo.name)
+        return self.nombre_original or 'archivo'

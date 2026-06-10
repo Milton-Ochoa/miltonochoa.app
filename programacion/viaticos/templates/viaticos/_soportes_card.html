@@ -20,7 +20,7 @@ Parámetros (include ... with):
         <div class="d-flex justify-content-between align-items-center {% if not forloop.last %}border-bottom pb-2 mb-2{% endif %}">
             <div>
                 <i class="fas fa-file me-1 text-secondary"></i>
-                <span>{{ s.nombre_original|default:"archivo" }}</span>
+                <span>{{ s.nombre_mostrar }}</span>
                 <span class="text-muted small d-block">
                     {{ s.subido_en|date:"d/m/Y H:i" }}{% if s.subido_por %} · {{ s.subido_por.get_full_name|default:s.subido_por.username }}{% endif %}
                 </span>

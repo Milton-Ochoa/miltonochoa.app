@@ -17,6 +17,17 @@ from programacion.pagos.models import (
 )
 
 
+def _informe_de(clase, actividades='Clase dictada.'):
+    """Informe completado de una clase: requisito para que su fila de pago sea enviable
+    (gate por informe en `enviar_lote`/`construir_contexto_pagos`)."""
+    from programacion.informes.models import Informe
+    return Informe.objects.create(
+        profesor=clase.profesor, clase=clase,
+        colegio_nombre='Colegio Central', grado='11-1', fecha=clase.fecha,
+        materia='Matemáticas', tematica='Unidad 1', material='Libro 1',
+        actividades=actividades)
+
+
 class PagoLifecycleModelTest(TestCase):
     """Lifecycle de la fila base: valor base (con/sin override), desglose de extras,
     `fecha_pago` nullable y la convención de fila histórica (`lote IS NULL`)."""
@@ -125,19 +136,26 @@ class PrepararLoteTest(TestCase):
 
     def test_lote_enviado_no_se_remateriliza(self):
         from programacion.pagos.views import preparar_lote_semana, enviar_lote
+        _informe_de(self.clase)
         lote = preparar_lote_semana(self.inicio, self.fin)
-        enviar_lote(lote, None)
-        # Agregar otra clase y re-preparar: el lote enviado queda intacto.
+        self.assertTrue(enviar_lote(lote, None))
+        # Agregar otra clase y re-preparar: el lote enviado queda intacto (la fila nueva
+        # cae en un BORRADOR aparte de la misma semana).
         from programacion.colegios.models import Clase
-        Clase.objects.create(colegio=self.ca, bloque=self.bloque, profesor=self.prof,
-                             fecha=date(2025, 3, 12))
-        preparar_lote_semana(self.inicio, self.fin)
+        nueva = Clase.objects.create(colegio=self.ca, bloque=self.bloque,
+                                     profesor=self.prof, fecha=date(2025, 3, 12))
+        borrador = preparar_lote_semana(self.inicio, self.fin)
+        self.assertNotEqual(borrador.id, lote.id)
+        self.assertEqual(borrador.estado, LotePagos.Estado.BORRADOR)
         self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+        self.assertEqual(PagoRealizado.objects.filter(lote=borrador).count(), 1)
+        self.assertEqual(PagoRealizado.objects.get(lote=borrador).fecha, nueva.fecha)
 
     def test_financiera_solo_ve_lotes_enviados(self):
         from programacion.pagos.views import (
             preparar_lote_semana, enviar_lote, construir_contexto_pagos)
         get = {'semana': '2025-03-10', 'tab': 'pendiente'}
+        _informe_de(self.clase)
         lote = preparar_lote_semana(self.inicio, self.fin)
         # BORRADOR → financiera no ve nada.
         ctx = construir_contexto_pagos(get, modo='financiera')
@@ -154,6 +172,135 @@ class PrepararLoteTest(TestCase):
         self.assertGreaterEqual(n, 1)
         self.assertEqual(PagoRealizado.objects.filter(
             lote__estado=LotePagos.Estado.BORRADOR).count(), 1)
+
+
+class ReenvioYGateInformeTest(TestCase):
+    """Filas re-enviables (N lotes ENVIADO por semana, máx. 1 BORRADOR) y gate por
+    informe: solo se envían filas cuyo día tiene todos los informes completados."""
+
+    def setUp(self):
+        from programacion.colegios.models import Bloque, Clase, Grado
+        from datetime import time
+        self.colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(colegio=self.colegio, anio=2025, valor_hora=40000)
+        self.prof_a = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.prof_b = Profesor.objects.create(nombre='Luis', apellido='Gómez')
+        grado = Grado.objects.create(nombre='11-1')
+        self.bloque = Bloque.objects.create(
+            colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        # Dos filas en la misma semana (10–14 mar 2025): una por profesor.
+        self.clase_a = Clase.objects.create(colegio=self.ca, bloque=self.bloque,
+                                            profesor=self.prof_a, fecha=date(2025, 3, 11))
+        self.clase_b = Clase.objects.create(colegio=self.ca, bloque=self.bloque,
+                                            profesor=self.prof_b, fecha=date(2025, 3, 12))
+        self.inicio, self.fin = date(2025, 3, 10), date(2025, 3, 14)
+
+    def _preparar(self):
+        from programacion.pagos.views import preparar_lote_semana
+        return preparar_lote_semana(self.inicio, self.fin)
+
+    def test_enviar_desacopla_excluidas_y_reenvio_posterior(self):
+        from programacion.pagos.views import enviar_lote
+        _informe_de(self.clase_a)
+        _informe_de(self.clase_b)
+        lote = self._preparar()
+        fila_b = PagoRealizado.objects.get(profesor=self.prof_b)
+        fila_b.excluida = True
+        fila_b.save()
+
+        self.assertTrue(enviar_lote(lote, None))
+        fila_b.refresh_from_db()
+        # La excluida quedó desacoplada (no muere con el lote enviado).
+        self.assertIsNone(fila_b.lote)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+
+        # Re-preparar la re-adopta a un BORRADOR nuevo, aún excluida.
+        borrador = self._preparar()
+        self.assertNotEqual(borrador.id, lote.id)
+        fila_b.refresh_from_db()
+        self.assertEqual(fila_b.lote_id, borrador.id)
+        self.assertTrue(fila_b.excluida)
+
+        # Re-incluir y enviar de nuevo: dos lotes ENVIADO en la misma semana.
+        fila_b.excluida = False
+        fila_b.save()
+        self.assertTrue(enviar_lote(borrador, None))
+        self.assertEqual(LotePagos.objects.filter(
+            estado=LotePagos.Estado.ENVIADO,
+            fecha_inicio=self.inicio, fecha_fin=self.fin).count(), 2)
+
+    def test_fila_sin_informe_no_se_envia_y_aparece_en_su_tab(self):
+        from programacion.pagos.views import construir_contexto_pagos, enviar_lote
+        _informe_de(self.clase_a)   # la clase B queda sin informe
+        lote = self._preparar()
+
+        ctx = construir_contexto_pagos({}, modo='programacion')
+        self.assertEqual(len(ctx['filas_pendientes']), 1)       # solo A es enviable
+        self.assertEqual(len(ctx['filas_sin_informe']), 1)
+        self.assertTrue(ctx['filas_sin_informe'][0]['sin_informe'])
+        self.assertEqual(ctx['filas_sin_informe'][0]['docente'], self.prof_b.nombre_corto)
+
+        self.assertTrue(enviar_lote(lote, None))
+        fila_b = PagoRealizado.objects.get(profesor=self.prof_b)
+        self.assertIsNone(fila_b.lote)                          # desacoplada, no enviada
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 1)
+
+        # Completar el informe la vuelve enviable: re-preparar + segundo envío.
+        _informe_de(self.clase_b)
+        borrador = self._preparar()
+        ctx = construir_contexto_pagos({}, modo='programacion')
+        self.assertEqual(len(ctx['filas_sin_informe']), 0)
+        self.assertEqual(len(ctx['filas_pendientes']), 1)
+        self.assertTrue(enviar_lote(borrador, None))
+
+        # Regresión financiera: ambas filas (en lotes distintos) son visibles/pagables.
+        ctx_fin = construir_contexto_pagos({}, modo='financiera')
+        self.assertEqual(len(ctx_fin['filas_pendientes']), 2)
+
+    def test_informe_vacio_cuenta_como_sin_informe(self):
+        from programacion.pagos.views import _claves_sin_informe
+        _informe_de(self.clase_a, actividades='')   # borrador sin diligenciar
+        claves = _claves_sin_informe(self.inicio, self.fin)
+        self.assertIn((self.clase_a.fecha, self.prof_a.id, self.ca.id), claves)
+
+    def test_enviar_sin_filas_enviables_no_marca_enviado(self):
+        from programacion.pagos.views import enviar_lote
+        lote = self._preparar()                     # ninguna clase tiene informe
+        self.assertFalse(enviar_lote(lote, None))
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, LotePagos.Estado.BORRADOR)
+        self.assertEqual(PagoRealizado.objects.filter(lote__isnull=True).count(), 2)
+
+    def test_preparar_idempotente_no_toca_filas_enviadas(self):
+        from programacion.pagos.views import enviar_lote
+        _informe_de(self.clase_a)
+        _informe_de(self.clase_b)
+        lote = self._preparar()
+        self.assertTrue(enviar_lote(lote, None))
+        for _ in range(2):
+            self._preparar()
+        # Las dos filas siguen congeladas en el lote enviado; ningún duplicado.
+        self.assertEqual(PagoRealizado.objects.count(), 2)
+        self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 2)
+
+    def test_constraint_un_solo_borrador_por_semana(self):
+        from django.db import IntegrityError, transaction
+        LotePagos.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin,
+                                 estado=LotePagos.Estado.ENVIADO)
+        LotePagos.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin,
+                                 estado=LotePagos.Estado.ENVIADO)   # 2 ENVIADO: permitido
+        LotePagos.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            LotePagos.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin)
+
+    def test_preparar_pendientes_borra_borradores_vacios(self):
+        from programacion.pagos.views import preparar_pendientes
+        # Semana pasada sin clases con un BORRADOR vacío huérfano.
+        LotePagos.objects.create(fecha_inicio=date(2025, 1, 6), fecha_fin=date(2025, 1, 10))
+        preparar_pendientes(None)
+        self.assertFalse(LotePagos.objects.filter(
+            fecha_inicio=date(2025, 1, 6), filas__isnull=True).exists())
 
 
 class RevisionProgramacionTest(TestCase):
@@ -173,8 +320,9 @@ class RevisionProgramacionTest(TestCase):
         grado = Grado.objects.create(nombre='11-1')
         bloque = Bloque.objects.create(
             colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
-        Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=self.prof,
-                             fecha=date(2025, 3, 11))
+        self.clase = Clase.objects.create(colegio=self.ca, bloque=bloque,
+                                          profesor=self.prof, fecha=date(2025, 3, 11))
+        _informe_de(self.clase)   # con informe: la fila es enviable
         self.semana = '2025-03-10'
 
     def _preparar(self):
@@ -247,7 +395,9 @@ class BadgePagosProgramacionTest(TestCase):
             colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
         hoy = date.today()
         self.lunes = hoy - timedelta(days=hoy.weekday())
-        Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=prof, fecha=self.lunes)
+        clase = Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=prof,
+                                     fecha=self.lunes)
+        _informe_de(clase)   # enviable: el badge debe apagarse tras un envío real
 
     def test_badge_pendiente_y_se_apaga_al_enviar(self):
         from programacion.pagos.views import preparar_lote_semana, enviar_lote
@@ -284,6 +434,15 @@ class SoportePagoProfesorModelTest(TestCase):
         soporte = SoportePagoProfesor(pago=self.pago)
         ruta = _pago_soporte_upload_to(soporte, 'Recibo Original.PDF')
         self.assertEqual(ruta, 'pagos/pago-ana-perez-2025-03-14.pdf')
+
+    def test_nombre_mostrar_es_el_basename_en_storage(self):
+        # Sin tocar storage: basta asignar el name del FileField.
+        soporte = SoportePagoProfesor(
+            pago=self.pago, archivo='pagos/pago-ana-perez-2025-03-14.pdf',
+            nombre_original='Recibo Original.PDF')
+        self.assertEqual(soporte.nombre_mostrar, 'pago-ana-perez-2025-03-14.pdf')
+        # Fallback cuando aún no hay archivo (filas de prueba/antiguas).
+        self.assertEqual(SoportePagoProfesor(pago=self.pago).nombre_mostrar, 'archivo')
 
 
 class PagosProgramacionSoloLecturaTest(TestCase):
