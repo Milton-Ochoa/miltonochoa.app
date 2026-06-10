@@ -8,7 +8,7 @@ Genera archivos Excel con openpyxl:
 (Los pagos semanales a profesores se movieron a la sub-app `programacion.pagos`.)
 
 El ZIP de exportación se construye completamente en memoria (BytesIO) para
-evitar archivos temporales en disco — importante en Render (filesystem efímero).
+evitar archivos temporales en disco — importante en Railway (filesystem efímero).
 """
 
 import io
@@ -34,7 +34,7 @@ from programacion.colegios.utils import extraer_numero_grado, ordenar_grados
 # ══════════════════════════════════════════════════════════════
 
 # Usamos dicts propios en lugar de strftime('%a'/'%b') porque el servidor
-# Render no garantiza locale en español — strftime devolvería inglés en producción.
+# de producción no garantiza locale en español — strftime devolvería inglés.
 DIAS_ES  = {0:'Lun', 1:'Mar', 2:'Mié', 3:'Jue', 4:'Vie', 5:'Sáb', 6:'Dom'}
 MESES_ES = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun',
              7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
@@ -173,14 +173,6 @@ def _generar_excel_profesor(profesor, fecha_inicio, fecha_fin):
     El valor del campo 'titulo' para material asignado se fija a 'Material Asignado'
     y el nombre real del libro va en 'unidad', siguiendo la convención del sistema.
     """
-
-    def _minutos(hora_str):
-        try:
-            partes = hora_str.split('-')[0].strip().split(':')
-            return int(partes[0]) * 60 + int(partes[1])
-        except Exception:
-            return 9999
-
     entradas = []
 
     clases_colegio = list(
@@ -686,7 +678,7 @@ def exportar_view(request):
     POST: genera el ZIP en memoria (BytesIO) y lo devuelve como attachment.
 
     El ZIP se construye completamente en memoria sin archivos temporales,
-    requerimiento crítico para Render cuyo filesystem es efímero.
+    requerimiento crítico para Railway cuyo filesystem es efímero.
     Estructura interna: Profesores/Horario {nombre}.xlsx y Colegios/Horario {nombre}.xlsx.
     """
 

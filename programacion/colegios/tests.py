@@ -1,7 +1,7 @@
 """
 Tests — app: colegios
 Modelos: Bloque, Asignacion, Clase, ClasePersonalizada
-Utilidades: label_unidad, extraer_numero_grado, calcular_rango_fechas, ordenar_grados
+Utilidades: extraer_numero_grado, ordenar_grados
 Vistas: dashboard_colegios, cargar_grados
 """
 import json
@@ -13,7 +13,6 @@ from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, No
 from programacion.colegios.models import Bloque, Asignacion, Clase, ClasePersonalizada, Grado
 from programacion.colegios.utils import (
     extraer_numero_grado,
-    calcular_rango_fechas,
     ordenar_grados,
 )
 from datetime import datetime
@@ -32,32 +31,6 @@ class ExtraerNumeroGradoTest(TestCase):
     def test_sin_numero_devuelve_cero(self):
         self.assertEqual(extraer_numero_grado('sin número'), 0)
 
-
-class CalcularRangoFechasTest(TestCase):
-
-    def setUp(self):
-        self.lunes = date(2026, 3, 9)  # Lunes conocido
-
-    def test_semana_empieza_en_lunes_y_dura_7_dias(self):
-        inicio, dias = calcular_rango_fechas('Semana', self.lunes)
-        self.assertEqual(inicio.weekday(), 0)
-        self.assertEqual(dias, 7)
-
-    def test_semana_desde_dia_intermedio_retrocede_a_lunes(self):
-        miercoles = date(2026, 3, 11)
-        inicio, _ = calcular_rango_fechas('Semana', miercoles)
-        self.assertEqual(inicio, date(2026, 3, 9))
-
-    def test_mes_empieza_en_dia_1(self):
-        inicio, dias = calcular_rango_fechas('Mes', self.lunes)
-        self.assertEqual(inicio.day, 1)
-        self.assertEqual(inicio.month, 3)
-        self.assertEqual(dias, 31)  # marzo tiene 31 días
-
-    def test_anno_empieza_el_1_enero(self):
-        inicio, dias = calcular_rango_fechas('Año', self.lunes)
-        self.assertEqual(inicio, date(2026, 1, 1))
-        self.assertIn(dias, [365, 366])
 
 class OrdenarGradosTest(TestCase):
 

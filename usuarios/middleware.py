@@ -11,17 +11,13 @@ from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIER
 # cualquier rol (incluidos colegio/profesor, restringidos a sus prefijos) y aun sin sesión.
 RUTAS_PUBLICAS = ['/usuarios/login/', '/usuarios/logout/', '/usuarios/telemetria/', '/admin/']
 
-# La API REST usa JWT propio — DRF maneja auth y permisos internamente.
-# El ControlAccesoMiddleware no aplica a estas rutas. (Rutas del área, ya sin prefijo.)
-_RUTAS_API = ['/api/']
-
 # Recursos PWA: el navegador los pide sin cookies/sesión activa.
 _RUTAS_PWA = ['/manifest.json', '/sw.js']
 
 # Allocated once at import time, not on every request.
 # Prefijos del área programacion a los que cada rol tiene acceso (en la raíz del subdominio).
 _PERMITIDAS_COLEGIO  = ['/colegios/', '/informes/']
-_PERMITIDAS_PROFESOR = ['/profesores/', '/informes/', '/informes/ajax/']
+_PERMITIDAS_PROFESOR = ['/profesores/', '/informes/']
 
 
 class ControlAccesoMiddleware:
@@ -73,7 +69,6 @@ class ControlAccesoMiddleware:
         path = request.path
 
         if (any(path.startswith(r) for r in RUTAS_PUBLICAS)
-                or any(path.startswith(r) for r in _RUTAS_API)
                 or any(path == r for r in _RUTAS_PWA)
                 or path.startswith('/static/')
                 or path.startswith('/media/')):

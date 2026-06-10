@@ -29,7 +29,7 @@ _CACHE_KEY = 'auditoria_ultima_sync'
 # Evita que múltiples requests concurrentes disparen un barrido completo de BD.
 _CACHE_TTL = 300
 
-# Render (producción) no tiene locale 'es' configurado, por lo que strftime('%b')
+# Railway (producción) no tiene locale 'es' configurado, por lo que strftime('%b')
 # devuelve el nombre en inglés. Se usa este array para garantizar español en todos
 # los entornos sin depender del locale del sistema operativo.
 _MESES_ES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',

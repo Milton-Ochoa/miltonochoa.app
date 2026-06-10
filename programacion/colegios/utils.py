@@ -1,6 +1,4 @@
 import re
-import calendar
-from datetime import date, timedelta
 
 
 def extraer_numero_grado(grado_str):
@@ -48,33 +46,4 @@ def ordenar_grados(grados):
         key=lambda g: (extraer_numero_grado(g), str(g)),
     )
     return tradicionales + especiales
-
-
-def calcular_rango_fechas(tipo_vista, fecha_ref):
-    """
-    Calcula el rango de fechas para una ventana de visualización.
-
-    Args:
-        tipo_vista: 'Semana', 'Mes' o 'Año'.
-        fecha_ref:  Fecha de referencia dentro del rango deseado.
-
-    Returns:
-        Tupla (fecha_inicio: date, dias_totales: int).
-
-    Nota: Para años bisiestos usa calendar.isleap() en lugar de year % 4 == 0,
-    que es incorrecto para años de siglo (1900 no es bisiesto, 2000 sí lo es).
-    """
-    if tipo_vista == 'Semana':
-        # weekday() devuelve 0=lunes, por lo que restar da el lunes de esa semana
-        inicio = fecha_ref - timedelta(days=fecha_ref.weekday())
-        dias_totales = 7
-    elif tipo_vista == 'Mes':
-        inicio = fecha_ref.replace(day=1)
-        # Avanzar 32 días garantiza pasar al mes siguiente sin importar la longitud del mes actual
-        next_month = (inicio + timedelta(days=32)).replace(day=1)
-        dias_totales = (next_month - inicio).days
-    else:  # Año
-        inicio = date(fecha_ref.year, 1, 1)
-        dias_totales = 366 if calendar.isleap(fecha_ref.year) else 365
-    return inicio, dias_totales
 

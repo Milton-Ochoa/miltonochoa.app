@@ -15,9 +15,9 @@ class LotePagos(models.Model):
     "Enviar" sea un solo UPDATE; el estado `PAGADO` es ortogonal y vive por fila
     (`PagoRealizado.fecha_pago`).
 
-    Flujo de una sola vía: `BORRADOR → ENVIADO`. Financiera **solo ve** las filas de
-    lotes `ENVIADO`. Corregir tras enviar = des-enviar (solo si ninguna fila está
-    pagada). La semana se ancla en su lunes–viernes canónico (`unique_together`).
+    Flujo de una sola vía: `BORRADOR → ENVIADO` — **el envío es definitivo** (no
+    existe "des-enviar" ni "devolver"). Financiera **solo ve** las filas de lotes
+    `ENVIADO`. La semana se ancla en su lunes–viernes canónico (`unique_together`).
     """
 
     class Estado(models.TextChoices):
