@@ -1,0 +1,23 @@
+{% comment %}
+Tarjeta "Gastos" del detalle de un viático (idéntica en programación y financiera).
+Parámetros (include ... with):
+  - con_margen: True → agrega mb-3 (cuando la tarjeta no es el último elemento).
+{% endcomment %}
+<div class="card shadow-sm{% if con_margen %} mb-3{% endif %}">
+    <div class="card-header bg-dark text-white fw-bold">Gastos</div>
+    <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-light">
+                <tr><th>Concepto</th><th class="text-end">Valor</th></tr>
+            </thead>
+            <tbody>
+                {% for g in solicitud.gastos.all %}
+                <tr><td>{{ g.nombre }}</td><td class="text-end">${{ g.valor|floatformat:"0" }}</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light">
+                <tr><th>Total</th><th class="text-end">${{ solicitud.total|floatformat:"0" }}</th></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>

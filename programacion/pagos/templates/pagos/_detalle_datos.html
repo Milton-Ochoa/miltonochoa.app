@@ -1,0 +1,47 @@
+{% comment %}
+Tarjeta "Datos" del detalle de un PagoRealizado (compartida programación ↔ financiera):
+datos bancarios del docente, colegio/periodo, desglose (base + extras) y marcado.
+Parámetros (include ... with):
+  - con_icono_editado: True → muestra el lápiz cuando el valor base fue editado.
+  - mostrar_marcado:   condición para la sección "Marcado como pagado"
+                       (programación pasa pago.pagada; financiera True).
+{% endcomment %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header bg-dark text-white fw-bold">Datos</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6"><span class="text-muted small d-block">Docente</span><strong>{{ pago.profesor.nombre_corto }}</strong></div>
+            <div class="col-md-2"><span class="text-muted small d-block">Documento</span>{{ pago.profesor.documento|default:"—" }}</div>
+            <div class="col-md-2"><span class="text-muted small d-block">Cuenta</span>{{ pago.profesor.cuenta_bancaria|default:"—" }}</div>
+            <div class="col-md-2"><span class="text-muted small d-block">Banco</span>{{ pago.profesor.banco|default:"—" }}</div>
+            <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ pago.colegio.colegio.nombre }}</strong></div>
+            <div class="col-md-3"><span class="text-muted small d-block">Código</span>{{ pago.colegio.colegio.codigo|default:"—" }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Periodo</span>{{ pago.colegio.periodo_label }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Fecha de la clase</span>{{ pago.fecha|date:"d/m/Y" }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Horas</span>{{ pago.horas|floatformat:"-2" }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Total</span><strong class="text-success">${{ pago.total|floatformat:"0" }}</strong></div>
+        </div>
+
+        {# ── Desglose: base + costos extra ── #}
+        <hr>
+        <span class="text-muted small d-block mb-1">Desglose</span>
+        <table class="table table-sm mb-0">
+            <tbody>
+                <tr><td>Pago por horas{% if con_icono_editado and pago.valor_base_editado is not None %} <i class="fas fa-pen text-warning small" title="Valor editado"></i>{% endif %}</td>
+                    <td class="text-end">${{ pago.valor_base|floatformat:"0" }}</td></tr>
+                {% for e in pago.extras.all %}
+                <tr><td>{{ e.concepto }}</td><td class="text-end">${{ e.valor|floatformat:"0" }}</td></tr>
+                {% endfor %}
+                <tr class="fw-bold border-top"><td>Total</td><td class="text-end">${{ pago.total|floatformat:"0" }}</td></tr>
+            </tbody>
+        </table>
+
+        {% if mostrar_marcado %}
+        <hr>
+        <div class="row g-3">
+            <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>
+            <div class="col-md-4"><span class="text-muted small d-block">Por</span>{% if pago.marcado_por %}{{ pago.marcado_por.get_full_name|default:pago.marcado_por.username }}{% else %}—{% endif %}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
