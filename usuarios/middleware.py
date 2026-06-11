@@ -5,7 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
-from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA
+from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
 # '/usuarios/telemetria/': el capturador de errores del navegador debe poder reportar desde
 # cualquier rol (incluidos colegio/profesor, restringidos a sus prefijos) y aun sin sesión.
@@ -86,8 +86,9 @@ class ControlAccesoMiddleware:
         if redir_cambio is not None:
             return redir_cambio
 
-        # Bandera por defecto para las plantillas (la rama de financiera la sube a True).
+        # Banderas por defecto para las plantillas (cada rama de área sube la suya a True).
         request.es_personal_financiera = False
+        request.es_personal_logistica = False
 
         # ── Área financiera ──
         # Acceso por grupo 'area:financiera' (o superusuario). El subdominio no tiene
@@ -99,6 +100,16 @@ class ControlAccesoMiddleware:
                 request.perfil_profesor = None
                 request.es_personal_programacion = False
                 request.es_personal_financiera = True
+                return self.get_response(request)
+            return redirect(url_apex('seleccion_area', request))
+
+        # ── Área logistica ── (espejo de financiera: grupo 'area:logistica' o superusuario)
+        if request.area == 'logistica':
+            if request.user.is_superuser or request.user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists():
+                request.perfil_colegio  = None
+                request.perfil_profesor = None
+                request.es_personal_programacion = False
+                request.es_personal_logistica = True
                 return self.get_response(request)
             return redirect(url_apex('seleccion_area', request))
 

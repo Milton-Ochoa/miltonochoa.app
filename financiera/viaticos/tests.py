@@ -78,7 +78,9 @@ class FinancieraAccesoTest(TestCase):
 class SubdominioDesconocidoTest(TestCase):
 
     def test_subdominio_no_registrado_da_404(self):
-        c = Client(HTTP_HOST='logistica.testserver')
+        # 'logistica' ya es un área registrada (Fase 1 del inventario); se usa un
+        # subdominio que no existe en AREAS.
+        c = Client(HTTP_HOST='desconocida.testserver')
         r = c.get('/')
         self.assertEqual(r.status_code, 404)
 
