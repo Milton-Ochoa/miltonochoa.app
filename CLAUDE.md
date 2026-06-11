@@ -136,9 +136,9 @@ AAMO/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
 ├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
-│   │                  #   servicios de dominio listos — tablas log_*; UI de catálogos,
-│   │                  #   existencias, movimientos y préstamos activa; dashboard y
-│   │                  #   exports en construcción)
+│   │                  #   servicios de dominio listos — tablas log_*; UI completa:
+│   │                  #   catálogos, existencias, movimientos, préstamos, dashboard
+│   │                  #   con badges y exports a Excel)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -313,6 +313,19 @@ Reglas de oro (NO romper):
   vacío/0 = esa línea no devuelve): NO pide bodega (opera sobre la de cada línea) y el
   estado PARCIAL/CERRADO lo recalcula el servicio. La lista resalta vencidos (ambas
   direcciones) y distingue con badge "Prestamos"/"Nos prestan".
+- **Reportes (F6):** `log_home` es el **dashboard** (tarjetas: artículos activos, unidades
+  totales, bajo mínimo, "nos deben" = OTORGADO abiertos y "debemos devolver" = RECIBIDO
+  abiertos, cada una con su conteo de vencidos + últimos 10 movimientos). Los **badges** del
+  menú (Existencias = items bajo mínimo, Préstamos = vencidos ambas direcciones) los pone el
+  context processor `logistica.inventario.context_processors.alertas_inventario` (registrado
+  en TEMPLATES; devuelve `{}` fuera del subdominio o sin `es_personal_logistica` — patrón
+  `viaticos_pendientes`; sin cache, son 2 COUNTs). **Exports a Excel** (openpyxl
+  self-contained vía el helper genérico `_generar_excel` de views.py, POST desde modal,
+  `@require_POST` + gate): existencias (`log_stock_exportar`, filtro bodega, incluye
+  valor unitario referencial y total estimado), movimientos (`log_movimientos_exportar`,
+  histórico COMPLETO sin el cap de 500 de la vista, filtros tipo/rango, orden cronológico)
+  y préstamos (`log_prestamos_exportar`, filtros dirección/estado/solo-vencidos, totales
+  prestado/devuelto/pendiente).
 - En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
@@ -498,8 +511,11 @@ checkboxes de tipo y rango de fechas). Tests en
   `log_movimientos` y ajuste manual `log_ajuste_crear` desde el modal de existencias) y la
   **UI de préstamos** (lista `log_prestamos_lista`, alta `log_prestamos_nuevo` —dirección
   OTORGADO/RECIBIDO, líneas item+bodega+cantidad—, detalle `log_prestamos_detalle` con modal
-  de devolución parcial/total `log_prestamo_devolver`); el dashboard, badges y exports llegan
-  en la fase 6 (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
+  de devolución parcial/total `log_prestamo_devolver`) y los **reportes de la F6**: dashboard
+  en `log_home` (tarjetas + últimos movimientos), badges del menú (context processor
+  `alertas_inventario`) y exports a Excel (`log_stock_exportar`, `log_movimientos_exportar`,
+  `log_prestamos_exportar`) — ver sección _Inventario de logística_ abajo. Ver
+  `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -689,7 +705,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 566 tests OK
+python manage.py test                        # baseline: 587 tests OK
 python manage.py runserver
 ```
 
@@ -732,7 +748,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (541 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (587 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

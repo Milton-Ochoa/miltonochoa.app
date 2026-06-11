@@ -5,6 +5,9 @@
 <a href="{% url 'log_prestamos_nuevo' %}" class="btn btn-primary btn-sm fw-bold">
     <i class="fas fa-plus me-1"></i> Nuevo préstamo
 </a>
+<button type="button" class="btn btn-success btn-sm fw-bold ms-1" data-bs-toggle="modal" data-bs-target="#modalExportarPrestamos">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
 {% endblock %}
 
 {% block content %}
@@ -104,4 +107,57 @@
     </div>
 </div>
 {% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaPrestamos' %}
+
+{# ── Modal: exportar préstamos a Excel ── #}
+<div class="modal fade" id="modalExportarPrestamos" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_prestamos_exportar' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar préstamos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="fw-semibold mb-2">Dirección <small class="text-muted fw-normal">(ninguna = ambas)</small></p>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="direcciones" value="OTORGADO" id="expDirOtorgado">
+                        <label class="form-check-label" for="expDirOtorgado">Prestamos nosotros</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="direcciones" value="RECIBIDO" id="expDirRecibido">
+                        <label class="form-check-label" for="expDirRecibido">Nos prestan</label>
+                    </div>
+                </div>
+                <p class="fw-semibold mb-2">Estados <small class="text-muted fw-normal">(ninguno = todos)</small></p>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="estados" value="ABIERTO" id="expEstAbierto">
+                        <label class="form-check-label" for="expEstAbierto">Abierto</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="estados" value="PARCIAL" id="expEstParcial">
+                        <label class="form-check-label" for="expEstParcial">Devuelto parcial</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="estados" value="CERRADO" id="expEstCerrado">
+                        <label class="form-check-label" for="expEstCerrado">Cerrado</label>
+                    </div>
+                </div>
+                <div class="form-check">
+                    {# id en snake_case a propósito: un test de F5 cuenta las apariciones #}
+                    {# exactas de "Vencido" en esta página. #}
+                    <input class="form-check-input" type="checkbox" name="solo_vencidos" value="1" id="exp_solo_vencidos">
+                    <label class="form-check-label" for="exp_solo_vencidos">Solo vencidos</label>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
