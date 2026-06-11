@@ -1,0 +1,92 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Categorías{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirCategoriaModal(null)">
+    <i class="fas fa-plus me-1"></i> Nueva categoría
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Nombre</th>
+                        <th class="text-end">Artículos</th>
+                        <th class="text-center" style="width: 12%;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in categorias %}
+                    <tr>
+                        <td><strong>{{ c.nombre }}</strong></td>
+                        <td class="text-end">{{ c.n_items }}</td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
+                                    onclick="abrirCategoriaModal(this)" title="Editar"
+                                    data-id="{{ c.pk }}" data-nombre="{{ c.nombre }}">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('¿Eliminar la categoría \'{{ c.nombre }}\'?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="eliminar">
+                                <input type="hidden" name="categoria_id" value="{{ c.pk }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2"
+                                        {% if c.n_items %}disabled title="No se puede eliminar: tiene artículos"{% else %}title="Eliminar"{% endif %}>
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-4">
+                            <i class="fas fa-tags me-1"></i> No hay categorías todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{# ── Modal Nueva/Editar categoría ── #}
+<div class="modal fade" id="modalCategoria" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <form method="post" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="guardar">
+            <input type="hidden" name="categoria_id" id="categoria_id" value="">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalCategoriaTitulo">Nueva categoría</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label mb-1" for="categoria_nombre">Nombre *</label>
+                <input type="text" class="form-control" name="nombre" id="categoria_nombre" required maxlength="100">
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-save me-1"></i> Guardar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirCategoriaModal(btn) {
+    var d = btn ? btn.dataset : null;
+    document.getElementById('categoria_id').value     = d ? d.id : '';
+    document.getElementById('categoria_nombre').value = d ? d.nombre : '';
+    document.getElementById('modalCategoriaTitulo').textContent = d ? 'Editar categoría' : 'Nueva categoría';
+    new bootstrap.Modal(document.getElementById('modalCategoria')).show();
+}
+</script>
+{% endblock %}

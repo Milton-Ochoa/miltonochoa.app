@@ -1,0 +1,100 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Artículos{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirItemModal(null)"
+        {% if not hay_categorias %}disabled title="Crea primero una categoría"{% endif %}>
+    <i class="fas fa-plus me-1"></i> Nuevo artículo
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    {% if not hay_categorias %}
+    <div class="alert alert-warning py-2">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        No hay categorías todavía: crea al menos una en
+        <a href="{% url 'log_categorias' %}" class="alert-link">Catálogos → Categorías</a>
+        antes de registrar artículos.
+    </div>
+    {% endif %}
+
+    {% include 'inventario/_items_tabla.html' %}
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaItems' %}
+
+{# ── Modal Nuevo/Editar artículo (un solo modal; JS lo rellena al editar) ── #}
+<div class="modal fade" id="modalItem" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_item_guardar' %}" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="item_id" id="item_id" value="">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalItemTitulo">Nuevo artículo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2">
+                    <div class="col-4">
+                        <label class="form-label mb-1" for="id_codigo">Código *</label>
+                        {{ form.codigo }}
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label mb-1" for="id_nombre">Nombre *</label>
+                        {{ form.nombre }}
+                    </div>
+                    <div class="col-7">
+                        <label class="form-label mb-1" for="id_categoria">Categoría *</label>
+                        {{ form.categoria }}
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label mb-1" for="id_unidad_medida">Unidad</label>
+                        {{ form.unidad_medida }}
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label mb-1" for="id_descripcion">Descripción</label>
+                        {{ form.descripcion }}
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="id_stock_minimo">Stock mínimo</label>
+                        {{ form.stock_minimo }}
+                        <small class="text-muted">0 = sin alerta (mínimo global, suma de bodegas)</small>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="id_valor_unitario">Valor unitario (COP)</label>
+                        {{ form.valor_unitario }}
+                        <small class="text-muted">Referencial, solo para exports</small>
+                    </div>
+                    <div class="col-12 form-check ms-2 mt-2">
+                        {{ form.activo }}
+                        <label class="form-check-label" for="id_activo">Activo</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-save me-1"></i> Guardar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirItemModal(btn) {
+    var d = btn ? btn.dataset : null;
+    document.getElementById('item_id').value            = d ? d.id : '';
+    document.getElementById('id_codigo').value          = d ? d.codigo : '';
+    document.getElementById('id_nombre').value          = d ? d.nombre : '';
+    document.getElementById('id_categoria').value       = d ? d.categoria : '';
+    document.getElementById('id_unidad_medida').value   = d ? d.unidad : 'UNIDAD';
+    document.getElementById('id_descripcion').value     = d ? d.descripcion : '';
+    document.getElementById('id_stock_minimo').value    = d ? d.minimo : '0';
+    document.getElementById('id_valor_unitario').value  = d ? d.valor : '';
+    document.getElementById('id_activo').checked        = d ? d.activo === 'True' : true;
+    document.getElementById('modalItemTitulo').textContent = d ? 'Editar artículo' : 'Nuevo artículo';
+    new bootstrap.Modal(document.getElementById('modalItem')).show();
+}
+</script>
+{% endblock %}
