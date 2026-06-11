@@ -146,6 +146,38 @@ AAMO/
 Las piezas de programación (búsqueda global, modales, atajos) viven en `base_chrome` pero
 están gated por `request.es_personal_programacion` → inertes en otras áreas.
 
+**Portal del profesor (perfiles `UsuarioProfesor`):** el sidebar **sí** se muestra a los
+perfiles de profesor (antes `base_chrome` lo ocultaba con `{% if not
+request.user.perfil_profesor %}`; ese gate, el logo-en-vez-de-hamburguesa y el footer
+propio se eliminaron — el chrome es uniforme para todos los roles). Su menú (rama
+`perfil_profesor` del `{% else %}` en `base.html`) tiene 3 ítems: **Cronograma**
+(`ver_horario`, la vista fuerza su propio horario), **Informes** (`lista_informes`, la
+vista ya scopea por rol) y **Pagos** (`profesor_pagos` → `/profesores/pagos/`, vista
+`mis_pagos` en `programacion.profesores.views`; bajo `/profesores/` a propósito para no
+tocar `_PERMITIDAS_PROFESOR`). **Mis pagos** muestra el estado de sus pagos por día de
+clases — agrupa sus clases dictadas (`fecha__lte=hoy`, no canceladas/no eventos) por
+`(fecha, bloque__colegio_id)`, el mismo grouping de `_build_filas_pagos`, y cruza con
+`PagoRealizado`: *Pagada* = fila con `fecha_pago` (muestra fecha de pago + soportes);
+*Pendiente* = todo lo demás (incluye días sin fila materializada y filas `excluida` —
+la exclusión es interna de programación). **CONTRATO: el profesor NUNCA ve montos en
+pesos** — al template (`profesores/mis_pagos.html`, dos pestañas) van dicts saneados
+(fecha/colegio/horas/estado/soportes), jamás objetos `PagoRealizado`. Staff/superusuario
+en esa URL → redirect a `pagos_lista`. La descarga del soporte la proxia
+`profesor_soporte_descargar` (`/profesores/pagos/soporte/<id>/`), gateada al **dueño**:
+404 (no 403, para no revelar existencia) si el soporte no es de su `profesor_id` o si
+no hay perfil de profesor. El modal de informe de sesión está extraído a parciales
+compartidos `informes/_modal_informe.html` + `_modal_informe_js.html` (los ids `inf_*` y
+`modalInforme` son contrato entre ambos): los incluyen `profesores/horario.html` (usa
+`profesor_sel` como profesor por defecto) e `informes/lista.html` (cada fila pasa su
+`profesor_id` como 10.º argumento opcional de `abrirInforme`, y el include lleva
+`recargar_al_guardar=True` → la página se recarga tras guardar). Para perfiles de
+profesor el server ignora el `profesor_id` del body (blindaje en `guardar_informe`).
+La lista permite **diligenciar desde la fila** (botón "Informe", oculto a gestores de
+colegio): las filas de `lista_informes` traen `clase_id`/`personalizada_id`/`profesor_id`/
+`tematica`; la clave de caché es `informes_lista:v2:g{gen}:user:{id}` y la invalidación
+rota el contador `informes_lista:gen` (funciona igual en locmem y Redis — ya no usa
+`delete_pattern`, que en locmem era un no-op).
+
 ## Convención CRÍTICA: ruta de import ≠ app_label
 
 Las apps viven dentro de `programacion/` pero **conservan su label original**:
@@ -190,7 +222,7 @@ Registro actual (modelo → tabla):
 | `Profesor` | `prog_profesores` | | `Tarea` | `prog_tareas` |
 | `DocumentoProfesor` | `prog_profesores_documentos` | | `UsuarioColegio` | `usuarios_colegio` |
 | `Grado` | `prog_grados` | | `UsuarioProfesor` | `usuarios_profesor` |
-| `Bloque` | `prog_bloques` | | | |
+| `Bloque` | `prog_bloques` | | `CancelacionClase` | `prog_clases_cancelaciones` |
 | | | | `PerfilEmpleado` | `usuarios_empleados` |
 | | | | `ErrorCliente` | `usuarios_errores_cliente` |
 | `Asignacion` | `prog_asignaciones` | | `SolicitudViatico` | `prog_viaticos` |
@@ -277,6 +309,43 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   "Cal A"/"Cal B" por colegio y `periodo_label` en los badges de años (tabla + modal
   "Gestionar Años", vía `anios_json`).
 
+## Cancelación de clases por colegio o por profesor (`colegios.CancelacionClase`, tabla `prog_clases_cancelaciones`)
+
+Al marcar "Clase Cancelada" en el modal del dashboard se elige **quién cancela** (radio
+`cancelada_por`; default `COLEGIO` para compatibilidad con POSTs sin el campo). La lógica
+vive en `_guardar_clase` (`programacion/colegios/views.py`), así cubre la ruta AJAX y la
+no-JS, y pasa por la misma invalidación de caché del dashboard:
+
+- **COLEGIO** (comportamiento histórico): `Clase.cancelada=True` (+ motivo en
+  `comentarios`) y se crea un registro `CancelacionClase(tipo=COLEGIO)` **vigente**:
+  des-cancelar (checkbox off) lo elimina; editar la clase aún cancelada **refresca su
+  motivo** (no duplica registro).
+- **PROFESOR**: la clase **NO muere** — `cancelada` queda `False`, `profesor=None`
+  (pendiente de reasignar; reasignar = edición normal del modal) y se crea un registro
+  `tipo=PROFESOR` con **snapshot** del profesor que cancela (el del select del modal, o
+  el guardado si el POST no trae profesor). Es **histórico**: NUNCA se borra (ni al
+  reasignar; A cancela → reasignan a B → B cancela = 2 registros). Mientras está sin
+  profesor no genera fila de pago (`_build_filas_pagos` salta `profesor_id` nulo) y NO
+  cuenta como cancelada para la secuencia de unidades (sigue ocupando su unidad: en
+  `_guardar_clase` la regularidad usa la cancelación *efectiva*, no el checkbox).
+- El registro guarda snapshots (`profesor_nombre`, `colegio_nombre` —FK a `Colegio`, no
+  a `ColegioAnio`—, `fecha_clase`, `motivo`, `registrado_por`) → el reporte sobrevive a
+  reasignaciones y borrados (todas las FK son SET_NULL; borrar la clase conserva el
+  registro). `registrar_cambio` lleva tipo/motivo en el `detalle` del historial.
+- **Backfill** (migración `colegios.0019`): cada `Clase` con `cancelada=True`
+  preexistente tiene su registro COLEGIO con `registrado_por=None`.
+
+**Reporte "Cancelaciones"** (sidebar → Reportes): `/reportes/cancelaciones/` (names
+`reporte_cancelaciones` / `reporte_cancelaciones_excel`), vistas en
+`programacion/colegios/views.py` (la app dueña del modelo; no se creó sub-app), gate
+`es_personal_programacion`. OJO: la URL cuelga de `/reportes/`, **no** de `/colegios/`
+(ese prefijo lo abre el `ControlAccesoMiddleware` a los gestores de colegio; con
+`/reportes/` el middleware los bloquea y el gate de vista es la segunda barrera). Tabla
+con filtros client-side (tipo, profesor, colegio, motivo + rango sobre `fecha_clase`;
+patrón `viaticos/lista.html`) y export a Excel (openpyxl self-contained, modal con
+checkboxes de tipo y rango de fechas). Tests en
+`programacion/colegios/tests_cancelaciones.py`.
+
 ## Enrutado por subdominios y login
 
 **Cada área es un subdominio; el apex es el login.** El urlconf se elige por host:
@@ -340,18 +409,30 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
   el middleware) controla el menú en `base_financiera.html` (el badge de "Viáticos" =
-  solicitudes `ENVIADA`, vía el context processor `financiera.viaticos.context_processors`).
+  solicitudes `ENVIADA` + `LEG_ENVIADA`, vía el context processor
+  `financiera.viaticos.context_processors`).
   **Sin** modelos propios: la app importa `SolicitudViatico`/`GastoViatico` de
   `programacion.viaticos` (BD única, mismo patrón que `usuarios`→`configuracion`), y reutiliza
   su form, parseo de gastos y partial `viaticos/_filas_gastos.html`. **Gestión de viáticos:**
-  financiera lista/ve y, según la matriz de estados, **devuelve** (con motivo, `ENVIADA→DEVUELTA`),
+  flujo completo de estados (`SolicitudViatico.Estado`):
+  `ENVIADA ↔ DEVUELTA → APROBADA → PAGADA → LEG_ENVIADA ↔ LEG_DEVUELTA → FINALIZADA` (terminal).
+  Financiera lista/ve y, según la matriz, **devuelve** (con motivo, `ENVIADA→DEVUELTA`),
   **aprueba** (`ENVIADA→APROBADA`), **paga** (`APROBADA→PAGADA`) y **edita** (mientras
-  `ENVIADA`/`APROBADA`; `DEVUELTA` es de programación, `PAGADA` es terminal). En estado
-  **`PAGADA`** financiera **sube/elimina** el **soporte de pago** (modelo `SoportePago`,
-  validado `.pdf/.jpg/.jpeg/.png` y ≤10 MB) y **exporta a Excel** las solicitudes (modal con
-  filtro de estado —default `APROBADA`— y rango de fecha de viaje; openpyxl self-contained en
-  `fin_viaticos_exportar`). Asignación al grupo por ahora vía `/admin/`. El menú financiera
-  tiene además **Pagos** (ver abajo).
+  `ENVIADA`/`APROBADA`; `DEVUELTA` es de programación). **Legalización (post-pago):** tras
+  `PAGADA`, programación adjunta soportes de legalización (`SoportePago.tipo=LEGALIZACION`,
+  vistas `legalizacion_*` en `programacion.viaticos`, permitido en `{PAGADA, LEG_DEVUELTA}`)
+  y **envía** (`legalizacion_enviar`, exige ≥1 soporte de legalización → `LEG_ENVIADA`, correo
+  a `VIATICOS_LEGALIZACION_NOTIFICAR_A` —default financiero@aamocolombia.com— vía
+  `notificar_legalizacion_enviada`); financiera **devuelve la legalización** (con motivo,
+  `LEG_ENVIADA→LEG_DEVUELTA`; reutiliza `motivo_devolucion`, se limpia al reenviar) o
+  **finaliza** (`LEG_ENVIADA→FINALIZADA`, cierre de expediente). El **soporte de pago**
+  (`SoportePago.tipo=PAGO`, default) lo sube/elimina financiera en
+  `{PAGADA, LEG_ENVIADA, LEG_DEVUELTA}` (bloqueado en `FINALIZADA`); cada área solo borra
+  soportes de su tipo (404 si no). Validación común `.pdf/.jpg/.jpeg/.png` y ≤10 MB.
+  Financiera también **exporta a Excel** las solicitudes (modal con filtro de estado —default
+  `APROBADA`— y rango de fecha de viaje; openpyxl self-contained en `fin_viaticos_exportar`).
+  Asignación al grupo por ahora vía `/admin/`. El menú financiera tiene además **Pagos**
+  (ver abajo).
 - **Sub-app `programacion.pagos` (label `pagos`):** módulo propio de los pagos semanales a
   profesores. Dueño de los modelos `PagoRealizado` (tabla `prog_pagos`), `SoportePagoProfesor`
   (`prog_pagos_soportes`), `LotePagos` (`prog_pagos_lotes`) y `ExtraPago` (`prog_pagos_extras`).
@@ -362,27 +443,43 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   `exportar` queda solo con horarios.
 - **Flujo de revisión (programación → financiera), como BACKLOG:** programación **revisa y envía**;
   financiera **solo ve lo enviado** y paga. El estado vive por **semana (`LotePagos`)**:
-  `BORRADOR → ENVIADO` (una sola vía; **sin "devolver" y sin "reabrir"** — el envío es definitivo).
-  El estado `PAGADO` es **por fila** (`PagoRealizado.fecha_pago`, nullable; histórico =
+  `BORRADOR → ENVIADO` (una sola vía; **sin "devolver" y sin "reabrir"** — el envío es definitivo
+  **por lote**). Pueden coexistir **N lotes ENVIADO por semana** y **máximo 1 BORRADOR**
+  (`UniqueConstraint` parcial `unique_lote_borrador_por_semana`): al enviar, las filas **no
+  enviables** (excluidas o con clases **sin informe completado**) se **desacoplan** (`lote=None`) y
+  un "Preparar pendientes" posterior las re-adopta a un BORRADOR nuevo → pueden ir en un envío
+  posterior; las filas de lotes ENVIADO quedan **congeladas** (ni se adoptan, ni se refrescan, ni se
+  borran). El estado `PAGADO` es **por fila** (`PagoRealizado.fecha_pago`, nullable; histórico =
   `lote IS NULL AND fecha_pago IS NOT NULL`). El desglose son los `ExtraPago` (concepto + valor,
   espejo de `GastoViatico`) colgados de la fila base; el total = `valor_base` (= `valor` calculado;
   el campo `valor_base_editado` queda en el modelo pero **ya no se edita por UI**) + extras.
+  - **Gate por informe:** una fila solo es enviable si su día `(fecha, profesor, colegio)` tiene
+    **todos los informes completados** (`_claves_sin_informe`: clases no canceladas/no evento con
+    `informe IS NULL` o `actividades=''`). En programación hay una **tercera pestaña "Sin informe"**
+    (entre "Por enviar" y "Enviados") con esas filas: siguen en BORRADOR (permiten excluir/extras)
+    pero NO se envían; sirve para recordarle al docente. Al completar el informe pasan a enviables.
+    **Financiera: cero cambios** (la pestaña y el radio del export solo existen en programación,
+    gated por `tab_label_sin_informe` en los parciales compartidos).
   - **Lista = backlog (todas las semanas)**: `construir_contexto_pagos(get, *, modo)` es **por rango**,
     no por una sola semana. Sin filtro (`semana`/`hasta`) muestra **todo** lo pendiente; el filtro de
     fechas solo acota **al darle Aplicar**. Programación: pestaña *pendiente* = filas por enviar (lote
-    BORRADOR, incluye excluidas para re-incluir), *realizado* = ya enviadas; financiera: solo lotes
-    ENVIADO, partidas por `fecha_pago` (por pagar / pagadas).
+    BORRADOR con informe, incluye excluidas para re-incluir), *sin_informe* = no enviables por informe,
+    *realizado* = ya enviadas; financiera: solo lotes ENVIADO, partidas por `fecha_pago`
+    (por pagar / pagadas).
   - **`preparar_pendientes(user)`** materializa el backlog: prepara (idempotente) **todas** las semanas
-    con clases hasta hoy cuyo lote no esté ENVIADO (vía `preparar_lote_semana`, que ancla la semana en
-    su lunes–viernes canónico, no pisa override/excluida ni resucita exclusiones, y limpia
-    autogeneradas de clases canceladas).
+    con clases hasta hoy (vía `preparar_lote_semana`, que obtiene/crea el **BORRADOR** de la semana,
+    la ancla en su lunes–viernes canónico, no pisa override/excluida ni resucita exclusiones, salta
+    las filas congeladas en lotes ENVIADO y limpia autogeneradas de clases canceladas); al final
+    borra los BORRADOR que quedaron sin filas.
   - **Programación** (`programacion.pagos.views`, gate `es_personal_programacion`, POST+redirect):
-    `pagos_preparar` (backlog), `pagos_enviar` (envía **todo lo visible**: lotes BORRADOR con filas no
-    excluidas dentro del rango filtrado, o todo), `pagos_excluir_fila` (toggle `excluida`),
-    `pagos_agregar_extra`/`pagos_eliminar_extra`. `pagos.html` tiene la barra Preparar/Enviar; por fila
-    un modal **(i) de detalle** (horas, valor/hora, extras, total) y un modal de **gestión de costos
-    extra** (agregar/eliminar en el mismo botón); sin editar valor base ni reabrir. Las acciones exigen
-    lote `BORRADOR` (`_pago_editable`). Feedback por **toast** (ver Mensajes abajo).
+    `pagos_preparar` (backlog), `pagos_enviar` (envía **todo lo visible y enviable**: lotes BORRADOR
+    con filas no excluidas y con informe dentro del rango filtrado, o todo; `enviar_lote` desacopla
+    las no enviables y devuelve False si el lote quedó vacío —sigue BORRADOR—), `pagos_excluir_fila`
+    (toggle `excluida`), `pagos_agregar_extra`/`pagos_eliminar_extra`. `pagos.html` tiene la barra
+    Preparar/Enviar; por fila un modal **(i) de detalle** (horas, valor/hora, extras, total) y un
+    modal de **gestión de costos extra** (agregar/eliminar en el mismo botón); sin editar valor base
+    ni reabrir. Las acciones exigen lote `BORRADOR` (`_pago_editable`). Feedback por **toast** (ver
+    Mensajes abajo).
 - **Pagos a profesores en financiera (`financiera.pagos`, sub-app label `fin_pagos`; sin modelos
   propios, reutiliza los de `programacion.pagos`):** `construir_contexto_pagos(..., modo='financiera')`
   → **solo filas de lotes ENVIADO** (sin las excluidas). `fin_pagos_marcar` opera por **`pago_id`**
@@ -390,7 +487,23 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   soportes (archivos del storage + filas) pero **conserva la fila** (sigue en el lote enviado);
   rechaza filas de lotes no enviados. `fin_pagos_exportar` (Excel del tab, con columna DESGLOSE),
   `fin_pagos_detalle` (datos + desglose + gestión de soportes `SoportePagoProfesor`). En el menú
-  financiera **Pagos** es un desplegable con **Profesores** (funcional) y **Monitores** (placeholder).
+  financiera **Pagos** es un desplegable con **Profesores** (funcional), **Proyección** (ver abajo)
+  y **Monitores** (placeholder).
+- **Proyección de pagos (financiera, SOLO LECTURA):** `/pagos/proyeccion/` (names
+  `fin_pagos_proyeccion` / `fin_pagos_proyeccion_exportar`, en `financiera.pagos.views`, gate
+  `solo_financiera`). Lista las **clases programadas** con su costo estimado (horas × `valor_hora`
+  del `ColegioAnio`) para anticipar el gasto: es el cálculo puro de `_build_filas_pagos` (mismas
+  exclusiones que los pagos reales: canceladas, eventos, sin profesor) y **NUNCA escribe en BD**
+  (no llama `preparar_*` ni crea `LotePagos`/`PagoRealizado`); **no proyecta fecha de pago**
+  (decisión del usuario). Filtros server-side por GET: `desde` (default hoy), `hasta` opcional
+  (sin `hasta` proyecta todo lo programado, cota `date.max`), `colegio_id` (id de **`ColegioAnio`**,
+  el select muestra `periodo_label`) y `profesor_id` — los ids se post-filtran en Python para no
+  cambiar la firma del helper compartido. Template `financiera/pagos_proyeccion.html`: aviso
+  "no representa pagos preparados ni fechas de pago", filtros por columna + paginación (parciales
+  `pagos/_*.html`) y **totales dinámicos client-side** (horas y valor de las filas que pasan el
+  filtro, vía `data-horas`/`data-valor`). Export a Excel (`_generar_excel_proyeccion`, openpyxl
+  self-contained — sin columnas bancarias ni desglose) con los filtros vigentes (form POST con
+  hidden). Sin badge en el menú.
 - **Badges de Pagos (COUNT directo, todo el backlog):** financiera
   (`financiera.pagos.context_processors`) = filas **enviadas y no pagadas** (lote ENVIADO,
   `fecha_pago IS NULL`, no excluidas); programación (`programacion.pagos.context_processors`) = filas
@@ -439,7 +552,10 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   toca. **No** dejar bloques `{% if messages %}` en plantillas de financiera.
 - **Soporte de pago (`viaticos.SoportePago` y `pagos.SoportePagoProfesor`):** archivos adjuntos al viático (varios por
   solicitud/pago, con historial: quién subió qué y cuándo). Dos modelos paralelos: `SoportePago`
-  (FK→`SolicitudViatico`, tabla `prog_viaticos_soportes`) y `SoportePagoProfesor`
+  (FK→`SolicitudViatico`, tabla `prog_viaticos_soportes`; campo `tipo` `PAGO`/`LEGALIZACION`,
+  default `PAGO` — un solo modelo para los dos adjuntos del viático; properties
+  `soportes_pago`/`soportes_legalizacion` en `SolicitudViatico` filtran en Python para
+  aprovechar el prefetch) y `SoportePagoProfesor`
   (FK→`PagoRealizado`, tabla `prog_pagos_soportes`). El `FileField` usa el backend de
   `STORAGES['default']` (disco en dev, Supabase Storage/S3 en prod) y un nombre limpio vía
   `_soporte_upload_to` → `viaticos/viatico-<slug-docente>-<fecha-viaje><ext>` (viáticos) y
@@ -450,8 +566,14 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
   área por cada flujo (viáticos: `soporte_descargar` @solo_personal / `fin_soporte_descargar`
   @solo_financiera; pagos: `pago_soporte_descargar` @es_personal_programacion /
   `fin_pago_soporte_descargar` @solo_financiera); `?inline=1` abre en pestaña, por defecto
-  descarga. Programación lo ve/descarga (solo lectura); financiera además sube/elimina (viáticos
-  en `PAGADA`; pagos en el detalle de cualquier pago realizado).
+  descarga. Cada área gestiona su tipo y ve el del otro en solo lectura: financiera
+  sube/elimina los `tipo=PAGO` (viáticos en `{PAGADA, LEG_ENVIADA, LEG_DEVUELTA}`; pagos en el
+  detalle de cualquier pago realizado) y programación los `tipo=LEGALIZACION` (en
+  `{PAGADA, LEG_DEVUELTA}`, vistas `legalizacion_*`); en `FINALIZADA` todo queda bloqueado.
+  La tarjeta compartida `viaticos/_soportes_card.html` acepta `titulo` opcional (default
+  "Soporte de pago") y muestra cada adjunto con `nombre_mostrar` (property de `SoportePago` y
+  `SoportePagoProfesor`: el **basename real en storage** —refleja el renombrado del `upload_to`
+  y el sufijo único—, no el `nombre_original` subido).
 - **SSO:** sesión y CSRF compartidos vía `SESSION_COOKIE_DOMAIN=.BASE_DOMAIN`. Un
   login vale para todos los subdominios.
 - `usuarios/middleware.py` (`ControlAcceso`) **solo actúa dentro de un área**
@@ -471,7 +593,7 @@ intacto: un B "2025"=ago2025–jun2026 no choca con un B "2026").
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 348 tests OK
+python manage.py test                        # baseline: 430 tests OK
 python manage.py runserver
 ```
 
@@ -514,7 +636,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (348 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (430 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

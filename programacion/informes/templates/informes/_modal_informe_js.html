@@ -1,0 +1,133 @@
+{% comment %}
+JS compartido del modal de Informe de Sesión (par de _modal_informe.html).
+
+Variables de include:
+- recargar_al_guardar: si es truthy, tras guardar se recarga la página (la lista
+  de informes se regenera server-side porque guardar_informe invalida su caché).
+  Sin la variable (cronograma), se actualiza el botón de la fila in-place.
+
+Contexto opcional:
+- profesor_sel: id del profesor "por defecto" (lo define el cronograma). La lista
+  no lo tiene: cada botón pasa el profesor de su fila como 10.º argumento de
+  abrirInforme. Para perfiles de profesor el server ignora este id y usa el del
+  perfil (blindaje en guardar_informe).
+{% endcomment %}
+<script>
+    const URL_OBTENER_INFORME = "{% url 'ajax_obtener_informe' %}";
+    const URL_GUARDAR_INFORME = "{% url 'ajax_guardar_informe' %}";
+    const INF_PROFESOR_DEFAULT = '{{ profesor_sel|default:"" }}';
+
+    let _inf = { clase_id: null, personalizada_id: null, fecha_iso: null,
+                 colegio_nombre: '', grado: '', materia: '', tematica: '', material: '',
+                 profesor_id: null };
+    let _inf_btn = null;
+
+    async function abrirInforme(claseId, personalizadaId, colegio, grado, fechaIso, materia, tematica, material, btn, profesorId) {
+        _inf_btn = btn || null;
+        _inf = { clase_id: claseId, personalizada_id: personalizadaId, fecha_iso: fechaIso,
+                 colegio_nombre: colegio, grado: grado, materia: materia,
+                 tematica: tematica, material: material,
+                 profesor_id: profesorId || INF_PROFESOR_DEFAULT };
+
+        document.getElementById('inf_colegio').textContent  = colegio + ' — ' + grado;
+        document.getElementById('inf_materia').textContent  = materia + ' / ' + tematica;
+        document.getElementById('inf_material').textContent = material;
+        document.getElementById('inf_header_sub').textContent = colegio + ' · ' + grado + ' · ' + fechaIso;
+
+        const meses = ['enero','febrero','marzo','abril','mayo','junio',
+                       'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+        const dias  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+        const dt = new Date(fechaIso + 'T12:00:00');
+        const [y, m, d] = fechaIso.split('-');
+        document.getElementById('inf_fecha').textContent =
+            `${dias[dt.getDay()]}, ${parseInt(d)} de ${meses[parseInt(m)-1]} de ${y}`;
+
+        ['actividades','fortalezas','debilidades','recomendaciones','bibliografia'].forEach(f =>
+            document.getElementById('inf_' + f).value = '');
+        document.getElementById('inf_estado_texto').textContent = 'Cargando...';
+
+        new bootstrap.Modal(document.getElementById('modalInforme')).show();
+
+        const params = claseId ? `clase_id=${claseId}` : `personalizada_id=${personalizadaId}`;
+        try {
+            const res  = await fetch(`${URL_OBTENER_INFORME}?${params}`);
+            const data = await res.json();
+            if (data.existe) {
+                document.getElementById('inf_actividades').value     = data.actividades     || '';
+                document.getElementById('inf_fortalezas').value      = data.fortalezas      || '';
+                document.getElementById('inf_debilidades').value     = data.debilidades     || '';
+                document.getElementById('inf_recomendaciones').value = data.recomendaciones || '';
+                document.getElementById('inf_bibliografia').value    = data.bibliografia    || '';
+                document.getElementById('inf_estado_texto').textContent = '✓ Informe guardado anteriormente';
+            } else {
+                document.getElementById('inf_estado_texto').textContent = 'Informe nuevo — aún no guardado';
+            }
+        } catch(e) {
+            document.getElementById('inf_estado_texto').textContent = 'Error al cargar';
+        }
+    }
+
+    async function guardarInforme() {
+        const actividades = document.getElementById('inf_actividades').value.trim();
+        if (!actividades) {
+            alert('El campo Actividades es obligatorio.');
+            document.getElementById('inf_actividades').focus();
+            return;
+        }
+
+        const btnGuardar = document.querySelector('#modalInforme .btn-primary');
+        btnGuardar.disabled = true;
+        btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Guardando...';
+
+        const body = {
+            clase_id:        _inf.clase_id,
+            personalizada_id:   _inf.personalizada_id,
+            profesor_id:     _inf.profesor_id,
+            fecha_iso:       _inf.fecha_iso,
+            colegio_nombre:  _inf.colegio_nombre,
+            grado:           _inf.grado,
+            materia:         _inf.materia,
+            tematica:        _inf.tematica,
+            material:        _inf.material,
+            actividades:     document.getElementById('inf_actividades').value,
+            fortalezas:      document.getElementById('inf_fortalezas').value,
+            debilidades:     document.getElementById('inf_debilidades').value,
+            recomendaciones: document.getElementById('inf_recomendaciones').value,
+            bibliografia:    document.getElementById('inf_bibliografia').value,
+        };
+
+        try {
+            const res  = await fetch(URL_GUARDAR_INFORME, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                document.getElementById('inf_estado_texto').textContent = '✓ Informe guardado correctamente';
+                btnGuardar.innerHTML = '<i class="fas fa-check me-1"></i> Guardado';
+                {% if recargar_al_guardar %}
+                setTimeout(() => location.reload(), 700);
+                {% else %}
+                if (_inf_btn) {
+                    _inf_btn.className = 'btn btn-sm btn-success py-0 px-2';
+                    _inf_btn.innerHTML = '<i class="fas fa-check"></i> Subido';
+                }
+                setTimeout(() => {
+                    btnGuardar.disabled = false;
+                    btnGuardar.innerHTML = '<i class="fas fa-save me-1"></i> Guardar Informe';
+                }, 2000);
+                {% endif %}
+            } else {
+                throw new Error(data.error || 'Error desconocido');
+            }
+        } catch(e) {
+            alert('Error al guardar: ' + e.message);
+            btnGuardar.disabled = false;
+            btnGuardar.innerHTML = '<i class="fas fa-save me-1"></i> Guardar Informe';
+        }
+    }
+</script>

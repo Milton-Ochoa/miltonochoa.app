@@ -48,10 +48,13 @@
             <span><i class="fas fa-chart-line icon-main text-primary"></i> Reportes</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}show{% endif %}" id="collapseReportes">
+        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'reporte_cancelaciones' %}show{% endif %}" id="collapseReportes">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'lista_informes' %}" class="{% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
                     <i class="fas fa-file-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Informes
+                </a>
+                <a href="{% url 'reporte_cancelaciones' %}" class="{% if request.resolver_match.url_name == 'reporte_cancelaciones' %}active{% endif %}">
+                    <i class="fas fa-ban" style="width: 20px; text-align: center; margin-right: 8px;"></i> Cancelaciones
                 </a>
                 <a href="{% url 'pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
                     <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
@@ -133,17 +136,23 @@
 
         {% else %}
         {# ── Vista reducida para gestores y profesores ── #}
+        {% if request.user.perfil_profesor %}
+        {# Portal del profesor: la vista ver_horario fuerza su propio cronograma #}
+        <a href="{% url 'ver_horario' %}" class="nav-item {% if request.resolver_match.url_name == 'ver_horario' %}active{% endif %}">
+            <i class="fas fa-user-clock icon-main text-warning"></i> Cronograma
+        </a>
+        <a href="{% url 'lista_informes' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
+            <i class="fas fa-file-alt icon-main text-primary"></i> Informes
+        </a>
+        <a href="{% url 'profesor_pagos' %}" class="nav-item {% if request.resolver_match.url_name == 'profesor_pagos' %}active{% endif %}">
+            <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos
+        </a>
+        {% else %}
         {% if request.user.perfil_colegio %}
         <a href="/colegios/?id_col={{ request.user.perfil_colegio.colegio.id }}" class="nav-item active">
             <i class="fas fa-calendar-alt icon-main text-info"></i> {{ request.user.perfil_colegio.colegio.nombre }}
         </a>
         {% endif %}
-        {% if request.user.perfil_profesor %}
-        <a href="/profesores/?profesor_id={{ request.user.perfil_profesor.profesor.id }}" class="nav-item active">
-            <i class="fas fa-user-clock icon-main text-warning"></i> {{ request.user.perfil_profesor.profesor.nombre_corto }}
-        </a>
-        {% endif %}
-        {% if not request.user.perfil_profesor %}
         <a href="{% url 'lista_informes' %}" class="nav-item {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
             <i class="fas fa-file-alt icon-main text-primary"></i> Informes
         </a>

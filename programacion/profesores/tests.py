@@ -3,14 +3,26 @@ Tests — app: profesores
 Sin modelos propios. Prueba utilidades y vistas de profesores/views.py
 """
 import json
-from django.test import TestCase, Client
+import shutil
+import tempfile
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
-from datetime import date, time
+from django.core.files.base import ContentFile
+from django.utils import timezone
+from datetime import date, time, timedelta
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Materia, Unidad
-from programacion.colegios.models import Asignacion, Clase, ClasePersonalizada, Grado
+from programacion.colegios.models import Asignacion, Bloque, Clase, ClasePersonalizada, Grado
+from programacion.pagos.models import LotePagos, PagoRealizado, SoportePagoProfesor
 from usuarios.models import UsuarioProfesor
 from programacion.profesores.views import extraer_minutos, _resolver_unidad, _libro_para_fecha
 from collections import defaultdict
+
+# Soportes en disco local aislado en tmp: NUNCA tocar Supabase (igual que pagos/viáticos).
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP_MIS_PAGOS = tempfile.mkdtemp()
 
 
 # ── Utilidades ────────────────────────────────────────────────
@@ -231,3 +243,167 @@ class AjaxUnidadesViewTest(TestCase):
         r = self.client.get('/profesores/ajax/unidades/')
         data = json.loads(r.content)
         self.assertEqual(data, [])
+
+
+# ── Portal del profesor: Mis pagos ────────────────────────────
+
+class MisPagosViewTest(TestCase):
+    """`/profesores/pagos/`: el profesor ve el estado de sus pagos por día de clases
+    (pendiente/pagada), solo SUS filas y SIN montos en pesos."""
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(
+            colegio=colegio, anio=date.today().year, valor_hora=40000)
+        self.prof = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.otro = Profesor.objects.create(nombre='Luis', apellido='Gómez')
+        grado = Grado.objects.create(nombre='11-1')
+        self.bloque = Bloque.objects.create(
+            colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        self.user = User.objects.create_user('ana_prof', password='pass')
+        UsuarioProfesor.objects.create(user=self.user, profesor=self.prof)
+        hoy = date.today()
+        self.f_pagada    = hoy - timedelta(days=7)
+        self.f_pendiente = hoy - timedelta(days=6)
+        self.f_sin_fila  = hoy - timedelta(days=5)
+
+    def _clase(self, profesor, fecha, **kw):
+        return Clase.objects.create(
+            colegio=self.ca, bloque=self.bloque, profesor=profesor, fecha=fecha, **kw)
+
+    def _pago(self, fecha, **kw):
+        return PagoRealizado.objects.create(
+            profesor=self.prof, colegio=self.ca, fecha=fecha, horas=2, valor=80000, **kw)
+
+    def test_clasifica_pagada_pendiente_y_sin_fila(self):
+        self._clase(self.prof, self.f_pagada)
+        self._clase(self.prof, self.f_pendiente)
+        self._clase(self.prof, self.f_sin_fila)   # día aún sin fila materializada
+        self._pago(self.f_pagada, fecha_pago=timezone.now())
+        self._pago(self.f_pendiente)              # fila materializada pero no pagada
+        self.client.login(username='ana_prof', password='pass')
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([f['fecha'] for f in r.context['pagadas']], [self.f_pagada])
+        self.assertEqual({f['fecha'] for f in r.context['pendientes']},
+                         {self.f_pendiente, self.f_sin_fila})
+        self.assertEqual(r.context['pagadas'][0]['horas'], 2)   # 8:00–10:00
+
+    def test_solo_ve_sus_filas(self):
+        self._clase(self.prof, self.f_pendiente)
+        # Mismo día, otro profesor (en otro bloque: Clase es unique por (fecha, bloque)).
+        otro_bloque = Bloque.objects.create(
+            colegio=self.ca, grado=self.bloque.grado,
+            hora_inicio=time(10, 0), hora_fin=time(12, 0))
+        Clase.objects.create(colegio=self.ca, bloque=otro_bloque,
+                             profesor=self.otro, fecha=self.f_pendiente)
+        self.client.login(username='ana_prof', password='pass')
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual(len(r.context['pendientes']), 1)
+        self.assertEqual(len(r.context['pagadas']), 0)
+
+    def test_html_no_contiene_montos(self):
+        # Contrato: ni el valor de la fila ni la tarifa del colegio aparecen jamás.
+        self._clase(self.prof, self.f_pagada)
+        self._clase(self.prof, self.f_pendiente)
+        self._pago(self.f_pagada, fecha_pago=timezone.now())
+        self.client.login(username='ana_prof', password='pass')
+        html = self.client.get('/profesores/pagos/').content.decode()
+        for monto in ('80000', '80.000', '80,000', '40000', '40.000', '40,000'):
+            self.assertNotIn(monto, html)
+
+    def test_cancelada_y_futura_no_aparecen(self):
+        self._clase(self.prof, self.f_pendiente, cancelada=True)
+        self._clase(self.prof, date.today() + timedelta(days=1))  # aún no dictada
+        self.client.login(username='ana_prof', password='pass')
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual(len(r.context['pendientes']), 0)
+        self.assertEqual(len(r.context['pagadas']), 0)
+
+    def test_excluida_se_muestra_como_pendiente(self):
+        # La exclusión es interna de programación: el profesor la ve "pendiente".
+        self._clase(self.prof, self.f_pendiente)
+        self._pago(self.f_pendiente, excluida=True)
+        self.client.login(username='ana_prof', password='pass')
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual([f['fecha'] for f in r.context['pendientes']], [self.f_pendiente])
+
+    def test_staff_redirige_a_pagos_lista(self):
+        User.objects.create_superuser(username='admin_mp', password='pass')
+        self.client.login(username='admin_mp', password='pass')
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/pagos/', r['Location'])
+
+    def test_anonimo_redirige_a_login(self):
+        r = self.client.get('/profesores/pagos/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP_MIS_PAGOS, STORAGES=_STORAGE_LOCAL)
+class ProfesorSoporteDescargaTest(TestCase):
+    """Descarga del soporte de pago gateada al DUEÑO: 404 (no 403) si no es suyo,
+    para no revelar que el soporte existe."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP_MIS_PAGOS, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        colegio = Colegio.objects.create(
+            nombre='Colegio Central', departamento='Santander', ciudad='Bucaramanga')
+        self.ca = ColegioAnio.objects.create(
+            colegio=colegio, anio=date.today().year, valor_hora=40000)
+        self.prof = Profesor.objects.create(nombre='Ana', apellido='Pérez')
+        self.otro = Profesor.objects.create(nombre='Luis', apellido='Gómez')
+        self.user_ana = User.objects.create_user('ana_prof', password='pass')
+        UsuarioProfesor.objects.create(user=self.user_ana, profesor=self.prof)
+        self.user_luis = User.objects.create_user('luis_prof', password='pass')
+        UsuarioProfesor.objects.create(user=self.user_luis, profesor=self.otro)
+
+        pago = PagoRealizado.objects.create(
+            profesor=self.prof, colegio=self.ca, fecha=date.today() - timedelta(days=7),
+            horas=2, valor=80000, fecha_pago=timezone.now())
+        self.soporte = SoportePagoProfesor(pago=pago, nombre_original='comprobante.pdf')
+        self.soporte.archivo.save('comprobante.pdf', ContentFile(b'%PDF-1.4 test'), save=True)
+
+    def test_dueno_descarga_ok(self):
+        self.client.login(username='ana_prof', password='pass')
+        r = self.client.get(f'/profesores/pagos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('attachment', r['Content-Disposition'])
+        r.close()   # FileResponse: liberar el handle del archivo en tmp
+
+    def test_otro_profesor_recibe_404(self):
+        self.client.login(username='luis_prof', password='pass')
+        r = self.client.get(f'/profesores/pagos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_staff_recibe_404_en_endpoint_de_profesor(self):
+        # El staff tiene su propio proxy (pago_soporte_descargar); este es solo del dueño.
+        User.objects.create_superuser(username='admin_sop', password='pass')
+        self.client.login(username='admin_sop', password='pass')
+        r = self.client.get(f'/profesores/pagos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 404)
+
+    def test_anonimo_redirige_a_login(self):
+        r = self.client.get(f'/profesores/pagos/soporte/{self.soporte.pk}/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+
+    def test_pagina_muestra_soporte_y_enlaces_de_descarga(self):
+        # La clase del día pagado debe existir para que la fila aparezca en la página.
+        grado = Grado.objects.create(nombre='11-1')
+        bloque = Bloque.objects.create(
+            colegio=self.ca, grado=grado, hora_inicio=time(8, 0), hora_fin=time(10, 0))
+        Clase.objects.create(colegio=self.ca, bloque=bloque, profesor=self.prof,
+                             fecha=self.soporte.pago.fecha)
+        self.client.login(username='ana_prof', password='pass')
+        html = self.client.get('/profesores/pagos/').content.decode()
+        self.assertIn(f'/profesores/pagos/soporte/{self.soporte.pk}/', html)
+        self.assertIn(self.soporte.nombre_mostrar, html)

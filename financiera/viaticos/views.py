@@ -3,10 +3,13 @@
 Financiera **no crea** solicitudes (eso es programación): aquí se **ven** y se
 **gestionan** las que llegan. Acciones, según la matriz de permisos:
 
-  - ENVIADA  → devolver (con motivo) / aprobar / editar
-  - DEVUELTA → financiera NO actúa (vuelve a programación para corregir y reenviar)
-  - APROBADA → editar / pagar
-  - PAGADA   → terminal, solo lectura para todos
+  - ENVIADA      → devolver (con motivo) / aprobar / editar
+  - DEVUELTA     → financiera NO actúa (vuelve a programación para corregir y reenviar)
+  - APROBADA     → editar / pagar
+  - PAGADA       → subir/eliminar soporte de pago (programación legaliza)
+  - LEG_ENVIADA  → devolver legalización (con motivo) / finalizar; soporte de pago aún editable
+  - LEG_DEVUELTA → financiera NO actúa sobre la legalización (es de programación)
+  - FINALIZADA   → terminal, solo lectura para todos
 
 Los modelos viven en `programacion.viaticos` (BD única); esta app solo los importa.
 Se reutiliza el form, el parseo de gastos y el contexto del select-autorrelleno de
@@ -40,8 +43,16 @@ solo_financiera = user_passes_test(es_personal_financiera, login_url='login')
 
 # Estados en los que financiera puede editar la solicitud (campos + gastos).
 # DEVUELTA queda fuera a propósito: pertenece a programación hasta que la reenvíe;
-# PAGADA es terminal. (Ver matriz de permisos arriba.)
+# desde PAGADA en adelante ya no se edita. (Ver matriz de permisos arriba.)
 EDITABLES_FINANCIERA = {SolicitudViatico.Estado.ENVIADA, SolicitudViatico.Estado.APROBADA}
+
+# Estados en los que financiera aún gestiona el soporte de pago. FINALIZADA queda
+# fuera: es el cierre del expediente, todo pasa a solo lectura.
+SOPORTE_PAGO_GESTIONABLE = {
+    SolicitudViatico.Estado.PAGADA,
+    SolicitudViatico.Estado.LEG_ENVIADA,
+    SolicitudViatico.Estado.LEG_DEVUELTA,
+}
 
 
 @solo_financiera
@@ -76,6 +87,9 @@ def fin_viaticos_detalle(request, pk):
         'puede_devolver': solicitud.estado == SolicitudViatico.Estado.ENVIADA,
         'puede_aprobar': solicitud.estado == SolicitudViatico.Estado.ENVIADA,
         'puede_pagar': solicitud.estado == SolicitudViatico.Estado.APROBADA,
+        'puede_gestionar_soporte': solicitud.estado in SOPORTE_PAGO_GESTIONABLE,
+        'puede_devolver_legalizacion': solicitud.estado == SolicitudViatico.Estado.LEG_ENVIADA,
+        'puede_finalizar': solicitud.estado == SolicitudViatico.Estado.LEG_ENVIADA,
     })
 
 
@@ -154,7 +168,7 @@ def fin_viaticos_aprobar(request, pk):
 @solo_financiera
 @require_POST
 def fin_viaticos_pagar(request, pk):
-    """`APROBADA → PAGADA` (estado terminal)."""
+    """`APROBADA → PAGADA` (sigue la legalización por parte de programación)."""
     solicitud = get_object_or_404(SolicitudViatico, pk=pk)
     if solicitud.estado != SolicitudViatico.Estado.APROBADA:
         messages.error(request, 'Solo se puede pagar una solicitud aprobada.')
@@ -169,10 +183,46 @@ def fin_viaticos_pagar(request, pk):
 
 @solo_financiera
 @require_POST
-def fin_viaticos_subir_soporte(request, pk):
-    """Adjunta un soporte de pago a una solicitud `PAGADA` (solo en ese estado)."""
+def fin_viaticos_legalizacion_devolver(request, pk):
+    """`LEG_ENVIADA → LEG_DEVUELTA` con motivo obligatorio (vuelve a programación)."""
     solicitud = get_object_or_404(SolicitudViatico, pk=pk)
-    if solicitud.estado != SolicitudViatico.Estado.PAGADA:
+    motivo = request.POST.get('motivo_devolucion', '').strip()
+    if solicitud.estado != SolicitudViatico.Estado.LEG_ENVIADA:
+        messages.error(request, 'Solo se puede devolver una legalización enviada.')
+    elif not motivo:
+        messages.error(request, 'Indica el motivo de la devolución.')
+    else:
+        solicitud.estado = SolicitudViatico.Estado.LEG_DEVUELTA
+        solicitud.motivo_devolucion = motivo
+        solicitud.legalizacion_devuelta_en = timezone.now()
+        solicitud.gestionado_por = request.user
+        solicitud.save()
+        messages.success(request, 'Legalización devuelta a programación.')
+    return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+
+@solo_financiera
+@require_POST
+def fin_viaticos_finalizar(request, pk):
+    """`LEG_ENVIADA → FINALIZADA` (cierre terminal del expediente)."""
+    solicitud = get_object_or_404(SolicitudViatico, pk=pk)
+    if solicitud.estado != SolicitudViatico.Estado.LEG_ENVIADA:
+        messages.error(request, 'Solo se puede finalizar una legalización enviada.')
+    else:
+        solicitud.estado = SolicitudViatico.Estado.FINALIZADA
+        solicitud.finalizado_en = timezone.now()
+        solicitud.gestionado_por = request.user
+        solicitud.save()
+        messages.success(request, 'Solicitud finalizada.')
+    return redirect('fin_viaticos_detalle', pk=solicitud.pk)
+
+
+@solo_financiera
+@require_POST
+def fin_viaticos_subir_soporte(request, pk):
+    """Adjunta un soporte de pago (desde `PAGADA` hasta antes de `FINALIZADA`)."""
+    solicitud = get_object_or_404(SolicitudViatico, pk=pk)
+    if solicitud.estado not in SOPORTE_PAGO_GESTIONABLE:
         messages.error(request, 'Solo se puede adjuntar soporte a una solicitud pagada.')
         return redirect('fin_viaticos_detalle', pk=solicitud.pk)
 
@@ -199,9 +249,18 @@ def fin_viaticos_subir_soporte(request, pk):
 @solo_financiera
 @require_POST
 def fin_viaticos_eliminar_soporte(request, soporte_id):
-    """Elimina un soporte (y su archivo en storage) subido por error."""
-    soporte = get_object_or_404(SoportePago.objects.select_related('solicitud'), pk=soporte_id)
+    """Elimina un soporte de pago (y su archivo en storage) subido por error.
+
+    Solo `tipo=PAGO`: los de legalización los gestiona programación. Y solo
+    mientras el soporte de pago siga gestionable (no en `FINALIZADA`)."""
+    soporte = get_object_or_404(
+        SoportePago.objects.select_related('solicitud'),
+        pk=soporte_id, tipo=SoportePago.Tipo.PAGO,
+    )
     pk = soporte.solicitud_id
+    if soporte.solicitud.estado not in SOPORTE_PAGO_GESTIONABLE:
+        messages.error(request, 'El soporte ya no se puede modificar en el estado actual.')
+        return redirect('fin_viaticos_detalle', pk=pk)
     # Borrar primero el archivo del storage (S3/disco), luego la fila.
     soporte.archivo.delete(save=False)
     soporte.delete()

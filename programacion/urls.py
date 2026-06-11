@@ -12,10 +12,16 @@ mantenerlas dentro del namespace del área.
 from django.urls import path, include
 
 from core.views import historial_global, vista_general, ajax_busqueda_global
+from programacion.colegios.views import reporte_cancelaciones, reporte_cancelaciones_excel
 from programacion.pendientes.views import kanban_inicio
 
 urlpatterns = [
     path('', kanban_inicio, name='home'),
+    # Bajo /reportes/ (NO /colegios/): el ControlAccesoMiddleware abre /colegios/
+    # a los gestores de colegio; con este prefijo quedan bloqueados por middleware
+    # y el gate es_personal_programacion de la vista es la segunda barrera.
+    path('reportes/cancelaciones/', reporte_cancelaciones, name='reporte_cancelaciones'),
+    path('reportes/cancelaciones/excel/', reporte_cancelaciones_excel, name='reporte_cancelaciones_excel'),
     path('configuracion/', include('programacion.configuracion.urls')),
     path('colegios/', include('programacion.colegios.urls')),
     path('profesores/', include('programacion.profesores.urls')),

@@ -35,6 +35,7 @@
     .col-material { width: 18%; }
     .col-estado   { width: 8%; text-align: center; }
     .col-ver      { width: 5%; text-align: center; }
+    .col-editar   { width: 6%; text-align: center; }
     .col-borrar   { width: 5%; text-align: center; }
 </style>
 
@@ -54,6 +55,7 @@
                         <th class="col-material">Material</th>
                         <th class="col-estado">Estado</th>
                         <th class="col-ver">Ver</th>
+                        {% if not es_usuario_colegio %}<th class="col-editar">Informe</th>{% endif %}
                         {% if request.user.is_superuser %}<th class="col-borrar">Borrar</th>{% endif %}
                     </tr>
                     <tr class="fila-filtros">
@@ -66,6 +68,7 @@
                         <th><input type="text" data-filtro="material"></th>
                         <th><input type="text" data-filtro="estado"></th>
                         <th></th>
+                        {% if not es_usuario_colegio %}<th></th>{% endif %}
                         {% if request.user.is_superuser %}<th></th>{% endif %}
                     </tr>
                 </thead>
@@ -102,6 +105,28 @@
                             <span class="text-muted">—</span>
                             {% endif %}
                         </td>
+                        {% if not es_usuario_colegio %}
+                        <td>
+                            {% if f.clase_id or f.personalizada_id %}
+                            <button type="button"
+                                    class="btn btn-sm py-0 px-2 btn-abrir-informe {% if f.completado %}btn-outline-success{% else %}btn-outline-secondary{% endif %}"
+                                    title="{% if f.completado %}Ver / editar informe{% else %}Diligenciar informe{% endif %}"
+                                    data-clase-id="{{ f.clase_id|default_if_none:'' }}"
+                                    data-personalizada-id="{{ f.personalizada_id|default_if_none:'' }}"
+                                    data-colegio="{{ f.colegio_nombre }}"
+                                    data-grado="{{ f.grado }}"
+                                    data-fecha-iso="{{ f.fecha|date:'Y-m-d' }}"
+                                    data-materia="{{ f.materia }}"
+                                    data-tematica="{{ f.tematica }}"
+                                    data-material="{{ f.material }}"
+                                    data-profesor-id="{{ f.profesor_id|default_if_none:'' }}">
+                                <i class="fas fa-{% if f.completado %}edit{% else %}plus{% endif %}"></i>
+                            </button>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                         {% if request.user.is_superuser %}
                         <td>
                             {% if f.informe_id %}
@@ -119,7 +144,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="{% if request.user.is_superuser %}10{% elif es_usuario_profesor %}8{% else %}9{% endif %}" class="text-center text-muted py-4">
+                        <td colspan="{% if request.user.is_superuser %}11{% elif es_usuario_profesor %}9{% elif es_usuario_colegio %}9{% else %}10{% endif %}" class="text-center text-muted py-4">
                             <i class="fas fa-file-alt me-1"></i> No hay informes ni clases pendientes.
                         </td>
                     </tr>
@@ -212,6 +237,31 @@
     });
 
     render();
+
+    // Botón "Informe": abre el modal compartido con los datos de la fila.
+    // Para perfiles de profesor el server ignora data-profesor-id (blindaje en
+    // guardar_informe); para staff es el profesor real de la fila.
+    document.querySelectorAll('.btn-abrir-informe').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            abrirInforme(
+                btn.dataset.claseId || null,
+                btn.dataset.personalizadaId || null,
+                btn.dataset.colegio,
+                btn.dataset.grado,
+                btn.dataset.fechaIso,
+                btn.dataset.materia,
+                btn.dataset.tematica,
+                btn.dataset.material,
+                null,
+                btn.dataset.profesorId || null
+            );
+        });
+    });
 })();
 </script>
+
+{% if not es_usuario_colegio %}
+{% include 'informes/_modal_informe.html' %}
+{% include 'informes/_modal_informe_js.html' with recargar_al_guardar=True %}
+{% endif %}
 {% endblock %}

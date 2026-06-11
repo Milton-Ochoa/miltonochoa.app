@@ -3,10 +3,13 @@ Pagos semanales a profesores — **revisión en programación** antes de financi
 
 Calcula la liquidación semanal por fila `(profesor, colegio, día)` a partir de las
 clases dictadas. Programación **prepara** el borrador de la semana (materializa las
-filas en un `LotePagos` BORRADOR), las **revisa** (edita el valor base, excluye filas,
-agrega costos extra del desglose) y las **envía** a financiera (BORRADOR→ENVIADO).
-**Financiera solo ve las filas de lotes ENVIADO**, ve el desglose, marca el pago y
-sube/elimina soportes (financiera/pagos).
+filas en un `LotePagos` BORRADOR), las **revisa** (excluye filas, agrega costos extra
+del desglose) y las **envía** a financiera (BORRADOR→ENVIADO). Solo son enviables las
+filas cuyo día tiene **todos los informes completados** (`_claves_sin_informe`); las
+excluidas o sin informe se desacoplan al enviar (`lote=None`) y pueden ir en un envío
+posterior (N lotes ENVIADO por semana, máx. 1 BORRADOR). **Financiera solo ve las
+filas de lotes ENVIADO**, ve el desglose, marca el pago y sube/elimina soportes
+(financiera/pagos).
 
 Los helpers de cálculo (`construir_contexto_pagos`, `filas_pagos_por_tab`,
 `_generar_excel_pagos`, `_semana_label`) son **compartidos**: financiera los importa con
@@ -20,7 +23,7 @@ from datetime import date, datetime, timedelta
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
@@ -190,22 +193,40 @@ def _filas_desde_lote(lote):
     return [_fila_desde_pago(p) for p in pagos]
 
 
+def _claves_sin_informe(desde=None, hasta=None):
+    """Set de `(fecha, profesor_id, colegio_id)` con ≥1 clase **sin informe completado**.
+
+    Misma clave de agrupación que `_build_filas_pagos` (el colegio sale del bloque).
+    `actividades=''` cuenta como sin informe: es la señal de completitud
+    (`Informe.completado`) y `guardar_informe` hace strip antes de persistir."""
+    qs = (Clase.objects
+          .filter(cancelada=False, es_evento=False, profesor__isnull=False)
+          .filter(Q(informe__isnull=True) | Q(informe__actividades='')))
+    if desde:
+        qs = qs.filter(fecha__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha__lte=hasta)
+    return set(qs.values_list('fecha', 'profesor_id', 'bloque__colegio_id').distinct())
+
+
 def preparar_lote_semana(inicio, fin, user=None):
     """Materializa (idempotente) el borrador de la semana canónica (lunes–viernes).
 
-    Crea el `LotePagos` si no existe. Si está ENVIADO, no toca nada (bloqueado). Si está
-    BORRADOR, sincroniza las filas con el cálculo desde clases:
+    Obtiene/crea el lote **BORRADOR** de la semana (puede convivir con N lotes ENVIADO
+    de la misma semana: constraint parcial) y sincroniza sus filas con el cálculo desde
+    clases:
     - crea filas para clases nuevas;
     - refresca `horas`/`valor` SOLO de filas sin override, no excluidas y no pagadas;
     - elimina filas **autogeneradas** (sin override, sin extras, no excluidas, no pagadas)
-      cuya clase ya no existe (cancelada).
+      cuya clase ya no existe (cancelada);
+    - las filas de lotes **ENVIADO** quedan congeladas: ni se adoptan, ni se refrescan,
+      ni se borran.
 
-    Nunca resucita excluidas ni pisa valores editados. Adopta al lote filas existentes con
-    la misma tripleta (p. ej. históricas `lote=NULL`), respetando el unique
-    `(profesor, colegio, fecha)`."""
-    lote, _ = LotePagos.objects.get_or_create(fecha_inicio=inicio, fecha_fin=fin)
-    if lote.estado == LotePagos.Estado.ENVIADO:
-        return lote
+    Nunca resucita excluidas ni pisa valores editados. Adopta al lote filas existentes
+    con la misma tripleta (históricas `lote=NULL` y filas desacopladas al enviar),
+    respetando el unique `(profesor, colegio, fecha)`."""
+    lote, _ = LotePagos.objects.get_or_create(
+        fecha_inicio=inicio, fecha_fin=fin, estado=LotePagos.Estado.BORRADOR)
 
     calc = {(f['profesor_id'], f['colegio_id'], f['fecha']): f
             for f in _build_filas_pagos(inicio, fin)}
@@ -213,8 +234,12 @@ def preparar_lote_semana(inicio, fin, user=None):
         (p.profesor_id, p.colegio_id, p.fecha): p
         for p in PagoRealizado.objects
             .filter(fecha__gte=inicio, fecha__lte=fin)
+            .select_related('lote')
             .prefetch_related('extras')
     }
+
+    def _congelada(p):
+        return p.lote_id and p.lote_id != lote.id and p.lote.estado == LotePagos.Estado.ENVIADO
 
     for key, f in calc.items():
         p = existentes.get(key)
@@ -224,6 +249,8 @@ def preparar_lote_semana(inicio, fin, user=None):
                 profesor_id=f['profesor_id'], colegio_id=f['colegio_id'], fecha=f['fecha'],
                 horas=f['horas'], valor=f['valor_total'],
             )
+            continue
+        if _congelada(p):
             continue
         cambios = []
         if p.lote_id != lote.id:
@@ -250,17 +277,34 @@ def preparar_lote_semana(inicio, fin, user=None):
 
 def enviar_lote(lote, user):
     """BORRADOR → ENVIADO. A partir de aquí financiera lo ve y programación no edita.
-    El envío es **definitivo** (no hay reabrir)."""
+    El envío es **definitivo por lote** (no hay reabrir).
+
+    Antes de marcar, **desacopla** (`lote=None`) las filas no enviables — excluidas o
+    cuyo día tiene clases sin informe completado — para que el lote ENVIADO contenga
+    exactamente lo enviado; un "Preparar pendientes" posterior las re-adopta a un
+    BORRADOR nuevo y podrán ir en otro envío. Devuelve True si el lote quedó ENVIADO;
+    False si no tenía ninguna fila enviable (sigue BORRADOR)."""
+    claves_sin_informe = _claves_sin_informe(lote.fecha_inicio, lote.fecha_fin)
+    no_enviables = [
+        p.pk for p in lote.filas.all()
+        if p.excluida or (p.fecha, p.profesor_id, p.colegio_id) in claves_sin_informe
+    ]
+    if no_enviables:
+        PagoRealizado.objects.filter(pk__in=no_enviables).update(lote=None)
+    if not lote.filas.exists():
+        return False
     lote.estado = LotePagos.Estado.ENVIADO
     lote.enviado_en = timezone.now()
     lote.enviado_por = user
     lote.save(update_fields=['estado', 'enviado_en', 'enviado_por', 'actualizado_en'])
+    return True
 
 
 def preparar_pendientes(user=None):
-    """Materializa el **backlog completo**: prepara (idempotente) todas las semanas con
-    clases hasta hoy cuyo lote no esté ENVIADO. Así la lista muestra todo lo pendiente por
-    enviar sin que el usuario tenga que preparar semana por semana. Devuelve nº de semanas."""
+    """Materializa el **backlog completo**: prepara (idempotente) el BORRADOR de todas
+    las semanas con clases hasta hoy (las filas ya enviadas quedan congeladas en sus
+    lotes ENVIADO; las desacopladas al enviar se re-adoptan). Así la lista muestra todo
+    lo pendiente por enviar sin preparar semana por semana. Devuelve nº de semanas."""
     hoy = date.today()
     fechas = (Clase.objects
               .filter(fecha__lte=hoy, cancelada=False, es_evento=False)
@@ -268,6 +312,10 @@ def preparar_pendientes(user=None):
     lunes_set = {f - timedelta(days=f.weekday()) for f in fechas}
     for lunes in lunes_set:
         preparar_lote_semana(lunes, lunes + timedelta(days=4), user)
+    # Borradores que quedaron vacíos (todo su contenido se envió o se canceló) no
+    # aportan nada al backlog: fuera.
+    LotePagos.objects.filter(
+        estado=LotePagos.Estado.BORRADOR, filas__isnull=True).delete()
     return len(lunes_set)
 
 
@@ -451,24 +499,39 @@ def construir_contexto_pagos(get, *, modo='programacion'):
 
     Sin filtro de fechas → muestra todo lo pendiente; con filtro (`semana`/`hasta`) acota.
     - `programacion`: pestaña *pendiente* = filas por **enviar** (lote BORRADOR, incluye las
-      excluidas para poder re-incluirlas); pestaña *realizado* = filas ya **enviadas** (lote
-      ENVIADO; muestran si financiera ya las pagó).
+      excluidas para poder re-incluirlas); pestaña *sin_informe* = filas en BORRADOR cuyo
+      día tiene clases **sin informe completado** (editables pero NO enviables, para
+      recordarle al docente); pestaña *realizado* = filas ya **enviadas** (lote ENVIADO;
+      muestran si financiera ya las pagó).
     - `financiera`: **solo** lotes ENVIADO (sin excluidas), partidas por pago (`fecha_pago`):
       pendiente = por pagar; realizado = pagadas.
     Mantiene las claves históricas (`filas_pendientes`, `filas_realizadas`, `filas`, `total_*`)."""
     desde, hasta = _rango_de(get)
     tab = get.get('tab', 'pendiente')
 
+    filas_sin_informe = []
     if modo == 'financiera':
         enviadas = [f for f in _filas_rango(LotePagos.Estado.ENVIADO, desde, hasta)
                     if not f['excluida']]
         filas_pendientes = [f for f in enviadas if f['fecha_pago'] is None]
         filas_realizadas = [f for f in enviadas if f['fecha_pago'] is not None]
     else:
-        filas_pendientes = _filas_rango(LotePagos.Estado.BORRADOR, desde, hasta)   # por enviar
+        claves_si = _claves_sin_informe(desde, hasta)
+        filas_pendientes = []                                                      # por enviar
+        for f in _filas_rango(LotePagos.Estado.BORRADOR, desde, hasta):
+            if (f['fecha'], f['profesor_id'], f['colegio_id']) in claves_si:
+                f['sin_informe'] = True
+                filas_sin_informe.append(f)
+            else:
+                filas_pendientes.append(f)
         filas_realizadas = _filas_rango(LotePagos.Estado.ENVIADO, desde, hasta)    # enviadas
 
-    filas_tab = filas_pendientes if tab == 'pendiente' else filas_realizadas
+    if tab == 'realizado':
+        filas_tab = filas_realizadas
+    elif tab == 'sin_informe' and modo == 'programacion':
+        filas_tab = filas_sin_informe
+    else:
+        filas_tab = filas_pendientes
 
     ctx = {
         'fecha_inicio':     desde.isoformat() if desde else '',
@@ -484,15 +547,20 @@ def construir_contexto_pagos(get, *, modo='programacion'):
         'total_pendiente':  _suma_valor(filas_pendientes),
         'total_realizado':  _suma_valor(filas_realizadas),
         # Detalle (horas/valor-hora/extras) por pago para el modal (i)/desglose. Ambas áreas.
-        'detalles_pagos':   _detalles_pagos(filas_pendientes + filas_realizadas),
+        'detalles_pagos':   _detalles_pagos(
+            filas_pendientes + filas_sin_informe + filas_realizadas),
     }
     if modo == 'programacion':
         por_enviar = [f for f in filas_pendientes if not f['excluida']]
         ctx.update({
-            'tab_label_pendiente': 'Por enviar',
-            'tab_label_realizado': 'Enviados',
-            'puede_enviar':        len(por_enviar) > 0,
-            'total_por_enviar':    len(por_enviar),
+            'tab_label_pendiente':   'Por enviar',
+            'tab_label_realizado':   'Enviados',
+            # La presencia de este label habilita la tercera pestaña en los parciales
+            # compartidos (financiera no la define → no la dibuja).
+            'tab_label_sin_informe': 'Sin informe',
+            'filas_sin_informe':     filas_sin_informe,
+            'puede_enviar':          len(por_enviar) > 0,
+            'total_por_enviar':      len(por_enviar),
         })
     return ctx
 
@@ -541,7 +609,7 @@ def pagos_lista(request):
     filas = filas_pagos_por_tab(fi, ff, tab, modo='programacion')
     excel_bytes = _generar_excel_pagos(filas, _label_rango(fi, ff))
 
-    sufijo = 'Enviados' if tab == 'realizado' else 'PorEnviar'
+    sufijo = {'realizado': 'Enviados', 'sin_informe': 'SinInforme'}.get(tab, 'PorEnviar')
     rango = f"{fi.strftime('%Y%m%d')}_{ff.strftime('%Y%m%d')}" if fi and ff else 'todos'
     response = HttpResponse(
         excel_bytes,
@@ -599,14 +667,14 @@ def pagos_enviar(request):
         qs = qs.filter(fecha__lte=hasta)
     lote_ids = set(qs.values_list('lote_id', flat=True))
     lotes = LotePagos.objects.filter(id__in=lote_ids, estado=LotePagos.Estado.BORRADOR)
-    n = 0
-    for lote in lotes:
-        enviar_lote(lote, request.user)
-        n += 1
+    # `enviar_lote` desacopla las no enviables (excluidas / sin informe) y devuelve False
+    # si el lote quedó sin nada que enviar (sigue BORRADOR).
+    n = sum(1 for lote in lotes if enviar_lote(lote, request.user))
     if n:
         messages.success(request, f'Enviado a financiera ({n} semana(s)).')
     else:
-        messages.error(request, 'No hay pagos pendientes por enviar.')
+        messages.error(request, 'No hay pagos enviables. Las filas excluidas o con '
+                                'clases sin informe no se envían.')
     return _volver_a_lista(request)
 
 

@@ -343,3 +343,63 @@ class HistorialCambio(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} {self.objeto_tipo} {self.objeto_id} — {self.fecha:%d/%m/%Y %H:%M}"
+
+
+# ─────────────────────────────────────────────────────────────
+# CANCELACIÓN DE CLASE
+# ─────────────────────────────────────────────────────────────
+
+class CancelacionClase(models.Model):
+    """
+    Registro histórico de cada cancelación de clase, con quién la originó.
+
+    Es un modelo-registro (no un campo en Clase) a propósito: en la cancelación
+    por PROFESOR la clase sigue viva y cambia de profesor (queda pendiente de
+    reasignar), así que un campo en Clase perdería al profesor original y no
+    soportaría N cancelaciones de la misma clase (A cancela → se reasigna a B →
+    B cancela = dos registros).
+
+    Los campos *_nombre y fecha_clase son snapshots: el reporte de Cancelaciones
+    debe sobrevivir a reasignaciones y borrados de la clase/profesor/colegio
+    (de ahí los FK SET_NULL + el texto congelado al momento de registrar).
+
+    Ciclo de vida por tipo:
+      - COLEGIO: vigente mientras Clase.cancelada=True; des-cancelar la clase
+        elimina el registro (es el espejo del checkbox).
+      - PROFESOR: histórico, NUNCA se borra (ni al reasignar la clase).
+    """
+    class Tipo(models.TextChoices):
+        COLEGIO  = 'COLEGIO', 'Colegio'
+        PROFESOR = 'PROFESOR', 'Profesor'
+
+    clase           = models.ForeignKey(Clase, on_delete=models.SET_NULL,
+                                        null=True, blank=True,
+                                        related_name='cancelaciones')
+    tipo            = models.CharField(max_length=10, choices=Tipo.choices)
+    profesor        = models.ForeignKey(Profesor, on_delete=models.SET_NULL,
+                                        null=True, blank=True,
+                                        related_name='cancelaciones')
+    profesor_nombre = models.CharField(max_length=200, blank=True, default='')
+    colegio         = models.ForeignKey(Colegio, on_delete=models.SET_NULL,
+                                        null=True, blank=True,
+                                        related_name='cancelaciones')
+    colegio_nombre  = models.CharField(max_length=200, blank=True, default='')
+    fecha_clase     = models.DateField()
+    motivo          = models.TextField(blank=True, default='')
+    registrado_por  = models.ForeignKey(_User, on_delete=models.SET_NULL,
+                                        null=True, blank=True)
+    registrado_en   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table            = 'prog_clases_cancelaciones'
+        ordering            = ['-fecha_clase', '-registrado_en']
+        verbose_name        = "Cancelación de Clase"
+        verbose_name_plural = "Cancelaciones de Clases"
+        indexes = [
+            # El reporte filtra/ordena por fecha de la clase y por tipo
+            models.Index(fields=['tipo', 'fecha_clase']),
+        ]
+
+    def __str__(self):
+        return (f"Cancelación {self.get_tipo_display()} — "
+                f"{self.fecha_clase:%d/%m/%Y} {self.colegio_nombre}")

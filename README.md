@@ -72,7 +72,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores y viáticos. |
-| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar + soportes) y **pagos a profesores** (marcar pago + soportes + Excel), con badge de pendientes. Acceso por grupo `area:financiera`. |
+| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badge de pendientes. Acceso por grupo `area:financiera`. |
 | **Logística** | `logistica.miltonochoa.app` | Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
 
 **Programación** y **Financiera** comparten el mismo *chrome* visual (sidebar, header, footer)
@@ -178,19 +178,53 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
 - Throttle de 5 minutos para evitar barridos concurrentes.
 - Comando de cron: `python manage.py ejecutar_auditoria`.
 
+### Cancelaciones de clase
+
+- Al cancelar una clase desde el modal del dashboard se indica **quién cancela**:
+  - **Colegio** (comportamiento clásico): la clase queda cancelada y conserva su profesor.
+  - **Profesor**: la clase **no** se cancela — queda **sin profesor** (pendiente de
+    reasignar desde el mismo modal) y no genera fila de pago hasta la reasignación.
+- Cada cancelación deja un registro histórico (`CancelacionClase`) con snapshot de
+  profesor, colegio, fecha y motivo, que sobrevive a reasignaciones y borrados. Las de
+  tipo Profesor son permanentes (una clase puede acumular varias); las de tipo Colegio se
+  retiran si la clase se des-cancela.
+- **Reporte "Cancelaciones"** (menú Reportes): tabla con filtros por tipo, profesor,
+  colegio, motivo y rango de fecha de clase, paginación y **export a Excel**.
+
 ### Informes pedagógicos
 
 - Un `Informe` está vinculado a **exactamente una** clase regular o particular (garantizado
   por `CheckConstraint` a nivel BD).
 - Datos de cabecera desnormalizados para sobrevivir si se elimina la clase original.
 - Estados: borrador → completado (al rellenar `actividades`).
+- **Diligenciable desde dos lugares** con el mismo modal compartido: el cronograma del
+  profesor y la **lista de informes** (botón por fila que precarga el informe vía AJAX;
+  al guardar, la lista se recarga ya actualizada). Si quien guarda es un perfil de
+  profesor, el servidor ignora cualquier `profesor_id` del payload y usa el del perfil.
+
+### Portal del profesor
+
+Los usuarios con perfil de profesor (`UsuarioProfesor`) tienen un **menú propio** en el
+sidebar con tres ítems:
+
+- **Cronograma** — su horario personal (la vista fuerza su propio profesor).
+- **Informes** — su lista de informes/pendientes, con diligenciamiento desde la fila.
+- **Pagos** — estado de sus pagos por día de clases, en dos pestañas (*Pendientes por
+  pagar* / *Pagadas*) con fecha, colegio y horas. En las pagadas muestra la fecha de pago
+  y permite **ver/descargar el soporte** (gateado al dueño: el soporte de otro profesor
+  responde 404). **Nunca muestra montos en pesos** — solo estado y comprobante.
 
 ### Liquidación de pagos semanales
 
 - Cálculo `horas × ColegioAnio.valor_hora` por profesor / colegio / fecha.
 - **Flujo borrador → enviado (una sola vía):** programación **prepara** el borrador semanal
   (`LotePagos` BORRADOR), **excluye filas**, **agrega costos extra** (`ExtraPago`) y luego
-  **envía a financiera** (BORRADOR→ENVIADO). El envío es definitivo.
+  **envía a financiera** (BORRADOR→ENVIADO). El envío es definitivo **por lote**, pero las
+  filas excluidas o retenidas no mueren con él: se desacoplan y pueden ir en un envío
+  posterior (varios lotes enviados por semana; máximo un borrador).
+- **Gate por informe:** una fila solo se envía si todas las clases de su día tienen el
+  informe pedagógico completado. Las retenidas se listan en la pestaña **"Sin informe"**
+  (con badge por fila) para recordarle al docente; al completar el informe pasan a enviables.
 - Total = valor base + extras (desglose).
 - El backlog muestra todas las semanas pendientes; el filtro de fechas solo acota al aplicar.
 
@@ -198,8 +232,13 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-
 
 - Solicitudes de viáticos con datos del docente, fechas, gastos desglosados (`GastoViatico`)
   y notificación por correo al área financiera al enviar.
-- Flujo de estados: `ENVIADA → DEVUELTA` (por financiera, con motivo) o `ENVIADA → APROBADA → PAGADA`.
-- Los soportes de pago (`SoportePago`) se adjuntan en estado `PAGADA` desde financiera.
+- Flujo de estados completo:
+  `ENVIADA ↔ DEVUELTA → APROBADA → PAGADA → LEG_ENVIADA ↔ LEG_DEVUELTA → FINALIZADA`.
+- Los soportes de pago (`SoportePago`, tipo `PAGO`) los adjunta financiera desde `PAGADA`.
+- **Legalización post-pago:** tras `PAGADA`, programación adjunta soportes de legalización
+  (`SoportePago`, tipo `LEGALIZACION`) y los envía a financiera (requiere ≥1 soporte; avisa
+  por correo). Financiera los revisa y devuelve con motivo o **finaliza** la solicitud
+  (cierre definitivo del expediente).
 
 ### Exportación Excel
 
@@ -229,8 +268,13 @@ Financiera **solo ve lo enviado** por programación. Según el estado puede:
 | Aprobar | `ENVIADA` | `APROBADA` |
 | Pagar | `APROBADA` | `PAGADA` |
 | Editar | `ENVIADA` o `APROBADA` | — |
-| Subir/eliminar soporte | `PAGADA` | — |
+| Subir/eliminar soporte de pago | `PAGADA`, `LEG_ENVIADA` o `LEG_DEVUELTA` | — |
+| Devolver legalización (con motivo) | `LEG_ENVIADA` | `LEG_DEVUELTA` |
+| Finalizar | `LEG_ENVIADA` | `FINALIZADA` (terminal) |
 | Exportar a Excel | cualquier estado | — |
+
+Los soportes de **legalización** los gestiona programación (financiera los ve en solo
+lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 
 ### Pagos a profesores
 
@@ -240,6 +284,17 @@ Financiera **solo ve lo enviado** por programación. Según el estado puede:
 - Sube/elimina comprobantes (`SoportePagoProfesor`: `.pdf/.jpg/.jpeg/.png`, ≤ 10 MB).
 - Exporta a Excel por tab (por pagar / pagadas), con columna de desglose.
 - Badge en el menú: filas enviadas y no pagadas.
+
+### Proyección de pagos
+
+- **Solo lectura**: lista las **clases programadas** con su costo estimado
+  (horas × valor hora del colegio) para anticipar el gasto — no prepara lotes,
+  no marca pagos ni proyecta fechas de pago.
+- Filtros por colegio (periodo), profesor y rango de fechas (default: de hoy en
+  adelante), con totales dinámicos al filtrar.
+- Exporta a Excel con los filtros vigentes (fecha, docente, colegio, horas,
+  valor/hora, valor proyectado + fila TOTAL).
+- En el menú **Pagos → Proyección** (sin badge).
 
 ---
 
@@ -287,7 +342,7 @@ AAMO/
 │   ├── urls.py              #   router del área (agrupa las 9 sub-apps en la raíz /)
 │   ├── configuracion/       #   Catálogos: Materia, NombreLibro, Unidad, Colegio, ColegioAnio, Profesor
 │   ├── colegios/            #   Grado, Bloque, Asignacion, Clase, ClaseParticular, HistorialCambio
-│   ├── profesores/          #   Vista de horario propio del profesor
+│   ├── profesores/          #   Horario del profesor + portal con menú propio (Cronograma/Informes)
 │   ├── auditoria/           #   Motor de detección + AlertaAuditoria + cron command
 │   ├── informes/            #   Informes pedagógicos por sesión
 │   ├── exportar/            #   Generación de Excel de horarios
@@ -299,6 +354,7 @@ AAMO/
 │   ├── urls.py              #   router del área (raíz /): viaticos + pagos
 │   ├── viaticos/            #   Inicio + gestión: devolver/aprobar/pagar/editar + soportes + Excel
 │   └── pagos/               #   Pagos a profesores: semanas enviadas → marcar + soportes + Excel
+│                            #   + proyección de pagos (clases programadas, solo lectura)
 │                            #   (sin modelos propios — importa de programacion.pagos)
 │
 ├── logistica/              # PLACEHOLDER de área futura (solo __init__.py + README)
@@ -340,7 +396,7 @@ comparte en `.miltonochoa.app` (**SSO**).
 | **Superusuario** | `User.is_superuser=True` | Todo |
 | **Staff de área** | Grupo `area:programacion` | Todo el área (como superusuario), incluida gestión de usuarios de colegio/profesor; **salvo** el panel del apex, usuarios de etiqueta, `/admin/` y otras áreas |
 | **Gestor colegio** | `UsuarioColegio` (OneToOne) | `/colegios/`, `/informes/` |
-| **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` |
+| **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` — con menú propio (Cronograma · Informes · Pagos*) |
 
 > El **staff de área financiera** (grupo `area:financiera`) accede a `financiera.miltonochoa.app`.
 
@@ -451,6 +507,7 @@ redirige al subdominio del área del usuario (o al `/panel/` si es superusuario)
 | `SUPABASE_S3_SECRET_KEY` | Cond. | — | Secret key S3. Obligatoria si storage en Supabase. |
 | `EMAIL_HOST_PASSWORD` | No | — | API key de Resend (re_…) para envío de correo en producción. |
 | `VIATICOS_NOTIFICAR_A` | No | `marlon.medina@aamocolombia.com` | Destinatario de los avisos de viáticos. |
+| `VIATICOS_LEGALIZACION_NOTIFICAR_A` | No | `financiero@aamocolombia.com` | Destinatario del aviso de legalización de viáticos enviada. |
 | `BACKUP_DIR` | No | `backups/` | Directorio para respaldos. |
 
 > Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin
@@ -475,7 +532,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 348 tests OK.**
+**Baseline actual: 430 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -621,7 +678,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 348 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 430 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
