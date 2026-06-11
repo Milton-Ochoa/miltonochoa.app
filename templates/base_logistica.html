@@ -21,9 +21,12 @@
             <i class="fas fa-box icon-main text-warning"></i> Artículos
         </a>
 
-        {# ── Existencias ── #}
+        {# ── Existencias ── (badge = artículos bajo mínimo, vía context processor alertas_inventario) #}
         <a href="{% url 'log_stock' %}" class="nav-item {% if request.resolver_match.url_name == 'log_stock' %}active{% endif %}">
             <i class="fas fa-warehouse icon-main text-info"></i> Existencias
+            {% if inv_bajo_minimo_count %}
+            <span class="badge bg-danger nav-badge">{{ inv_bajo_minimo_count }}</span>
+            {% endif %}
         </a>
 
         {# ── Terceros ── #}
@@ -77,9 +80,12 @@
         </div>
         {% endwith %}
 
-        {# ── Préstamos (bidireccionales) ── #}
+        {# ── Préstamos (bidireccionales) ── (badge = vencidos en ambas direcciones) #}
         <a href="{% url 'log_prestamos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_prestamos_lista' or request.resolver_match.url_name == 'log_prestamos_nuevo' or request.resolver_match.url_name == 'log_prestamos_detalle' %}active{% endif %}">
             <i class="fas fa-handshake icon-main text-primary"></i> Préstamos
+            {% if inv_prestamos_vencidos_count %}
+            <span class="badge bg-danger nav-badge">{{ inv_prestamos_vencidos_count }}</span>
+            {% endif %}
         </a>
         {% endif %}
 {% endblock %}

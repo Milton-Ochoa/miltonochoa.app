@@ -54,4 +54,11 @@ urlpatterns = [
 
     # Ajuste manual (modal en stock.html)
     path('ajustes/nuevo/', views.ajuste_crear, name='log_ajuste_crear'),
+
+    # Exports a Excel (POST desde modales con filtros)
+    path('stock/exportar/', views.stock_exportar, name='log_stock_exportar'),
+    path('movimientos/exportar/', views.movimientos_exportar,
+         name='log_movimientos_exportar'),
+    path('prestamos/exportar/', views.prestamos_exportar,
+         name='log_prestamos_exportar'),
 ]

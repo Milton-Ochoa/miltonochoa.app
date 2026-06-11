@@ -1,3 +1,4 @@
+import io
 import os
 from datetime import date
 
@@ -5,9 +6,13 @@ from django.contrib import messages
 from django.db import models
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from .adjuntos import validar_adjunto
 from .forms import (BodegaForm, CategoriaForm, EntradaForm, ItemForm,
@@ -24,9 +29,27 @@ from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
 
 @solo_logistica
 def home(request):
-    """Landing del área logística. En la Fase 6 se convierte en el dashboard de
-    inventario (tarjetas de stock, préstamos vencidos, últimos movimientos)."""
-    return render(request, 'inventario/home.html')
+    """Dashboard del inventario: tarjetas de stock y préstamos + últimos
+    movimientos. "Nos deben" = préstamos OTORGADOS no cerrados; "debemos
+    devolver" = RECIBIDOS no cerrados (la dirección invierte quién retiene
+    el material)."""
+    hoy = timezone.localdate()
+    abiertos = Prestamo.objects.exclude(estado=Prestamo.Estado.CERRADO)
+    otorgados = abiertos.filter(direccion=Prestamo.Direccion.OTORGADO)
+    recibidos = abiertos.filter(direccion=Prestamo.Direccion.RECIBIDO)
+    return render(request, 'inventario/home.html', {
+        'items_activos': Item.objects.filter(activo=True).count(),
+        'unidades_totales': (Stock.objects.filter(item__activo=True)
+                             .aggregate(t=models.Sum('cantidad'))['t'] or 0),
+        'items_alerta': list(items_bajo_minimo()),
+        'otorgados_abiertos': otorgados.count(),
+        'otorgados_vencidos': otorgados.filter(fecha_compromiso__lt=hoy).count(),
+        'recibidos_abiertos': recibidos.count(),
+        'recibidos_vencidos': recibidos.filter(fecha_compromiso__lt=hoy).count(),
+        'ultimos_movimientos': (Movimiento.objects
+                                .select_related('item', 'bodega', 'creado_por')
+                                .order_by('-creado_en', '-id')[:10]),
+    })
 
 
 def _form_a_messages(request, form):
@@ -209,6 +232,8 @@ def stock(request):
         'filas': filas,
         'items_alerta': alertas,
         'bajo_minimo_ids': {item.pk for item in alertas},
+        # Para el select del modal de exportar (también inactivas: tienen historial).
+        'bodegas': Bodega.objects.order_by('nombre'),
     })
 
 
@@ -587,3 +612,177 @@ def ajuste_crear(request):
     except ValueError as e:
         messages.error(request, str(e))
     return redirect('log_stock')
+
+
+# ---------------------------------------------------------------------------
+# Exports a Excel (Fase 6)
+#
+# Self-contained con openpyxl (no importan helpers de otras áreas, mismo
+# trade-off que `_generar_excel_viaticos` en financiera): cabecera azul,
+# bordes, zebra. Todos POST desde un modal con filtros.
+# ---------------------------------------------------------------------------
+
+def _generar_excel(*, titulo, columnas, filas, anchos, formatos=None):
+    """Excel genérico en memoria. ``filas`` = lista de listas (una por fila);
+    ``formatos`` = {col_1based: number_format} (p. ej. moneda)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = titulo
+    thin = Side(style='thin', color='000000')
+    borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+    formatos = formatos or {}
+
+    for ci, nombre in enumerate(columnas, start=1):
+        cell = ws.cell(1, ci, nombre)
+        cell.font = Font(name='Arial', size=10, bold=True, color='FF1F3864')
+        cell.alignment = Alignment(horizontal='center', vertical='center',
+                                   wrap_text=True)
+        cell.fill = PatternFill('solid', fgColor='FFB8CCE4')
+        cell.border = borde
+    ws.row_dimensions[1].height = 22
+
+    for ri, fila in enumerate(filas, start=2):
+        fondo = 'FFFFFFFF' if ri % 2 == 0 else 'FFF2F6FC'
+        for ci, valor in enumerate(fila, start=1):
+            cell = ws.cell(ri, ci, valor)
+            cell.font = Font(name='Arial', size=10)
+            cell.alignment = Alignment(
+                horizontal='left' if isinstance(valor, str) else 'right',
+                vertical='center')
+            cell.fill = PatternFill('solid', fgColor=fondo)
+            cell.border = borde
+            if ci in formatos:
+                cell.number_format = formatos[ci]
+
+    for ci, ancho in enumerate(anchos, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = ancho
+    ws.freeze_panes = 'A2'
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _respuesta_xlsx(excel_bytes, nombre):
+    response = HttpResponse(
+        excel_bytes,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{nombre}"'
+    return response
+
+
+def _fecha_post(request, nombre):
+    try:
+        return date.fromisoformat(request.POST.get(nombre, ''))
+    except ValueError:
+        return None
+
+
+@require_POST
+@solo_logistica
+def stock_exportar(request):
+    """Existencias actuales (items activos, incluidas filas en 0 como en la
+    vista). Filtro opcional de bodega. `valor_unitario` es referencial (el
+    kardex es de cantidades): se exporta junto al valor total estimado."""
+    filas_qs = (Stock.objects
+                .select_related('item', 'item__categoria', 'bodega')
+                .filter(item__activo=True)
+                .order_by('item__nombre', 'bodega__nombre'))
+    bodega_id = request.POST.get('bodega', '')
+    if bodega_id.isdigit():
+        filas_qs = filas_qs.filter(bodega_id=bodega_id)
+
+    filas = []
+    for s in filas_qs:
+        vu = s.item.valor_unitario
+        filas.append([
+            s.item.codigo, s.item.nombre, s.item.categoria.nombre,
+            s.item.get_unidad_medida_display(), s.bodega.nombre, s.cantidad,
+            s.item.stock_minimo or '',
+            vu if vu is not None else '',
+            vu * s.cantidad if vu is not None else '',
+        ])
+    excel = _generar_excel(
+        titulo='Existencias',
+        columnas=['Código', 'Artículo', 'Categoría', 'Unidad', 'Bodega',
+                  'Cantidad', 'Mínimo global', 'Valor unitario', 'Valor total'],
+        filas=filas,
+        anchos=[12, 32, 18, 12, 18, 10, 12, 14, 14],
+        formatos={8: '"$"#,##0', 9: '"$"#,##0'})
+    hoy = timezone.localdate().strftime('%Y%m%d')
+    return _respuesta_xlsx(excel, f'Existencias_{hoy}.xlsx')
+
+
+@require_POST
+@solo_logistica
+def movimientos_exportar(request):
+    """Histórico completo del ledger (SIN el cap de 500 de la vista), con
+    filtros de tipo (checkboxes) y rango de fechas. En orden cronológico:
+    así el saldo por fila se lee como un kardex."""
+    qs = (Movimiento.objects
+          .select_related('item', 'bodega', 'creado_por')
+          .order_by('creado_en', 'id'))
+    tipos_validos = set(Movimiento.Tipo.values)
+    tipos = [t for t in request.POST.getlist('tipos') if t in tipos_validos]
+    if tipos:
+        qs = qs.filter(tipo__in=tipos)
+    desde, hasta = _fecha_post(request, 'desde'), _fecha_post(request, 'hasta')
+    if desde:
+        qs = qs.filter(creado_en__date__gte=desde)
+    if hasta:
+        qs = qs.filter(creado_en__date__lte=hasta)
+
+    filas = [[
+        timezone.localtime(m.creado_en).strftime('%d/%m/%Y %H:%M'),
+        m.get_tipo_display(), m.item.codigo, m.item.nombre, m.bodega.nombre,
+        m.delta, m.saldo_resultante, m.detalle,
+        m.creado_por.username if m.creado_por else '',
+    ] for m in qs]
+    excel = _generar_excel(
+        titulo='Movimientos',
+        columnas=['Fecha', 'Tipo', 'Código', 'Artículo', 'Bodega', 'Cantidad',
+                  'Saldo', 'Detalle', 'Registró'],
+        filas=filas,
+        anchos=[16, 24, 12, 32, 18, 10, 10, 40, 14])
+    partes = [desde.strftime('%Y%m%d') if desde else 'inicio',
+              hasta.strftime('%Y%m%d') if hasta else 'fin']
+    return _respuesta_xlsx(excel, f'Movimientos_{partes[0]}_{partes[1]}.xlsx')
+
+
+@require_POST
+@solo_logistica
+def prestamos_exportar(request):
+    """Préstamos con totales por documento (mismas annotations que la lista).
+    Filtros: dirección y estado (checkboxes; vacío = todos) y "solo vencidos"."""
+    qs = (Prestamo.objects.select_related('creado_por')
+          .annotate(prestado=Coalesce(models.Sum('lineas__cantidad_prestada'), 0),
+                    devuelto=Coalesce(models.Sum('lineas__cantidad_devuelta'), 0))
+          .order_by('-creado_en'))
+    direcciones = [d for d in request.POST.getlist('direcciones')
+                   if d in set(Prestamo.Direccion.values)]
+    if direcciones:
+        qs = qs.filter(direccion__in=direcciones)
+    estados = [e for e in request.POST.getlist('estados')
+               if e in set(Prestamo.Estado.values)]
+    if estados:
+        qs = qs.filter(estado__in=estados)
+    if request.POST.get('solo_vencidos'):
+        qs = (qs.exclude(estado=Prestamo.Estado.CERRADO)
+              .filter(fecha_compromiso__lt=timezone.localdate()))
+
+    filas = [[
+        p.pk, timezone.localtime(p.creado_en).strftime('%d/%m/%Y'),
+        p.get_direccion_display(), p.tercero_nombre, p.tercero_documento,
+        p.fecha_compromiso.strftime('%d/%m/%Y'), p.get_estado_display(),
+        'Sí' if p.vencido else 'No',
+        p.prestado, p.devuelto, p.prestado - p.devuelto,
+        p.creado_por.username if p.creado_por else '',
+    ] for p in qs]
+    excel = _generar_excel(
+        titulo='Préstamos',
+        columnas=['#', 'Fecha', 'Dirección', 'Tercero', 'Documento',
+                  'Compromiso', 'Estado', 'Vencido', 'Prestado', 'Devuelto',
+                  'Pendiente', 'Registró'],
+        filas=filas,
+        anchos=[6, 12, 16, 28, 14, 12, 14, 9, 10, 10, 10, 14])
+    hoy = timezone.localdate().strftime('%Y%m%d')
+    return _respuesta_xlsx(excel, f'Prestamos_{hoy}.xlsx')

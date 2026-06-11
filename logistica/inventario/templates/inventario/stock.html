@@ -1,6 +1,12 @@
 {% extends 'base_logistica.html' %}
 {% block header_title %}Existencias{% endblock %}
 
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarStock">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
 {% block content %}
 <style>
     .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
@@ -131,6 +137,39 @@
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-warning btn-sm fw-bold">
                     <i class="fas fa-sliders me-1"></i> Ajustar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Modal: exportar existencias a Excel ── #}
+<div class="modal fade" id="modalExportarStock" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_stock_exportar' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar existencias</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label mb-1" for="exp_stock_bodega">Bodega</label>
+                    <select name="bodega" id="exp_stock_bodega" class="form-select">
+                        <option value="">Todas las bodegas</option>
+                        {% for b in bodegas %}
+                        <option value="{{ b.pk }}">{{ b.nombre }}{% if not b.activa %} (inactiva){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <small class="text-muted">
+                    Incluye el valor unitario referencial y el valor total estimado por fila.
+                </small>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
                 </button>
             </div>
         </form>
