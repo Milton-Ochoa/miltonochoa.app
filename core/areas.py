@@ -34,6 +34,12 @@ AREAS = {
         'urlconf': 'core.urls_financiera',
         'landing': 'fin_home',
     },
+    'logistica': {
+        'slug': 'logistica',
+        'nombre': 'Logística',
+        'urlconf': 'core.urls_logistica',
+        'landing': 'log_home',
+    },
 }
 
 # Grupo que actúa como "etiqueta" de acceso staff al área programación: sus miembros
@@ -44,6 +50,10 @@ GRUPO_STAFF_PROGRAMACION = 'area:programacion'
 # Grupo de acceso al área financiera. Por ahora la asignación de usuarios a este
 # grupo se hace desde /admin/ (no hay CRUD propio todavía).
 GRUPO_STAFF_FINANCIERA = 'area:financiera'
+
+# Grupo de acceso al área logística (inventario). Sus usuarios de etiqueta se
+# gestionan desde el panel del apex (GRUPOS_ETIQUETA en usuarios.views).
+GRUPO_STAFF_LOGISTICA = 'area:logistica'
 
 
 def es_personal_programacion(user) -> bool:
@@ -68,6 +78,18 @@ def es_personal_financiera(user) -> bool:
     return bool(user.is_superuser or (
         user.is_authenticated
         and user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists()
+    ))
+
+
+def es_personal_logistica(user) -> bool:
+    """Superusuario o miembro del grupo de acceso al área logística.
+
+    Espejo de `es_personal_financiera` para el subdominio logistica; gate único
+    de sus vistas (inventario).
+    """
+    return bool(user.is_superuser or (
+        user.is_authenticated
+        and user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists()
     ))
 
 
@@ -133,4 +155,6 @@ def areas_del_usuario(user):
         areas.append(AREAS['programacion'])
     if user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists():
         areas.append(AREAS['financiera'])
+    if user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists():
+        areas.append(AREAS['logistica'])
     return areas

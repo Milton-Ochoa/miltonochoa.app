@@ -1,0 +1,129 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Inicio{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    {# ── Tarjetas resumen ── #}
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-xl">
+            <a href="{% url 'log_items_lista' %}" class="text-decoration-none">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="text-muted small text-uppercase">Artículos activos</div>
+                        <div class="fs-3 fw-bold text-body">{{ items_activos }}</div>
+                        <div class="small text-muted"><i class="fas fa-box me-1 text-warning"></i>en catálogo</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-xl">
+            <a href="{% url 'log_stock' %}" class="text-decoration-none">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="text-muted small text-uppercase">Unidades en existencia</div>
+                        <div class="fs-3 fw-bold text-body">{{ unidades_totales }}</div>
+                        <div class="small text-muted"><i class="fas fa-warehouse me-1 text-info"></i>suma de bodegas</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-xl">
+            <a href="{% url 'log_stock' %}" class="text-decoration-none">
+                <div class="card shadow-sm h-100 {% if items_alerta %}border-danger{% endif %}">
+                    <div class="card-body py-3">
+                        <div class="text-muted small text-uppercase">Bajo mínimo</div>
+                        <div class="fs-3 fw-bold {% if items_alerta %}text-danger{% else %}text-body{% endif %}">{{ items_alerta|length }}</div>
+                        <div class="small text-muted"><i class="fas fa-triangle-exclamation me-1 text-danger"></i>artículos por reponer</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-xl">
+            <a href="{% url 'log_prestamos_lista' %}" class="text-decoration-none">
+                <div class="card shadow-sm h-100 {% if otorgados_vencidos %}border-danger{% endif %}">
+                    <div class="card-body py-3">
+                        <div class="text-muted small text-uppercase">Nos deben</div>
+                        <div class="fs-3 fw-bold text-body">{{ otorgados_abiertos }}</div>
+                        <div class="small text-muted">
+                            <i class="fas fa-handshake me-1 text-primary"></i>préstamos otorgados abiertos
+                            {% if otorgados_vencidos %}<span class="badge bg-danger ms-1">{{ otorgados_vencidos }} vencido{{ otorgados_vencidos|pluralize }}</span>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-xl">
+            <a href="{% url 'log_prestamos_lista' %}" class="text-decoration-none">
+                <div class="card shadow-sm h-100 {% if recibidos_vencidos %}border-danger{% endif %}">
+                    <div class="card-body py-3">
+                        <div class="text-muted small text-uppercase">Debemos devolver</div>
+                        <div class="fs-3 fw-bold text-body">{{ recibidos_abiertos }}</div>
+                        <div class="small text-muted">
+                            <i class="fas fa-rotate-left me-1 text-info"></i>préstamos recibidos abiertos
+                            {% if recibidos_vencidos %}<span class="badge bg-danger ms-1">{{ recibidos_vencidos }} vencido{{ recibidos_vencidos|pluralize }}</span>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    {# ── Alerta de bajo mínimo (mismo formato que existencias) ── #}
+    {% if items_alerta %}
+    <div class="alert alert-danger py-2">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        <strong>Bajo mínimo:</strong>
+        {% for it in items_alerta %}
+        <span class="badge bg-danger ms-1">{{ it.nombre }} ({{ it.stock_total }}/{{ it.stock_minimo }})</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── Últimos movimientos ── #}
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center py-2">
+            <span class="fw-bold"><i class="fas fa-right-left me-1 text-success"></i> Últimos movimientos</span>
+            <a href="{% url 'log_movimientos' %}" class="btn btn-outline-secondary btn-sm">Ver kardex global</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Artículo</th>
+                        <th>Bodega</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Saldo</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in ultimos_movimientos %}
+                    <tr>
+                        <td>{{ m.creado_en|date:'Y-m-d H:i' }}</td>
+                        <td>{{ m.get_tipo_display }}</td>
+                        <td><a href="{% url 'log_item_kardex' m.item_id %}">{{ m.item.nombre }}</a></td>
+                        <td>{{ m.bodega.nombre }}</td>
+                        <td class="text-end fw-bold {% if m.delta > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if m.delta > 0 %}+{% endif %}{{ m.delta }}
+                        </td>
+                        <td class="text-end">{{ m.saldo_resultante }}</td>
+                        <td class="small text-muted">{{ m.detalle }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-boxes-stacked me-1"></i>
+                            Sin movimientos todavía: registra una
+                            <a href="{% url 'log_entradas_nueva' %}">entrada</a> para empezar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

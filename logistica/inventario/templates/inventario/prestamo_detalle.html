@@ -1,0 +1,189 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Préstamo #{{ prestamo.pk }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <strong>
+                        <i class="fas fa-handshake me-1 text-primary"></i> Préstamo #{{ prestamo.pk }}
+                        {% if prestamo.direccion == 'OTORGADO' %}
+                        <span class="badge bg-primary">Prestamos nosotros</span>
+                        {% else %}
+                        <span class="badge bg-info text-dark">Nos prestan</span>
+                        {% endif %}
+                        {% if prestamo.estado == 'CERRADO' %}
+                        <span class="badge bg-success">{{ prestamo.get_estado_display }}</span>
+                        {% elif prestamo.estado == 'PARCIAL' %}
+                        <span class="badge bg-warning text-dark">{{ prestamo.get_estado_display }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ prestamo.get_estado_display }}</span>
+                        {% endif %}
+                        {% if prestamo.vencido %}<span class="badge bg-danger">Vencido</span>{% endif %}
+                    </strong>
+                    <span>
+                        {% if prestamo.estado != 'CERRADO' %}
+                        <button type="button" class="btn btn-success btn-sm fw-bold"
+                                data-bs-toggle="modal" data-bs-target="#modalDevolver">
+                            <i class="fas fa-rotate-left me-1"></i> Registrar devolución
+                        </button>
+                        {% endif %}
+                        <a href="{% url 'log_prestamos_lista' %}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-arrow-left me-1"></i> Volver
+                        </a>
+                    </span>
+                </div>
+                <div class="card-body py-2">
+                    <div class="row g-2 small">
+                        <div class="col-md-4"><strong>Fecha:</strong> {{ prestamo.creado_en|date:'Y-m-d H:i' }}</div>
+                        <div class="col-md-4">
+                            <strong>Tercero:</strong> {{ prestamo.tercero_nombre }}
+                            {% if prestamo.tercero_documento %}({{ prestamo.tercero_documento }}){% endif %}
+                            {% if not prestamo.tercero %}
+                            <span class="badge bg-secondary" title="El tercero fue eliminado del catálogo; el nombre es el snapshot del documento.">snapshot</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4"><strong>Registró:</strong> {{ prestamo.creado_por.username|default:'—' }}</div>
+                        <div class="col-md-4">
+                            <strong>Compromiso:</strong> {{ prestamo.fecha_compromiso|date:'Y-m-d' }}
+                            {% if prestamo.direccion == 'RECIBIDO' %}
+                            <span class="text-muted">(cuándo debemos devolver)</span>
+                            {% endif %}
+                        </div>
+                        {% if prestamo.cerrado_en %}
+                        <div class="col-md-4"><strong>Cerrado:</strong> {{ prestamo.cerrado_en|date:'Y-m-d H:i' }}</div>
+                        {% endif %}
+                        <div class="col-md-4"><strong>Observaciones:</strong> {{ prestamo.observaciones|default:'—' }}</div>
+                    </div>
+                </div>
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Bodega</th>
+                            <th class="text-end">Prestado</th>
+                            <th class="text-end">Devuelto</th>
+                            <th class="text-end">Pendiente</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in prestamo.lineas.all %}
+                        <tr>
+                            <td>{{ l.item.codigo }}</td>
+                            <td>{{ l.item.nombre }}</td>
+                            <td>{{ l.bodega.nombre }}</td>
+                            <td class="text-end">{{ l.cantidad_prestada }}</td>
+                            <td class="text-end">{{ l.cantidad_devuelta }}</td>
+                            <td class="text-end fw-bold {% if l.pendiente > 0 %}text-danger{% else %}text-success{% endif %}">{{ l.pendiente }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'log_item_kardex' l.item_id %}" class="btn btn-outline-secondary btn-sm" title="Kardex del artículo">
+                                    <i class="fas fa-book"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# ── Historial de devoluciones ── #}
+            <div class="card shadow-sm mt-3">
+                <div class="card-header py-2">
+                    <strong><i class="fas fa-rotate-left me-1 text-success"></i> Devoluciones</strong>
+                </div>
+                {% if prestamo.devoluciones.all %}
+                <div class="list-group list-group-flush">
+                    {% for d in prestamo.devoluciones.all %}
+                    <div class="list-group-item py-2">
+                        <div class="d-flex justify-content-between small">
+                            <strong>Devolución #{{ d.pk }} — {{ d.creado_en|date:'Y-m-d H:i' }}</strong>
+                            <span class="text-muted">{{ d.creado_por.username|default:'—' }}</span>
+                        </div>
+                        {% if d.observaciones %}
+                        <div class="small text-muted">{{ d.observaciones }}</div>
+                        {% endif %}
+                        <ul class="mb-0 small">
+                            {% for m in d.movimientos.all %}
+                            <li>{{ m.cantidad }} × {{ m.item.nombre }} ({{ m.bodega.nombre }})</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="card-body py-3 text-center text-muted small">
+                    Sin devoluciones registradas todavía.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if prestamo.estado != 'CERRADO' %}
+{# ── Modal de devolución: una fila por línea, vacío/0 = no devolver de esa ── #}
+<div class="modal fade" id="modalDevolver" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="{% url 'log_prestamo_devolver' prestamo.pk %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title">Registrar devolución</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">
+                    {% if prestamo.direccion == 'OTORGADO' %}
+                    El material devuelto vuelve a la bodega de cada línea.
+                    {% else %}
+                    El material a devolver sale de la bodega de cada línea (debe haber existencias).
+                    {% endif %}
+                    Deja en blanco (o en 0) las líneas que no se devuelven.
+                </p>
+                <table class="table table-sm align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Artículo</th>
+                            <th>Bodega</th>
+                            <th class="text-end">Pendiente</th>
+                            <th style="width: 25%;">Cantidad a devolver</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in prestamo.lineas.all %}
+                        <tr>
+                            <td>{{ l.item.codigo }} - {{ l.item.nombre }}</td>
+                            <td>{{ l.bodega.nombre }}</td>
+                            <td class="text-end fw-bold">{{ l.pendiente }}</td>
+                            <td>
+                                {% if l.pendiente > 0 %}
+                                {# OJO: dev_linea_id y dev_cantidad son listas PARALELAS; #}
+                                {# las líneas sin pendiente no mandan ninguno de los dos. #}
+                                <input type="hidden" name="dev_linea_id" value="{{ l.pk }}">
+                                <input type="number" name="dev_cantidad" class="form-control form-control-sm"
+                                       min="0" max="{{ l.pendiente }}" step="1" placeholder="0">
+                                {% else %}
+                                <span class="text-muted small">Sin pendiente</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <label class="form-label mb-1" for="dev_observaciones">Observaciones</label>
+                <textarea name="observaciones" id="dev_observaciones" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-save me-1"></i> Registrar devolución
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

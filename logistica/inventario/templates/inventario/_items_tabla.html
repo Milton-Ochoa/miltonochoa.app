@@ -1,0 +1,109 @@
+{% comment %}
+Tabla de artículos. El JS de filtrado/paginación va aparte
+(inventario/_tabla_filtros_js.html con tabla_id='tablaItems') para que la
+Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
+{% endcomment %}
+<style>
+    .tabla-inv { table-layout: fixed; width: 100%; }
+    .tabla-inv th, .tabla-inv td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-inv thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-inv thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-inv thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaItems">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width: 10%;">Código</th>
+                    <th style="width: 24%;">Artículo</th>
+                    <th style="width: 14%;">Categoría</th>
+                    <th style="width: 9%;">Unidad</th>
+                    <th style="width: 12%; text-align: right;">Existencia</th>
+                    <th style="width: 8%; text-align: right;">Mínimo</th>
+                    <th style="width: 9%; text-align: right;">Valor unit.</th>
+                    <th style="width: 7%; text-align: center;">Estado</th>
+                    <th style="width: 7%; text-align: center;">Acciones</th>
+                </tr>
+                <tr class="fila-filtros">
+                    <th><input type="text" data-filtro="codigo"></th>
+                    <th><input type="text" data-filtro="nombre"></th>
+                    <th><input type="text" data-filtro="categoria"></th>
+                    <th><input type="text" data-filtro="unidad"></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th><input type="text" data-filtro="estado"></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in items %}
+                <tr data-fila
+                    data-codigo="{{ it.codigo|lower }}"
+                    data-nombre="{{ it.nombre|lower }}"
+                    data-categoria="{{ it.categoria.nombre|lower }}"
+                    data-unidad="{{ it.get_unidad_medida_display|lower }}"
+                    data-estado="{% if it.activo %}activo{% else %}inactivo{% endif %}"
+                    {% if not it.activo %}class="opacity-50"{% endif %}>
+                    <td>{{ it.codigo }}</td>
+                    <td><strong>{{ it.nombre }}</strong></td>
+                    <td>{{ it.categoria.nombre }}</td>
+                    <td>{{ it.get_unidad_medida_display }}</td>
+                    <td class="text-end">
+                        {{ it.stock_total }}
+                        {% if it.pk in bajo_minimo_ids %}
+                        <span class="badge bg-danger ms-1">Bajo mínimo</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">{% if it.stock_minimo %}{{ it.stock_minimo }}{% else %}—{% endif %}</td>
+                    <td class="text-end">{% if it.valor_unitario is not None %}${{ it.valor_unitario }}{% else %}—{% endif %}</td>
+                    <td class="text-center">
+                        {% if it.activo %}<span class="badge bg-success">Activo</span>
+                        {% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                    </td>
+                    <td class="text-center text-nowrap">
+                        <a href="{% url 'log_item_kardex' it.pk %}" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                           title="Kardex del artículo">
+                            <i class="fas fa-book"></i>
+                        </a>
+                        <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
+                                onclick="abrirItemModal(this)"
+                                data-id="{{ it.pk }}"
+                                data-codigo="{{ it.codigo }}"
+                                data-nombre="{{ it.nombre }}"
+                                data-categoria="{{ it.categoria_id }}"
+                                data-unidad="{{ it.unidad_medida }}"
+                                data-descripcion="{{ it.descripcion }}"
+                                data-minimo="{{ it.stock_minimo }}"
+                                data-valor="{{ it.valor_unitario|default_if_none:'' }}"
+                                data-activo="{{ it.activo }}">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-4">
+                        <i class="fas fa-box-open me-1"></i> No hay artículos todavía. Crea el primero con "Nuevo artículo".
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+        <small class="text-muted">Mostrando <span id="tablaItems_contador">0</span> de {{ items|length }}</small>
+        <nav><ul class="pagination pagination-sm mb-0" id="tablaItems_paginas"></ul></nav>
+    </div>
+</div>

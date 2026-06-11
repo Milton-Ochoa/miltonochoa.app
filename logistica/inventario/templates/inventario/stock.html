@@ -1,0 +1,192 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Existencias{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarStock">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+<div class="container-fluid py-3">
+
+    {% if items_alerta %}
+    <div class="alert alert-danger py-2">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        <strong>Bajo mínimo:</strong>
+        {% for it in items_alerta %}
+        <span class="badge bg-danger ms-1">{{ it.nombre }} ({{ it.stock_total }}/{{ it.stock_minimo }})</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaStock">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 12%;">Código</th>
+                        <th style="width: 34%;">Artículo</th>
+                        <th style="width: 16%;">Categoría</th>
+                        <th style="width: 18%;">Bodega</th>
+                        <th style="width: 9%; text-align: right;">Cantidad</th>
+                        <th style="width: 9%; text-align: right;">Mínimo global</th>
+                        <th style="width: 8%;"></th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="codigo"></th>
+                        <th><input type="text" data-filtro="nombre"></th>
+                        <th><input type="text" data-filtro="categoria"></th>
+                        <th><input type="text" data-filtro="bodega"></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in filas %}
+                    <tr data-fila
+                        data-codigo="{{ s.item.codigo|lower }}"
+                        data-nombre="{{ s.item.nombre|lower }}"
+                        data-categoria="{{ s.item.categoria.nombre|lower }}"
+                        data-bodega="{{ s.bodega.nombre|lower }}">
+                        <td>{{ s.item.codigo }}</td>
+                        <td>
+                            <strong>{{ s.item.nombre }}</strong>
+                            {% if s.item_id in bajo_minimo_ids %}
+                            <span class="badge bg-danger ms-1">Bajo mínimo</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ s.item.categoria.nombre }}</td>
+                        <td>{{ s.bodega.nombre }}</td>
+                        <td class="text-end fw-bold">{{ s.cantidad }}</td>
+                        <td class="text-end">{% if s.item.stock_minimo %}{{ s.item.stock_minimo }}{% else %}—{% endif %}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{% url 'log_item_kardex' s.item_id %}?bodega={{ s.bodega_id }}"
+                               class="btn btn-outline-secondary btn-sm" title="Kardex en esta bodega">
+                                <i class="fas fa-book"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-warning btn-sm" title="Ajustar stock"
+                                    onclick="abrirAjuste(this)"
+                                    data-item-id="{{ s.item_id }}" data-item-nombre="{{ s.item.nombre }}"
+                                    data-bodega-id="{{ s.bodega_id }}" data-bodega-nombre="{{ s.bodega.nombre }}"
+                                    data-cantidad="{{ s.cantidad }}">
+                                <i class="fas fa-sliders"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-warehouse me-1"></i>
+                            Sin existencias todavía: se llenan con las
+                            <a href="{% url 'log_entradas_nueva' %}">entradas</a>.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="tablaStock_contador">0</span> de {{ filas|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="tablaStock_paginas"></ul></nav>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaStock' %}
+
+{# ── Modal de ajuste manual: registrar_ajuste recibe la cantidad FINAL ── #}
+{# (absoluta, no el delta) y exige motivo; el tipo AJUSTE_POS/NEG lo decide #}
+{# el servicio. #}
+<div class="modal fade" id="modalAjuste" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_ajuste_crear' %}" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="item_id" id="ajuste_item_id">
+            <input type="hidden" name="bodega_id" id="ajuste_bodega_id">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajustar stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">
+                    <strong id="ajuste_item_nombre"></strong> en <strong id="ajuste_bodega_nombre"></strong>
+                    — cantidad actual: <span class="badge bg-secondary" id="ajuste_actual"></span>
+                </p>
+                <div class="mb-2">
+                    <label class="form-label mb-1" for="ajuste_nueva">Nueva cantidad (valor final) *</label>
+                    <input type="number" name="nueva_cantidad" id="ajuste_nueva" class="form-control"
+                           min="0" step="1" required>
+                </div>
+                <div>
+                    <label class="form-label mb-1" for="ajuste_motivo">Motivo *</label>
+                    <input type="text" name="motivo" id="ajuste_motivo" class="form-control"
+                           maxlength="200" placeholder="Conteo físico, daño, pérdida…" required>
+                    <small class="text-muted">El motivo queda en el kardex (el ajuste no se puede editar ni borrar).</small>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-warning btn-sm fw-bold">
+                    <i class="fas fa-sliders me-1"></i> Ajustar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Modal: exportar existencias a Excel ── #}
+<div class="modal fade" id="modalExportarStock" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_stock_exportar' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar existencias</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label mb-1" for="exp_stock_bodega">Bodega</label>
+                    <select name="bodega" id="exp_stock_bodega" class="form-select">
+                        <option value="">Todas las bodegas</option>
+                        {% for b in bodegas %}
+                        <option value="{{ b.pk }}">{{ b.nombre }}{% if not b.activa %} (inactiva){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <small class="text-muted">
+                    Incluye el valor unitario referencial y el valor total estimado por fila.
+                </small>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirAjuste(btn) {
+    var d = btn.dataset;
+    document.getElementById('ajuste_item_id').value        = d.itemId;
+    document.getElementById('ajuste_bodega_id').value      = d.bodegaId;
+    document.getElementById('ajuste_item_nombre').textContent   = d.itemNombre;
+    document.getElementById('ajuste_bodega_nombre').textContent = d.bodegaNombre;
+    document.getElementById('ajuste_actual').textContent   = d.cantidad;
+    document.getElementById('ajuste_nueva').value          = d.cantidad;
+    document.getElementById('ajuste_motivo').value         = '';
+    new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+}
+</script>
+{% endblock %}

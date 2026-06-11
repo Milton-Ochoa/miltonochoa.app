@@ -1,0 +1,111 @@
+{% comment %}
+Líneas dinámicas de los documentos de inventario (patrón viaticos/_filas_gastos.html).
+Lo usan entradas/salidas/traslados (F4) y préstamos (F5, con bodega por línea).
+
+Parámetros (include ... with):
+  - items: queryset de artículos ACTIVOS para el select.
+  - lineas_previas: filas crudas del POST anterior (re-render tras error); lista de
+    dicts {item_id, cantidad[, bodega_id]}. Vacía → una fila en blanco.
+  - con_bodega: opcional; añade un select de bodega POR LÍNEA (préstamos, F5).
+  - bodegas: queryset de bodegas activas (solo si con_bodega).
+
+Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
+  name="linea_item" / name="linea_cantidad" [/ name="linea_bodega"] — listas paralelas.
+{% endcomment %}
+<div class="mb-3" id="lineas-widget">
+    <label class="form-label fw-bold">Artículos</label>
+    <div id="lineas-filas">
+        {% for l in lineas_previas %}
+        <div class="row g-2 mb-2 linea-fila">
+            <div class="{% if con_bodega %}col-5{% else %}col-8{% endif %}">
+                <select name="linea_item" class="form-select" required>
+                    <option value="">— Artículo —</option>
+                    {% for it in items %}
+                    <option value="{{ it.pk }}" {% if l.item_id == it.pk|stringformat:'s' %}selected{% endif %}>{{ it.codigo }} - {{ it.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if con_bodega %}
+            <div class="col-3">
+                <select name="linea_bodega" class="form-select" required>
+                    <option value="">— Bodega —</option>
+                    {% for b in bodegas %}
+                    <option value="{{ b.pk }}" {% if l.bodega_id == b.pk|stringformat:'s' %}selected{% endif %}>{{ b.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-3">
+                <input type="number" name="linea_cantidad" class="form-control" min="1" step="1" placeholder="Cantidad" value="{{ l.cantidad }}" required>
+            </div>
+            <div class="col-1 d-grid">
+                <button type="button" class="btn btn-outline-danger linea-quitar" title="Quitar línea">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="row g-2 mb-2 linea-fila">
+            <div class="{% if con_bodega %}col-5{% else %}col-8{% endif %}">
+                <select name="linea_item" class="form-select" required>
+                    <option value="">— Artículo —</option>
+                    {% for it in items %}
+                    <option value="{{ it.pk }}">{{ it.codigo }} - {{ it.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if con_bodega %}
+            <div class="col-3">
+                <select name="linea_bodega" class="form-select" required>
+                    <option value="">— Bodega —</option>
+                    {% for b in bodegas %}
+                    <option value="{{ b.pk }}">{{ b.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-3">
+                <input type="number" name="linea_cantidad" class="form-control" min="1" step="1" placeholder="Cantidad" required>
+            </div>
+            <div class="col-1 d-grid">
+                <button type="button" class="btn btn-outline-danger linea-quitar" title="Quitar línea">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="linea-agregar">
+        <i class="fas fa-plus me-1"></i> Agregar artículo
+    </button>
+</div>
+
+<script>
+(function () {
+    var filas   = document.getElementById('lineas-filas');
+    var agregar = document.getElementById('linea-agregar');
+    if (!filas || !agregar) return;
+
+    agregar.addEventListener('click', function () {
+        var base = filas.querySelector('.linea-fila');
+        var fila = base.cloneNode(true);
+        fila.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+        fila.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
+        filas.appendChild(fila);
+        fila.querySelector('select').focus();
+    });
+
+    filas.addEventListener('click', function (e) {
+        var btn = e.target.closest('.linea-quitar');
+        if (!btn) return;
+        // No dejar el formulario sin filas: si es la última, solo la vacía.
+        if (filas.querySelectorAll('.linea-fila').length > 1) {
+            btn.closest('.linea-fila').remove();
+        } else {
+            var fila = btn.closest('.linea-fila');
+            fila.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+            fila.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
+        }
+    });
+})();
+</script>

@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     'programacion.viaticos',
     'financiera.viaticos',
     'financiera.pagos',
+    'logistica.inventario',
 ]
 
 MIDDLEWARE = [
@@ -127,6 +128,7 @@ TEMPLATES = [
                 'financiera.viaticos.context_processors.viaticos_pendientes',
                 'financiera.pagos.context_processors.pagos_pendientes',
                 'programacion.pagos.context_processors.pagos_por_revisar',
+                'logistica.inventario.context_processors.alertas_inventario',
             ],
         },
     },

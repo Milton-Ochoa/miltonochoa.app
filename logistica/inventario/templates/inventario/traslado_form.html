@@ -1,0 +1,44 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Nuevo traslado{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <strong><i class="fas fa-right-left me-1 text-info"></i> Nuevo traslado</strong>
+                    <a href="{% url 'log_traslados_lista' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <form method="post" class="card-body">
+                    {% csrf_token %}
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label mb-1" for="id_bodega_origen">Bodega de origen *</label>
+                            {{ form.bodega_origen }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label mb-1" for="id_bodega_destino">Bodega de destino *</label>
+                            {{ form.bodega_destino }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label mb-1" for="id_observaciones">Observaciones</label>
+                            {{ form.observaciones }}
+                        </div>
+                    </div>
+
+                    {% include 'inventario/_lineas_doc.html' %}
+
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-info fw-bold">
+                            <i class="fas fa-save me-1"></i> Registrar traslado
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

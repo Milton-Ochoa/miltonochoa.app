@@ -30,6 +30,7 @@
 - [Arquitectura multi-área](#️-arquitectura-multi-área)
 - [Área Programación](#-área-programación)
 - [Área Financiera](#-área-financiera)
+- [Área Logística](#-área-logística)
 - [Stack tecnológico](#️-stack-tecnológico)
 - [Estructura del proyecto](#️-estructura-del-proyecto)
 - [Roles y control de acceso](#-roles-y-control-de-acceso)
@@ -54,7 +55,8 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
   una **única base de datos** y un **único sistema de usuarios**.
 - **Cada área es un subdominio.** El **apex** (`miltonochoa.app`) es el login único
   y el selector de área; cada área se sirve en su propio host
-  (`programacion.miltonochoa.app`, `financiera.miltonochoa.app`).
+  (`programacion.miltonochoa.app`, `financiera.miltonochoa.app`,
+  `logistica.miltonochoa.app`).
 - **Un solo login (SSO).** El usuario se autentica una vez en el apex y, según sus
   permisos, es redirigido al subdominio de su área. La sesión se comparte entre todos
   los subdominios vía `SESSION_COOKIE_DOMAIN`.
@@ -73,10 +75,11 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores y viáticos. |
 | **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badge de pendientes. Acceso por grupo `area:financiera`. |
-| **Logística** | `logistica.miltonochoa.app` | Placeholder | Reservada. Paquete creado, sin apps ni rutas todavía. |
+| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega: catálogos, entradas/salidas/traslados, kardex inmutable, préstamos bidireccionales con devolución parcial, dashboard con alertas y exports a Excel. Acceso por grupo `area:logistica`. |
 
-**Programación** y **Financiera** comparten el mismo *chrome* visual (sidebar, header, footer)
-definido en `templates/base_chrome.html`; cada área solo aporta su menú y títulos propios.
+**Programación**, **Financiera** y **Logística** comparten el mismo *chrome* visual (sidebar,
+header, footer) definido en `templates/base_chrome.html`; cada área solo aporta su menú y
+títulos propios.
 
 ---
 
@@ -86,15 +89,15 @@ El corazón de AAMO es el **enrutado por subdominio**: el mismo proyecto Django 
 todos los hosts, y un middleware elige qué `urlconf` montar según el subdominio de la petición.
 
 ```
-                         Cliente (navegador / PWA)
-                                     │  HTTP(S)
-        ┌────────────────────────────┼────────────────────────────┐
-        │                            │                            │
-        ▼                            ▼                            ▼
- miltonochoa.app          programacion.miltonochoa.app    financiera.miltonochoa.app
-   (APEX)                      (ÁREA programacion)          (ÁREA financiera)
-        │                            │                            │
-        └────────────────────────────┴────────────────────────────┘
+                              Cliente (navegador / PWA)
+                                          │  HTTP(S)
+        ┌─────────────────────┬───────────┴─────────┬─────────────────────┐
+        │                     │                     │                     │
+        ▼                     ▼                     ▼                     ▼
+ miltonochoa.app   programacion.miltonochoa…  financiera.miltonochoa…  logistica.miltonochoa…
+   (APEX)             (ÁREA programacion)       (ÁREA financiera)       (ÁREA logistica)
+        │                     │                     │                     │
+        └─────────────────────┴──────┬──────────────┴─────────────────────┘
                                      │
             ┌────────────────────────▼───────────────────────────┐
             │  core.middleware.EnrutadoPorAreaMiddleware         │
@@ -132,6 +135,7 @@ Vistas HTMX    Comandos manage   Caché (locmem)    Login/SSO         PWA (manif
 | [`core/urls.py`](core/urls.py) | **Apex**: `/` → selector de área, `/panel/` → panel del superusuario, `/usuarios/` → login, `/admin/`, PWA. |
 | [`core/urls_programacion.py`](core/urls_programacion.py) | **Área programación**: monta `programacion.urls` en la raíz `/` + login local + PWA. |
 | [`core/urls_financiera.py`](core/urls_financiera.py) | **Área financiera**: monta `financiera.urls` en la raíz `/` + login local + PWA. |
+| [`core/urls_logistica.py`](core/urls_logistica.py) | **Área logística**: monta `logistica.urls` en la raíz `/` + login local + PWA. |
 
 > **SSO entre subdominios:** la sesión y el CSRF se comparten vía
 > `SESSION_COOKIE_DOMAIN=.BASE_DOMAIN`. Un único login vale para todos los subdominios.
@@ -298,6 +302,55 @@ lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 
 ---
 
+## Área Logística
+
+El área **Logística** (`logistica.miltonochoa.app`) gestiona el **inventario** de la
+operación con la sub-app `logistica.inventario` (tablas con prefijo `log_`). Es un
+inventario **por cantidades** (sin seriales ni costos; el valor unitario de cada artículo
+es solo referencial para los exports), **multi-bodega** desde el día 1. Acceso por grupo
+`area:logistica`.
+
+### Catálogos y existencias
+
+- **Artículos** (código único, categoría, unidad de medida, stock mínimo), **bodegas**
+  (soft-delete con guard: no se desactivan con existencias), **categorías** y **terceros**
+  (destinatarios libres, con **alta al vuelo** desde los formularios de documentos).
+- **Existencias** por artículo × bodega, con resaltado de los artículos **bajo mínimo**
+  (mínimo global por artículo, suma de bodegas) y ajuste manual desde un modal
+  (cantidad absoluta + motivo obligatorio).
+
+### Movimientos (kardex inmutable)
+
+- **Entradas** (con proveedor y **adjuntos** PDF/JPG/PNG ≤ 10 MB, descarga siempre
+  proxiada), **salidas** (a tercero o texto libre, con motivo) y **traslados** entre
+  bodegas (atómicos: salida en origen + entrada en destino).
+- Todo movimiento queda en un **ledger append-only** (`Movimiento`): nunca se edita ni
+  se borra; los errores se corrigen con contramovimiento o ajuste. Cada fila guarda el
+  **saldo resultante** → kardex por artículo con saldo, filtrable por bodega y rango.
+- El stock se actualiza **solo** vía servicios transaccionales (`services.py`, con lock
+  pesimista en PostgreSQL); si una línea falla, no se escribe nada.
+
+### Préstamos bidireccionales
+
+- **Otorgados** (prestamos nosotros: descuenta stock al crear, lo restituye al devolver)
+  y **recibidos** (nos prestan: suma stock al crear, lo descuenta al devolver), con
+  fecha compromiso, **devolución parcial o total** por línea y estados
+  ABIERTO → PARCIAL → CERRADO.
+- Los documentos guardan **snapshot** del tercero → sobreviven a su borrado.
+- La lista resalta los **vencidos** (ambas direcciones) y distingue "Prestamos" / "Nos
+  prestan" con badge.
+
+### Dashboard, alertas y exports
+
+- **Dashboard** en el home: artículos activos, unidades totales, bajo mínimo, "nos
+  deben" / "debemos devolver" (con sus vencidos) y últimos movimientos.
+- **Badges** en el menú: Existencias (artículos bajo mínimo) y Préstamos (vencidos).
+- **Exports a Excel** con filtros: existencias (por bodega, con valor referencial),
+  movimientos (histórico completo, por tipo y rango) y préstamos (dirección/estado/solo
+  vencidos, con totales prestado/devuelto/pendiente).
+
+---
+
 ## Stack tecnológico
 
 <table>
@@ -334,6 +387,7 @@ AAMO/
 │   ├── urls.py              #   APEX: login, selector de área, /panel/, /admin/, PWA
 │   ├── urls_programacion.py #   urlconf del subdominio del área programación
 │   ├── urls_financiera.py   #   urlconf del subdominio del área financiera
+│   ├── urls_logistica.py    #   urlconf del subdominio del área logística
 │   └── views.py             #   seleccion_area, panel_admin, vista_general, búsqueda
 │
 ├── usuarios/               # GLOBAL: login único, perfiles, middleware de acceso, rate-limit
@@ -357,11 +411,16 @@ AAMO/
 │                            #   + proyección de pagos (clases programadas, solo lectura)
 │                            #   (sin modelos propios — importa de programacion.pagos)
 │
-├── logistica/              # PLACEHOLDER de área futura (solo __init__.py + README)
+├── logistica/              # ÁREA logística (logistica.miltonochoa.app)
+│   ├── urls.py              #   router del área (raíz /): inventario
+│   └── inventario/          #   Inventario multi-bodega (label log_inventario, tablas log_*):
+│                            #   catálogos, kardex append-only, stock por servicios
+│                            #   transaccionales, préstamos bidireccionales, dashboard + exports
 │
 ├── templates/              # Globales: base_chrome.html (chrome compartido), base.html
 │                           #   (menú programación), base_financiera.html (menú financiera),
-│                           #   base_apex.html (apex), home, 404, 500, login, sw.js
+│                           #   base_logistica.html (menú logística), base_apex.html (apex),
+│                           #   home, 404, 500, login, sw.js
 │
 ├── manage.py               # Entry point Django (apunta a core.settings)
 ├── requirements.txt        # Dependencias de producción
@@ -398,7 +457,8 @@ comparte en `.miltonochoa.app` (**SSO**).
 | **Gestor colegio** | `UsuarioColegio` (OneToOne) | `/colegios/`, `/informes/` |
 | **Profesor** | `UsuarioProfesor` (OneToOne) | `/profesores/`, `/informes/` — con menú propio (Cronograma · Informes · Pagos*) |
 
-> El **staff de área financiera** (grupo `area:financiera`) accede a `financiera.miltonochoa.app`.
+> El **staff de área financiera** (grupo `area:financiera`) accede a `financiera.miltonochoa.app`
+> y el **staff de área logística** (grupo `area:logistica`) a `logistica.miltonochoa.app`.
 
 **Contraseñas (dos flujos):**
 - **Colegios/profesores:** el staff asigna la contraseña a mano al crear y al resetear.
@@ -479,6 +539,7 @@ python manage.py runserver
 | `http://lvh.me:8000/` | **Apex**: login único + selector de área + panel del superusuario |
 | `http://programacion.lvh.me:8000/` | **Área Programación** |
 | `http://financiera.lvh.me:8000/` | **Área Financiera** |
+| `http://logistica.lvh.me:8000/` | **Área Logística** |
 
 Abre `http://lvh.me:8000` → login en `/usuarios/login/` → tras entrar, el sistema
 redirige al subdominio del área del usuario (o al `/panel/` si es superusuario).
@@ -525,6 +586,7 @@ python manage.py test
 python manage.py test colegios
 python manage.py test usuarios
 python manage.py test financiera.viaticos
+python manage.py test logistica.inventario
 
 # Cobertura (requiere coverage)
 coverage run --source='.' manage.py test
@@ -532,7 +594,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 430 tests OK.**
+**Baseline actual: 587 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -600,6 +662,7 @@ Añade el apex y cada área en *Settings → Networking → Custom Domain* de Ra
 | `miltonochoa.app` (apex) | destino de Railway |
 | `programacion.miltonochoa.app` | destino de Railway |
 | `financiera.miltonochoa.app` | destino de Railway |
+| `logistica.miltonochoa.app` | destino de Railway |
 
 Railway emite el certificado TLS por dominio automáticamente. Todos los hosts llegan a la
 **misma** app; `EnrutadoPorAreaMiddleware` decide el área por el subdominio.
@@ -616,15 +679,18 @@ mantener las alertas frescas; la vista de Auditoría también las reconcilia al 
 
 ## Añadir una nueva área
 
-AAMO está diseñado para crecer por áreas. Para activar `logistica` (o cualquier otra):
+AAMO está diseñado para crecer por áreas. Para activar una nueva (`<area>`) — el área
+`logistica` se activó exactamente así y sirve de referencia:
 
-1. **Crea las sub-apps** dentro del paquete del área (`logistica/`), igual que en
-   `programacion/` (cada `apps.py` con `name='logistica.<app>'` y su `label`).
-2. **Crea su `urlconf`** (p. ej. `core/urls_logistica.py`) que monte sus rutas en la raíz `/`.
+1. **Crea las sub-apps** dentro del paquete del área (`<area>/`), igual que en
+   `programacion/` (cada `apps.py` con `name='<area>.<app>'` y su `label`).
+2. **Crea su `urlconf`** (p. ej. `core/urls_<area>.py`) que monte sus rutas en la raíz `/`.
 3. **Regístrala** en [`core/areas.py`](core/areas.py) añadiendo una entrada a `AREAS`
    (`slug`, `nombre`, `urlconf`, `landing`) y, en `areas_del_usuario`, su condición de acceso.
-4. **Crea el grupo de permisos** `area:logistica` (la "etiqueta" de staff del área).
-5. **Añade su subdominio** `logistica.miltonochoa.app` en Railway (DNS + TLS).
+4. **Crea el grupo de permisos** `area:<area>` (la "etiqueta" de staff del área) con una
+   migración de datos en `usuarios/` y añádelo a `GRUPOS_ETIQUETA` para que el panel del
+   apex gestione sus empleados.
+5. **Añade su subdominio** `<area>.miltonochoa.app` en Railway (DNS + TLS).
 
 El middleware de enrutado y el SSO funcionan sin más cambios.
 
@@ -678,7 +744,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 430 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 587 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.

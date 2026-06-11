@@ -1,0 +1,137 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Movimientos (kardex global){% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarMovs">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input, .tabla-inv tr.fila-filtros th select {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+<div class="container-fluid py-3">
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0 tabla-inv" id="tablaMovs">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 12%;">Fecha</th>
+                        <th style="width: 15%;">Tipo</th>
+                        <th style="width: 9%;">Código</th>
+                        <th style="width: 19%;">Artículo</th>
+                        <th style="width: 12%;">Bodega</th>
+                        <th style="width: 7%; text-align: right;">Cantidad</th>
+                        <th style="width: 7%; text-align: right;">Saldo</th>
+                        <th style="width: 19%;">Detalle</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
+                        <th>
+                            {# El value es el CÓDIGO del tipo (no la etiqueta): el filtro es por #}
+                            {# substring y "Salida" haría match con "Traslado (salida)". #}
+                            <select data-filtro="tipo">
+                                <option value="">Todos</option>
+                                {% for valor, etiqueta in tipos %}
+                                <option value="{{ valor|lower }}">{{ etiqueta }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th><input type="text" data-filtro="codigo"></th>
+                        <th><input type="text" data-filtro="articulo"></th>
+                        <th><input type="text" data-filtro="bodega"></th>
+                        <th></th>
+                        <th></th>
+                        <th><input type="text" data-filtro="detalle"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in movimientos %}
+                    <tr data-fila
+                        data-fecha="{{ m.creado_en|date:'Y-m-d' }}"
+                        data-tipo="{{ m.tipo|lower }}"
+                        data-codigo="{{ m.item.codigo|lower }}"
+                        data-articulo="{{ m.item.nombre|lower }}"
+                        data-bodega="{{ m.bodega.nombre|lower }}"
+                        data-detalle="{{ m.detalle|lower }}">
+                        <td>{{ m.creado_en|date:'Y-m-d H:i' }}</td>
+                        <td>{{ m.get_tipo_display }}</td>
+                        <td>{{ m.item.codigo }}</td>
+                        <td>
+                            <a href="{% url 'log_item_kardex' m.item_id %}" title="Kardex del artículo">{{ m.item.nombre }}</a>
+                        </td>
+                        <td>{{ m.bodega.nombre }}</td>
+                        <td class="text-end fw-bold {% if m.delta > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if m.delta > 0 %}+{% endif %}{{ m.delta }}
+                        </td>
+                        <td class="text-end">{{ m.saldo_resultante }}</td>
+                        <td class="small text-muted">{{ m.detalle }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            <i class="fas fa-right-left me-1"></i> El ledger está vacío: registra una entrada para empezar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">
+                Mostrando <span id="tablaMovs_contador">0</span> de {{ movimientos|length }}
+                (últimos {{ tope }} movimientos; el histórico completo sale por "Exportar a Excel").
+            </small>
+            <nav><ul class="pagination pagination-sm mb-0" id="tablaMovs_paginas"></ul></nav>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaMovs' %}
+
+{# ── Modal: exportar el ledger COMPLETO (sin el cap de la vista) ── #}
+<div class="modal fade" id="modalExportarMovs" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_movimientos_exportar' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar movimientos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="fw-semibold mb-2">Tipos a incluir <small class="text-muted fw-normal">(ninguno = todos)</small></p>
+                <div class="mb-3" style="columns: 2;">
+                    {% for valor, etiqueta in tipos %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="tipos" value="{{ valor }}" id="expTipo{{ valor }}">
+                        <label class="form-check-label" for="expTipo{{ valor }}">{{ etiqueta }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="fw-semibold mb-2">Rango de fechas <small class="text-muted fw-normal">(opcional)</small></p>
+                <div class="row g-2">
+                    <div class="col">
+                        <label class="form-label mb-1" for="exp_movs_desde">Desde</label>
+                        <input type="date" name="desde" id="exp_movs_desde" class="form-control">
+                    </div>
+                    <div class="col">
+                        <label class="form-label mb-1" for="exp_movs_hasta">Hasta</label>
+                        <input type="date" name="hasta" id="exp_movs_hasta" class="form-control">
+                    </div>
+                </div>
+                <small class="text-muted">Exporta el histórico completo en orden cronológico (con saldo por fila).</small>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

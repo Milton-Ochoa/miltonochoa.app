@@ -1,0 +1,122 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Nueva salida{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <strong><i class="fas fa-arrow-up me-1 text-danger"></i> Nueva salida</strong>
+                    <a href="{% url 'log_salidas_lista' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <form method="post" class="card-body">
+                    {% csrf_token %}
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-5">
+                            <label class="form-label mb-1" for="id_bodega">Bodega *</label>
+                            {{ form.bodega }}
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label mb-1" for="id_tercero">Tercero (destinatario)</label>
+                            <div class="input-group">
+                                {{ form.tercero }}
+                                <button type="button" class="btn btn-outline-primary" title="Crear tercero"
+                                        data-bs-toggle="modal" data-bs-target="#modalTerceroRapido">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label mb-1" for="id_motivo">Motivo</label>
+                            {{ form.motivo }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label mb-1" for="id_observaciones">Observaciones</label>
+                            {{ form.observaciones }}
+                        </div>
+                    </div>
+
+                    {% include 'inventario/_lineas_doc.html' %}
+
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-danger fw-bold">
+                            <i class="fas fa-save me-1"></i> Registrar salida
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Alta de tercero al vuelo (AJAX de F3) sin abandonar el documento ── #}
+<div class="modal fade" id="modalTerceroRapido" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nuevo tercero</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger py-2 d-none" id="terceroRapidoError"></div>
+                <div class="row g-2">
+                    <div class="col-12">
+                        <label class="form-label mb-1">Nombre *</label>
+                        <input type="text" class="form-control" id="terceroRapidoNombre" maxlength="200">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1">Documento</label>
+                        <input type="text" class="form-control" id="terceroRapidoDocumento" maxlength="50">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1">Teléfono</label>
+                        <input type="text" class="form-control" id="terceroRapidoTelefono" maxlength="50">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success btn-sm fw-bold" id="terceroRapidoCrear">
+                    <i class="fas fa-save me-1"></i> Crear y seleccionar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('terceroRapidoCrear').addEventListener('click', function () {
+    var errorEl = document.getElementById('terceroRapidoError');
+    errorEl.classList.add('d-none');
+
+    var datos = new FormData();
+    datos.append('nombre', document.getElementById('terceroRapidoNombre').value.trim());
+    datos.append('documento', document.getElementById('terceroRapidoDocumento').value.trim());
+    datos.append('telefono', document.getElementById('terceroRapidoTelefono').value.trim());
+    datos.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+    fetch("{% url 'log_tercero_ajax_crear' %}", { method: 'POST', body: datos })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.ok) {
+                errorEl.textContent = d.error;
+                errorEl.classList.remove('d-none');
+                return;
+            }
+            var sel = document.getElementById('id_tercero');
+            sel.add(new Option(d.tercero.label, d.tercero.id, true, true));
+            bootstrap.Modal.getInstance(document.getElementById('modalTerceroRapido')).hide();
+            ['Nombre', 'Documento', 'Telefono'].forEach(function (c) {
+                document.getElementById('terceroRapido' + c).value = '';
+            });
+        })
+        .catch(function () {
+            errorEl.textContent = 'Error de red: inténtalo de nuevo.';
+            errorEl.classList.remove('d-none');
+        });
+});
+</script>
+{% endblock %}

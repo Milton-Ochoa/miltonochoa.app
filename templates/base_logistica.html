@@ -1,0 +1,91 @@
+{% extends 'base_chrome.html' %}
+
+{% comment %}
+   Área LOGÍSTICA: mismo chrome que programación (base_chrome.html); solo cambia
+   el menú lateral y los títulos. El menú es gated por `request.es_personal_logistica`
+   (lo fija usuarios.middleware en peticiones del subdominio logistica).
+{% endcomment %}
+
+{% block doc_title %}Logística AAMO{% endblock %}
+{% block brand_title %}Logística AAMO{% endblock %}
+
+{% block sidebar_menu %}
+        {% if request.es_personal_logistica %}
+        {# ── Inicio ── #}
+        <a href="{% url 'log_home' %}" class="nav-item {% if request.resolver_match.url_name == 'log_home' %}active{% endif %}">
+            <i class="fas fa-home icon-main"></i> Inicio
+        </a>
+
+        {# ── Artículos ── #}
+        <a href="{% url 'log_items_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_items_lista' %}active{% endif %}">
+            <i class="fas fa-box icon-main text-warning"></i> Artículos
+        </a>
+
+        {# ── Existencias ── (badge = artículos bajo mínimo, vía context processor alertas_inventario) #}
+        <a href="{% url 'log_stock' %}" class="nav-item {% if request.resolver_match.url_name == 'log_stock' %}active{% endif %}">
+            <i class="fas fa-warehouse icon-main text-info"></i> Existencias
+            {% if inv_bajo_minimo_count %}
+            <span class="badge bg-danger nav-badge">{{ inv_bajo_minimo_count }}</span>
+            {% endif %}
+        </a>
+
+        {# ── Terceros ── #}
+        <a href="{% url 'log_terceros' %}" class="nav-item {% if request.resolver_match.url_name == 'log_terceros' %}active{% endif %}">
+            <i class="fas fa-address-book icon-main text-danger"></i> Terceros
+        </a>
+
+        {# Catálogos (desplegable): bodegas + categorías #}
+        <a href="#collapseCatalogosLog" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="catalogos_log"
+           aria-expanded="{% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}true{% else %}false{% endif %}">
+            <span><i class="fas fa-tags icon-main text-secondary"></i> Catálogos</span>
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
+        </a>
+        <div class="collapse {% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}show{% endif %}" id="collapseCatalogosLog">
+            <div class="collapse-inner py-1 bg-dark">
+                <a href="{% url 'log_bodegas' %}" class="{% if request.resolver_match.url_name == 'log_bodegas' %}active{% endif %}">
+                    <i class="fas fa-warehouse" style="width: 20px; text-align: center; margin-right: 8px;"></i> Bodegas
+                </a>
+                <a href="{% url 'log_categorias' %}" class="{% if request.resolver_match.url_name == 'log_categorias' %}active{% endif %}">
+                    <i class="fas fa-tag" style="width: 20px; text-align: center; margin-right: 8px;"></i> Categorías
+                </a>
+            </div>
+        </div>
+
+        {# Movimientos (desplegable): entradas, salidas, traslados + ledger #}
+        {% with u=request.resolver_match.url_name %}
+        <a href="#collapseMovsLog" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="movimientos_log"
+           aria-expanded="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}true{% else %}false{% endif %}">
+            <span><i class="fas fa-right-left icon-main text-success"></i> Movimientos</span>
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
+        </a>
+        <div class="collapse {% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}show{% endif %}" id="collapseMovsLog">
+            <div class="collapse-inner py-1 bg-dark">
+                <a href="{% url 'log_entradas_lista' %}" class="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' %}active{% endif %}">
+                    <i class="fas fa-arrow-down" style="width: 20px; text-align: center; margin-right: 8px;"></i> Entradas
+                </a>
+                <a href="{% url 'log_salidas_lista' %}" class="{% if u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' %}active{% endif %}">
+                    <i class="fas fa-arrow-up" style="width: 20px; text-align: center; margin-right: 8px;"></i> Salidas
+                </a>
+                <a href="{% url 'log_traslados_lista' %}" class="{% if u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' %}active{% endif %}">
+                    <i class="fas fa-right-left" style="width: 20px; text-align: center; margin-right: 8px;"></i> Traslados
+                </a>
+                <a href="{% url 'log_movimientos' %}" class="{% if u == 'log_movimientos' %}active{% endif %}">
+                    <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Kardex global
+                </a>
+            </div>
+        </div>
+        {% endwith %}
+
+        {# ── Préstamos (bidireccionales) ── (badge = vencidos en ambas direcciones) #}
+        <a href="{% url 'log_prestamos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_prestamos_lista' or request.resolver_match.url_name == 'log_prestamos_nuevo' or request.resolver_match.url_name == 'log_prestamos_detalle' %}active{% endif %}">
+            <i class="fas fa-handshake icon-main text-primary"></i> Préstamos
+            {% if inv_prestamos_vencidos_count %}
+            <span class="badge bg-danger nav-badge">{{ inv_prestamos_vencidos_count }}</span>
+            {% endif %}
+        </a>
+        {% endif %}
+{% endblock %}
