@@ -723,14 +723,14 @@
 </script>
 
 {% comment %}
-  Mensajes de Django como toast (abajo-derecha, auto-cierre). Solo en programación; en
-  financiera se iteran (consumen) sin mostrarse —allí no debe aparecer ninguna notificación—.
-  En el apex (sin request.area) no se tocan, para no consumir los del login.
+  Mensajes de Django como toast (abajo-derecha, auto-cierre). En programación y logística;
+  en financiera se iteran (consumen) sin mostrarse —allí no debe aparecer ninguna
+  notificación—. En el apex (sin request.area) no se tocan, para no consumir los del login.
 {% endcomment %}
 {% if messages and request.area %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  {% for message in messages %}{% if request.area == 'programacion' %}
+  {% for message in messages %}{% if request.area == 'programacion' or request.area == 'logistica' %}
   showBootstrapToast("{{ message|escapejs }}", "{% if 'error' in message.tags %}danger{% elif 'warning' in message.tags %}warning{% elif 'success' in message.tags %}success{% else %}info{% endif %}");
   {% endif %}{% endfor %}
 });

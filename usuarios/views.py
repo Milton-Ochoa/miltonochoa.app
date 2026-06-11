@@ -20,7 +20,8 @@ from .ratelimit import rate_limit
 from programacion.configuracion.models import Colegio, Profesor
 from core.areas import (
     AREAS, url_apex, url_en_area, host_apex, host_de_area,
-    GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, es_personal_programacion,
+    GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA,
+    es_personal_programacion,
 )
 
 # Áreas cuyos usuarios de etiqueta se gestionan desde el panel del apex: slug → grupo.
@@ -28,6 +29,7 @@ from core.areas import (
 GRUPOS_ETIQUETA = {
     'programacion': GRUPO_STAFF_PROGRAMACION,
     'financiera': GRUPO_STAFF_FINANCIERA,
+    'logistica': GRUPO_STAFF_LOGISTICA,
 }
 
 logger = logging.getLogger('aamo')

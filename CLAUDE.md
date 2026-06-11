@@ -80,12 +80,13 @@ Un **único proyecto Django** organizado por **áreas**, cada una servida en su
 según permisos, a qué subdominio/área redirige al usuario.
 
 - **Dominio:** `miltonochoa.app`. Apex = login único + selector de área.
-- **Áreas activas hoy:** `programacion/` → `programacion.miltonochoa.app` y
-  `financiera/` → `financiera.miltonochoa.app` (ambas en la raíz `/` de su subdominio,
-  **ya no** `/programacion/`).
-- **Placeholder futuro:** `logistica/` → `logistica.…`.
-- Dev: `BASE_DOMAIN=lvh.me` → `lvh.me:8000` (apex), `programacion.lvh.me:8000` y
-  `financiera.lvh.me:8000` (áreas).
+- **Áreas activas hoy:** `programacion/` → `programacion.miltonochoa.app`,
+  `financiera/` → `financiera.miltonochoa.app` y `logistica/` →
+  `logistica.miltonochoa.app` (todas en la raíz `/` de su subdominio,
+  **ya no** `/programacion/`). OJO: el subdominio `logistica` debe existir en el
+  DNS de Cloudflare antes del primer deploy del área a prod.
+- Dev: `BASE_DOMAIN=lvh.me` → `lvh.me:8000` (apex), `programacion.lvh.me:8000`,
+  `financiera.lvh.me:8000` y `logistica.lvh.me:8000` (áreas).
 - Deploy: push a `main` → Railway (auto). BD en Supabase (PostgreSQL).
 
 ## Rendimiento y concurrencia en producción (IMPORTANTE)
@@ -126,16 +127,19 @@ sin medir):
 AAMO/
 ├── core/              # Motor: settings, middleware (enrutado por subdominio),
 │   │                  #   areas.py (registro + URLs entre hosts), urls.py (apex),
-│   │                  #   urls_programacion.py + urls_financiera.py (áreas), PWA, errores
+│   │                  #   urls_programacion.py + urls_financiera.py + urls_logistica.py (áreas),
+│   │                  #   PWA, errores
 ├── usuarios/          # GLOBAL: login único, perfiles, middleware de acceso, ratelimit
 ├── programacion/      # ÁREA: paquete Python con urls.py + sus sub-apps
 │   ├── urls.py        #   agrupa las rutas del área en la RAÍZ de su subdominio
 │   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
-├── logistica/         # placeholder
+├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; inventario en
+│   │                  #   construcción por fases — hoy solo landing log_home; tablas futuras log_*)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
-│   │                  #   base_financiera (menú financiera), base_apex (lobby), home, 404/500, login, sw.js
+│   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
+│   │                  #   base_apex (lobby), home, 404/500, login, sw.js
 └── backups/           # AAMO_export.xlsx (respaldo de BD)
 ```
 
@@ -405,6 +409,14 @@ checkboxes de tipo y rango de fechas). Tests en
     confirmar. El panel del apex (`panel_admin.html`) muestra el correo y permite editarlo
     (`ajax_editar_usuario_area`). Solo los empleados tienen `PerfilEmpleado`, así que
     superusuarios y perfiles colegio/profesor nunca son forzados a cambiar.
+- **Área logística:** acceso por grupo `area:logistica` (o superusuario), espejo exacto de
+  financiera. Predicado `core.areas.es_personal_logistica`; gate de vistas
+  `logistica.inventario.permisos.solo_logistica`; `request.es_personal_logistica` (lo fija el
+  middleware) controla el menú en `base_logistica.html`. Sus usuarios de etiqueta se gestionan
+  desde el panel del apex (`GRUPOS_ETIQUETA` incluye `logistica`; mismo flujo de empleados con
+  `PerfilEmpleado` y cambio de clave forzado). El **inventario** (sub-app
+  `logistica.inventario`, label `log_inventario`, tablas futuras `log_*`) se construye por
+  fases; hoy solo existe la landing `log_home`. Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -546,10 +558,11 @@ checkboxes de tipo y rango de fechas). Tests en
   efímeros y `console.log` no sirve para errores intermitentes en producción. (No usa el envoltorio htmx
   porque htmx va por XHR; el dashboard pesado usa `fetch` directo, que sí se instrumenta.)
 - **Mensajes (notificaciones):** los `messages` de Django se renderizan como **toast** (abajo-derecha,
-  auto-cierre) en `base_chrome.html`, **solo en programación** (`request.area == 'programacion'`). En
-  **financiera no aparece ninguna notificación**: el loop de `messages` igual los itera (los consume)
-  para que no se acumulen ni se filtren entre subdominios por la sesión compartida (SSO). El apex no se
-  toca. **No** dejar bloques `{% if messages %}` en plantillas de financiera.
+  auto-cierre) en `base_chrome.html`, en **programación y logística** (`request.area == 'programacion'
+  or request.area == 'logistica'`). En **financiera no aparece ninguna notificación**: el loop de
+  `messages` igual los itera (los consume) para que no se acumulen ni se filtren entre subdominios por
+  la sesión compartida (SSO). El apex no se toca. **No** dejar bloques `{% if messages %}` en plantillas
+  de financiera ni de logística.
 - **Soporte de pago (`viaticos.SoportePago` y `pagos.SoportePagoProfesor`):** archivos adjuntos al viático (varios por
   solicitud/pago, con historial: quién subió qué y cuándo). Dos modelos paralelos: `SoportePago`
   (FK→`SolicitudViatico`, tabla `prog_viaticos_soportes`; campo `tipo` `PAGO`/`LEGALIZACION`,

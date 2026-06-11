@@ -1,0 +1,43 @@
+{% extends 'base_chrome.html' %}
+
+{% comment %}
+   Área LOGÍSTICA: mismo chrome que programación (base_chrome.html); solo cambia
+   el menú lateral y los títulos. El menú es gated por `request.es_personal_logistica`
+   (lo fija usuarios.middleware en peticiones del subdominio logistica).
+{% endcomment %}
+
+{% block doc_title %}Logística AAMO{% endblock %}
+{% block brand_title %}Logística AAMO{% endblock %}
+
+{% block sidebar_menu %}
+        {% if request.es_personal_logistica %}
+        {# ── Inicio ── #}
+        <a href="{% url 'log_home' %}" class="nav-item {% if request.resolver_match.url_name == 'log_home' %}active{% endif %}">
+            <i class="fas fa-home icon-main"></i> Inicio
+        </a>
+
+        {# Resto del inventario: se activan por fases (artículos/existencias en F3, #}
+        {# movimientos en F4, préstamos en F5). Mientras tanto, ítems inertes — #}
+        {# patrón "Monitores" de base_financiera. #}
+        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+           style="cursor: not-allowed; opacity: .55;">
+            <i class="fas fa-box icon-main text-warning"></i> Artículos
+            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
+        </a>
+        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+           style="cursor: not-allowed; opacity: .55;">
+            <i class="fas fa-warehouse icon-main text-info"></i> Existencias
+            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
+        </a>
+        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+           style="cursor: not-allowed; opacity: .55;">
+            <i class="fas fa-right-left icon-main text-success"></i> Movimientos
+            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
+        </a>
+        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
+           style="cursor: not-allowed; opacity: .55;">
+            <i class="fas fa-handshake icon-main text-primary"></i> Préstamos
+            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
+        </a>
+        {% endif %}
+{% endblock %}
