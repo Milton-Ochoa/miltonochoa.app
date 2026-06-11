@@ -40,6 +40,14 @@ urlpatterns = [
     path('traslados/nuevo/', views.traslado_nuevo, name='log_traslados_nuevo'),
     path('traslados/<int:pk>/', views.traslado_detalle, name='log_traslados_detalle'),
 
+    # Préstamos (bidireccionales) y devoluciones
+    path('prestamos/', views.prestamos_lista, name='log_prestamos_lista'),
+    path('prestamos/nuevo/', views.prestamo_nuevo, name='log_prestamos_nuevo'),
+    path('prestamos/<int:pk>/', views.prestamo_detalle,
+         name='log_prestamos_detalle'),
+    path('prestamos/<int:pk>/devolver/', views.prestamo_devolver,
+         name='log_prestamo_devolver'),
+
     # Kardex y ledger global
     path('articulos/<int:pk>/kardex/', views.item_kardex, name='log_item_kardex'),
     path('movimientos/', views.movimientos, name='log_movimientos'),

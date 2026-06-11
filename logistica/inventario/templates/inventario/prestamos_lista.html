@@ -1,0 +1,107 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Préstamos{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_prestamos_nuevo' %}" class="btn btn-primary btn-sm fw-bold">
+    <i class="fas fa-plus me-1"></i> Nuevo préstamo
+</a>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+<div class="container-fluid py-3">
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaPrestamos">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 5%;">#</th>
+                        <th style="width: 12%;">Fecha</th>
+                        <th style="width: 13%;">Dirección</th>
+                        <th style="width: 20%;">Tercero</th>
+                        <th style="width: 11%;">Compromiso</th>
+                        <th style="width: 12%;">Estado</th>
+                        <th style="width: 7%; text-align: right;">Prestado</th>
+                        <th style="width: 7%; text-align: right;">Pendiente</th>
+                        <th style="width: 9%;">Registró</th>
+                        <th style="width: 4%;"></th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th></th>
+                        <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
+                        <th><input type="text" data-filtro="direccion" placeholder="prestamos / nos prestan"></th>
+                        <th><input type="text" data-filtro="tercero"></th>
+                        <th><input type="text" data-filtro="vencido" placeholder="vencido: sí/no"></th>
+                        <th><input type="text" data-filtro="estado"></th>
+                        <th></th>
+                        <th></th>
+                        <th><input type="text" data-filtro="usuario"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in prestamos %}
+                    <tr data-fila
+                        data-fecha="{{ p.creado_en|date:'Y-m-d' }}"
+                        data-direccion="{{ p.get_direccion_display|lower }}"
+                        data-tercero="{{ p.tercero_nombre|lower }}"
+                        data-vencido="{% if p.vencido %}sí si{% else %}no{% endif %}"
+                        data-estado="{{ p.get_estado_display|lower }}"
+                        data-usuario="{{ p.creado_por.username|lower }}"
+                        {% if p.vencido %}class="table-danger"{% endif %}>
+                        <td class="fw-bold">{{ p.pk }}</td>
+                        <td>{{ p.creado_en|date:'Y-m-d H:i' }}</td>
+                        <td>
+                            {% if p.direccion == 'OTORGADO' %}
+                            <span class="badge bg-primary" title="Nosotros prestamos: el tercero nos debe el material.">Prestamos</span>
+                            {% else %}
+                            <span class="badge bg-info text-dark" title="Nos prestan: debemos devolver el material.">Nos prestan</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ p.tercero_nombre }}</td>
+                        <td>
+                            {{ p.fecha_compromiso|date:'Y-m-d' }}
+                            {% if p.vencido %}<span class="badge bg-danger">Vencido</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if p.estado == 'CERRADO' %}
+                            <span class="badge bg-success">{{ p.get_estado_display }}</span>
+                            {% elif p.estado == 'PARCIAL' %}
+                            <span class="badge bg-warning text-dark">{{ p.get_estado_display }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ p.get_estado_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ p.prestado }}</td>
+                        <td class="text-end fw-bold">{{ p.pendiente_total }}</td>
+                        <td>{{ p.creado_por.username|default:'—' }}</td>
+                        <td>
+                            <a href="{% url 'log_prestamos_detalle' p.pk %}" class="btn btn-outline-primary btn-sm" title="Ver detalle">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">
+                            <i class="fas fa-handshake me-1"></i> Sin préstamos registrados todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="tablaPrestamos_contador">0</span> de {{ prestamos|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="tablaPrestamos_paginas"></ul></nav>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaPrestamos' %}
+{% endblock %}
