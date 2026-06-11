@@ -76,10 +76,10 @@
             </div>
         </div>
         {% endwith %}
-        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-           style="cursor: not-allowed; opacity: .55;">
+
+        {# ── Préstamos (bidireccionales) ── #}
+        <a href="{% url 'log_prestamos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_prestamos_lista' or request.resolver_match.url_name == 'log_prestamos_nuevo' or request.resolver_match.url_name == 'log_prestamos_detalle' %}active{% endif %}">
             <i class="fas fa-handshake icon-main text-primary"></i> Préstamos
-            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
         </a>
         {% endif %}
 {% endblock %}

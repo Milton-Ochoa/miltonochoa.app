@@ -13,7 +13,7 @@ viáticos. Los documentos los crean SIEMPRE los servicios, nunca un form.save().
 """
 from django import forms
 
-from .models import Bodega, Categoria, Item, Tercero
+from .models import Bodega, Categoria, Item, Prestamo, Tercero
 
 
 class _BootstrapMixin:
@@ -141,6 +141,26 @@ class TrasladoForm(_BootstrapForm):
             raise forms.ValidationError(
                 'La bodega de origen y la de destino deben ser distintas.')
         return cleaned
+
+
+class PrestamoForm(_BootstrapForm):
+    # OTORGADO descuenta stock al crear; RECIBIDO lo suma (nos prestan) y la
+    # fecha compromiso pasa a ser cuándo debemos devolver NOSOTROS. El texto
+    # de ayuda vive en el template (prestamo_form.html).
+    direccion = forms.ChoiceField(label='Dirección',
+                                  choices=Prestamo.Direccion.choices,
+                                  initial=Prestamo.Direccion.OTORGADO)
+    tercero = forms.ModelChoiceField(label='Tercero', queryset=None,
+                                     empty_label='— Tercero —')
+    fecha_compromiso = forms.DateField(
+        label='Fecha compromiso',
+        widget=forms.DateInput(attrs={'type': 'date'}))
+    observaciones = forms.CharField(label='Observaciones', required=False,
+                                    widget=forms.Textarea(attrs={'rows': 2}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['tercero'].queryset = Tercero.objects.filter(activo=True)
 
 
 def parsear_lineas(post, *, con_bodega=False):

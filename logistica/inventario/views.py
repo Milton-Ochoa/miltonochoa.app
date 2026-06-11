@@ -11,13 +11,15 @@ from django.views.decorators.http import require_POST
 
 from .adjuntos import validar_adjunto
 from .forms import (BodegaForm, CategoriaForm, EntradaForm, ItemForm,
-                    SalidaForm, TerceroForm, TrasladoForm, parsear_lineas)
+                    PrestamoForm, SalidaForm, TerceroForm, TrasladoForm,
+                    parsear_lineas)
 from .models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
-                     Movimiento, Salida, Stock, Tercero, Traslado)
+                     Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
-from .services import (StockInsuficiente, items_bajo_minimo, kardex,
-                       registrar_ajuste, registrar_entrada, registrar_salida,
-                       registrar_traslado)
+from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
+                       items_bajo_minimo, kardex, registrar_ajuste,
+                       registrar_devolucion, registrar_entrada,
+                       registrar_salida, registrar_traslado)
 
 
 @solo_logistica
@@ -220,11 +222,13 @@ def stock(request):
 # lo digitado; en éxito, POST-redirect al detalle con toast.
 # ---------------------------------------------------------------------------
 
-def _lineas_previas(post):
+def _lineas_previas(post, *, con_bodega=False):
     """Las líneas crudas del POST, para repintar `_lineas_doc.html` tras un error."""
-    return [{'item_id': i, 'cantidad': c}
-            for i, c in zip(post.getlist('linea_item'),
-                            post.getlist('linea_cantidad'))]
+    items = post.getlist('linea_item')
+    cantidades = post.getlist('linea_cantidad')
+    bodegas = post.getlist('linea_bodega') if con_bodega else [''] * len(items)
+    return [{'item_id': i, 'cantidad': c, 'bodega_id': b}
+            for i, c, b in zip(items, cantidades, bodegas)]
 
 
 def _items_para_lineas():
@@ -408,6 +412,101 @@ def traslado_detalle(request, pk):
         .prefetch_related('lineas__item'), pk=pk)
     return render(request, 'inventario/traslado_detalle.html',
                   {'traslado': traslado})
+
+
+# ---------------------------------------------------------------------------
+# Préstamos y devoluciones (Fase 5)
+# ---------------------------------------------------------------------------
+
+@solo_logistica
+def prestamos_lista(request):
+    lista = (Prestamo.objects.select_related('tercero', 'creado_por')
+             .annotate(prestado=Coalesce(models.Sum('lineas__cantidad_prestada'), 0),
+                       pendiente_total=Coalesce(
+                           models.Sum(models.F('lineas__cantidad_prestada')
+                                      - models.F('lineas__cantidad_devuelta')), 0))
+             .order_by('-creado_en'))
+    return render(request, 'inventario/prestamos_lista.html', {'prestamos': lista})
+
+
+@solo_logistica
+def prestamo_nuevo(request):
+    form = PrestamoForm(request.POST or None)
+    if request.method == 'POST':
+        try:
+            if not form.is_valid():
+                _form_a_messages(request, form)
+                raise ValueError('')  # cae al re-render conservando las líneas
+            lineas = parsear_lineas(request.POST, con_bodega=True)
+            prestamo = crear_prestamo(
+                tercero=form.cleaned_data['tercero'],
+                fecha_compromiso=form.cleaned_data['fecha_compromiso'],
+                lineas=lineas, usuario=request.user,
+                direccion=form.cleaned_data['direccion'],
+                observaciones=form.cleaned_data['observaciones'])
+        except (ValueError, StockInsuficiente) as e:
+            if str(e):
+                messages.error(request, str(e))
+        else:
+            messages.success(request, f'Préstamo #{prestamo.pk} registrado.')
+            return redirect('log_prestamos_detalle', pk=prestamo.pk)
+    return render(request, 'inventario/prestamo_form.html', {
+        'form': form,
+        'items': _items_para_lineas(),
+        'bodegas': Bodega.objects.filter(activa=True).order_by('nombre'),
+        'lineas_previas': (_lineas_previas(request.POST, con_bodega=True)
+                           if request.method == 'POST' else []),
+    })
+
+
+@solo_logistica
+def prestamo_detalle(request, pk):
+    prestamo = get_object_or_404(
+        Prestamo.objects.select_related('tercero', 'creado_por')
+        .prefetch_related('lineas__item', 'lineas__bodega',
+                          'devoluciones__creado_por',
+                          'devoluciones__movimientos__item',
+                          'devoluciones__movimientos__bodega'), pk=pk)
+    return render(request, 'inventario/prestamo_detalle.html',
+                  {'prestamo': prestamo})
+
+
+@require_POST
+@solo_logistica
+def prestamo_devolver(request, pk):
+    """Devolución (parcial o total) desde el modal del detalle. El POST trae
+    listas paralelas `dev_linea_id`/`dev_cantidad` (una fila por línea del
+    préstamo); las cantidades vacías o en 0 se ignoran — devolver "algo de
+    algunas líneas" es el caso normal de la devolución parcial."""
+    prestamo = get_object_or_404(Prestamo, pk=pk)
+    lineas_por_pk = {str(l.pk): l for l in prestamo.lineas.all()}
+    lineas = []
+    try:
+        for linea_id, cant in zip(request.POST.getlist('dev_linea_id'),
+                                  request.POST.getlist('dev_cantidad')):
+            cant = cant.strip()
+            if not cant or cant == '0':
+                continue
+            linea = lineas_por_pk.get(linea_id)
+            if linea is None:
+                raise ErrorDevolucion('La línea no pertenece a este préstamo.')
+            try:
+                cantidad = int(cant)
+            except ValueError:
+                raise ErrorDevolucion(
+                    f'Cantidad inválida para "{linea.item.nombre}".')
+            lineas.append((linea, cantidad))
+        devolucion = registrar_devolucion(
+            prestamo=prestamo, lineas=lineas, usuario=request.user,
+            observaciones=request.POST.get('observaciones', ''))
+    except (ErrorDevolucion, StockInsuficiente) as e:
+        messages.error(request, str(e))
+    else:
+        unidades = sum(c for _, c in lineas)
+        messages.success(
+            request,
+            f'Devolución #{devolucion.pk} registrada ({unidades} unidades).')
+    return redirect('log_prestamos_detalle', pk=prestamo.pk)
 
 
 # ---------------------------------------------------------------------------

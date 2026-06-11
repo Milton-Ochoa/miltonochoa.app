@@ -137,7 +137,8 @@ AAMO/
 │   │                  #   importa los de programacion.viaticos)
 ├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
 │   │                  #   servicios de dominio listos — tablas log_*; UI de catálogos,
-│   │                  #   existencias y movimientos activa; préstamos en construcción)
+│   │                  #   existencias, movimientos y préstamos activa; dashboard y
+│   │                  #   exports en construcción)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -303,6 +304,15 @@ Reglas de oro (NO romper):
   SIEMPRE proxiados (`log_entrada_adjunto_descargar`, `?inline=1` abre en pestaña), nunca
   por URL firmada. El ledger global (`log_movimientos`) muestra los últimos 500; el
   histórico completo saldrá por el export de la F6.
+- **UI de préstamos (F5):** alta con `PrestamoForm` (cabecera: dirección con texto de ayuda
+  dinámico, tercero obligatorio —con alta al vuelo, mismo modal del AJAX de F3—, fecha
+  compromiso) + `_lineas_doc.html` con `con_bodega=True` (líneas item+bodega+cantidad,
+  parseadas con `parsear_lineas(..., con_bodega=True)`); mismo patrón de re-render en error.
+  La **devolución** va por modal en el detalle (`log_prestamo_devolver`, POST con listas
+  paralelas `dev_linea_id`/`dev_cantidad` — solo se envían las líneas con pendiente > 0;
+  vacío/0 = esa línea no devuelve): NO pide bodega (opera sobre la de cada línea) y el
+  estado PARCIAL/CERRADO lo recalcula el servicio. La lista resalta vencidos (ambas
+  direcciones) y distingue con badge "Prestamos"/"Nos prestan".
 - En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
@@ -485,9 +495,11 @@ checkboxes de tipo y rango de fechas). Tests en
   existencias `log_stock`) y la **UI de movimientos** (entradas con adjuntos
   `log_entradas_*`/`log_entrada_adjunto_*`, salidas `log_salidas_*` —con alta de tercero al
   vuelo—, traslados `log_traslados_*`, kardex por artículo `log_item_kardex`, ledger global
-  `log_movimientos` y ajuste manual `log_ajuste_crear` desde el modal de existencias); la UI
-  de préstamos llega en la fase 5 (ver sección _Inventario de logística_ abajo).
-  Ver `logistica/README.md`.
+  `log_movimientos` y ajuste manual `log_ajuste_crear` desde el modal de existencias) y la
+  **UI de préstamos** (lista `log_prestamos_lista`, alta `log_prestamos_nuevo` —dirección
+  OTORGADO/RECIBIDO, líneas item+bodega+cantidad—, detalle `log_prestamos_detalle` con modal
+  de devolución parcial/total `log_prestamo_devolver`); el dashboard, badges y exports llegan
+  en la fase 6 (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -677,7 +689,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 541 tests OK
+python manage.py test                        # baseline: 566 tests OK
 python manage.py runserver
 ```
 
