@@ -135,8 +135,8 @@ AAMO/
 │   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
-├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; inventario en
-│   │                  #   construcción por fases — hoy solo landing log_home; tablas futuras log_*)
+├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
+│   │                  #   servicios de dominio listos — tablas log_*; UI en construcción por fases)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -208,8 +208,9 @@ limpio, en **plural snake_case**. Convención obligatoria al crear un modelo nue
 
 - **Modelos del área `programacion`:** prefijo `prog_` → `prog_<plural>`
   (ej. `prog_colegios`, `prog_clases_personalizadas`, `prog_historial_cambios`).
-  El prefijo agrupa las tablas del área en el navegador de BD y reserva el
-  namespace para cuando convivan `logistica`/`financiera`.
+  El prefijo agrupa las tablas del área en el navegador de BD.
+- **Modelos del área `logistica`:** prefijo `log_` → `log_<plural>` (ver la tabla en
+  la sección _Inventario de logística_).
 - **Modelos globales (`usuarios/`):** prefijo de dominio propio (`usuarios_…`),
   sin `prog_`, porque no pertenecen al área (login único / SSO).
 - Las tablas internas de Django (`auth_*`, `django_*`) no se tocan.
@@ -241,6 +242,56 @@ Registro actual (modelo → tabla):
   `prog_alertas_auditoria_colegios_implicados`. No requiere operación manual.
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
+
+## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
+
+Sistema de inventario por cantidades (sin seriales ni costos: el kardex es de
+**cantidades**, `Item.valor_unitario` es solo referencial para exports). Multi-bodega,
+préstamos **bidireccionales** (`Prestamo.direccion`: OTORGADO = prestamos nosotros,
+RECIBIDO = nos prestan) con devolución parcial, y ajustes con motivo obligatorio.
+Modelos en `logistica/inventario/models.py` (migración `log_inventario.0001_initial`):
+
+| Modelo | Tabla | | Modelo | Tabla |
+|---|---|---|---|---|
+| `Categoria` | `log_categorias` | | `Salida` | `log_salidas` |
+| `Bodega` | `log_bodegas` | | `SalidaLinea` | `log_salidas_lineas` |
+| `Item` | `log_articulos` | | `Traslado` | `log_traslados` |
+| `Tercero` | `log_terceros` | | `TrasladoLinea` | `log_traslados_lineas` |
+| `Stock` | `log_stock` | | `Prestamo` | `log_prestamos` |
+| `Movimiento` | `log_movimientos` | | `PrestamoLinea` | `log_prestamos_lineas` |
+| `Entrada` | `log_entradas` | | `Devolucion` | `log_prestamos_devoluciones` |
+| `EntradaLinea` | `log_entradas_lineas` | | | |
+| `AdjuntoEntrada` | `log_entradas_adjuntos` | | | |
+
+Reglas de oro (NO romper):
+
+- **`Movimiento` es un ledger append-only** (kardex): jamás vistas de edición/borrado;
+  los errores se corrigen con contramovimiento/ajuste. Cada fila guarda
+  `saldo_resultante` (saldo de item×bodega tras aplicar, calculado bajo lock) → kardex
+  con saldo sin window functions. `cantidad` siempre > 0; el signo lo da el `tipo`
+  (property `delta`). FK `PROTECT` a su documento de origen.
+- **`Stock` (denormalizado por item×bodega) SOLO lo escriben los servicios** de
+  `logistica/inventario/services.py` — única puerta de escritura, las vistas nunca lo
+  tocan directo. Todo es `transaction.atomic` con `select_for_update` (no-op en
+  SQLite/dev/tests; la exclusión real solo existe en PostgreSQL — la última barrera es
+  el CHECK ≥ 0 de `PositiveIntegerField`). Si una línea falla, NADA queda escrito.
+- **Servicios:** `registrar_entrada(bodega, lineas=[(Item, cant)], usuario, proveedor='',
+  observaciones='')`, `registrar_salida(bodega, lineas, usuario, tercero=None,
+  tercero_nombre='', motivo='', observaciones='')`, `registrar_traslado(bodega_origen,
+  bodega_destino, lineas, usuario, observaciones='')` (TRASLADO_SAL + TRASLADO_ENT
+  atómicos), `crear_prestamo(tercero, fecha_compromiso, lineas=[(Item, Bodega, cant)],
+  usuario, direccion=OTORGADO, observaciones='')`, `registrar_devolucion(prestamo,
+  lineas=[(PrestamoLinea, cant)], usuario, observaciones='')` (opera sobre la bodega de
+  cada línea; recalcula estado PARCIAL/CERRADO), `registrar_ajuste(item, bodega,
+  nueva_cantidad, usuario, motivo)` (motivo obligatorio). Todos keyword-only. Excepciones
+  de dominio: `StockInsuficiente` (item/bodega/disponible/solicitado) y `ErrorDevolucion`
+  → las vistas las traducen a `messages.error`. Consultas: `kardex(item, bodega=None,
+  desde=None, hasta=None)`, `items_bajo_minimo()` (mínimo **global** por item, suma de
+  bodegas; 0 = sin alerta), `prestamos_vencidos()` (ambas direcciones).
+- **Snapshots de texto** (patrón `CancelacionClase`): `Salida.tercero_nombre`,
+  `Prestamo.tercero_nombre/_documento` — los documentos sobreviven al borrado del
+  `Tercero` (FK `SET_NULL`).
+- En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 
@@ -415,8 +466,9 @@ checkboxes de tipo y rango de fechas). Tests en
   middleware) controla el menú en `base_logistica.html`. Sus usuarios de etiqueta se gestionan
   desde el panel del apex (`GRUPOS_ETIQUETA` incluye `logistica`; mismo flujo de empleados con
   `PerfilEmpleado` y cambio de clave forzado). El **inventario** (sub-app
-  `logistica.inventario`, label `log_inventario`, tablas futuras `log_*`) se construye por
-  fases; hoy solo existe la landing `log_home`. Ver `logistica/README.md`.
+  `logistica.inventario`, label `log_inventario`, tablas `log_*`) se construye por fases;
+  hoy existen la landing `log_home` y el **dominio completo sin UI**: modelos + servicios
+  transaccionales (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -606,7 +658,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 430 tests OK
+python manage.py test                        # baseline: 485 tests OK
 python manage.py runserver
 ```
 
@@ -649,7 +701,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (430 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (485 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
