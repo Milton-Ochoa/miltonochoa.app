@@ -6,23 +6,42 @@
 
 ## Estado
 
-- Arranque del área: subdominio funcional con el mismo *chrome* que programación
-  (sidebar, header, footer; ver `templates/base_chrome.html` /
-  `templates/base_logistica.html`). Landing `log_home` (placeholder).
-- **Inventario**: en construcción por fases. Próximas entregas: modelos y servicios
-  de dominio (kardex inmutable + stock por bodega), catálogos (artículos, bodegas,
-  categorías, terceros), entradas/salidas/traslados, préstamos bidireccionales con
-  devolución parcial, dashboard con alertas y exports a Excel.
+- Área **completa y funcional** (fases 1-6 cerradas): subdominio con el mismo
+  *chrome* que programación (sidebar, header, footer; ver
+  `templates/base_chrome.html` / `templates/base_logistica.html`).
+- **Dashboard** (`log_home`): tarjetas (artículos activos, unidades totales, bajo
+  mínimo, "Nos deben" / "Debemos devolver" con sus vencidos) + últimos 10
+  movimientos. Badges en el menú (Existencias = items bajo mínimo, Préstamos =
+  vencidos) vía el context processor `alertas_inventario`.
+- **Catálogos**: artículos (`log_items_lista`), bodegas/categorías (bajo
+  `/catalogos/`), terceros (con alta AJAX al vuelo) y existencias (`log_stock`).
+- **Movimientos**: entradas (con adjuntos PDF/JPG/PNG ≤10 MB, descarga proxiada),
+  salidas, traslados entre bodegas, kardex por artículo y ledger global
+  (últimos 500; el histórico completo sale por el export). Ajuste manual con
+  motivo obligatorio desde el modal de existencias.
+- **Préstamos bidireccionales** (`Prestamo.direccion`): OTORGADO (prestamos
+  nosotros, descuenta stock) y RECIBIDO (nos prestan, suma stock), con
+  devolución parcial/total por modal en el detalle y resaltado de vencidos.
+- **Exports a Excel** (openpyxl, desde modales con filtros): existencias,
+  movimientos (histórico completo) y préstamos.
 
 ## Cómo está montada
 
 - `logistica/urls.py` → `include('logistica.inventario.urls')` en la raíz `/`.
 - `logistica/inventario/` (label `log_inventario`) es la sub-app del inventario.
-  Sus tablas (cuando existan) usan el prefijo `log_` en `Meta.db_table`.
+  Sus tablas usan el prefijo `log_` en `Meta.db_table` (registro completo en
+  la sección _Inventario de logística_ de `CLAUDE.md`).
+- **Reglas de oro del dominio** (detalle en `CLAUDE.md`): `Movimiento` es un
+  ledger **append-only** (kardex; los errores se corrigen con
+  contramovimiento/ajuste, jamás edición/borrado) y `Stock` (denormalizado por
+  item×bodega) **solo lo escriben los servicios** de
+  `logistica/inventario/services.py` (transaccionales, `select_for_update`).
+  Las vistas nunca tocan Stock/Movimiento directo.
 - Registro del área en `core/areas.py` (`AREAS['logistica']`); urlconf del
   subdominio en `core/urls_logistica.py`; la sub-app en `INSTALLED_APPS`.
 - Los `messages` de Django se muestran como **toast** en esta área (mismo
   mecanismo que programación, en `templates/base_chrome.html`).
+- En `/admin/` todo está registrado; `Movimiento` y `Stock` son solo lectura.
 
 ## Acceso
 
