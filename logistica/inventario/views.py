@@ -1,15 +1,23 @@
+import os
+from datetime import date
+
 from django.contrib import messages
 from django.db import models
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import BodegaForm, CategoriaForm, ItemForm, TerceroForm
-from .models import Bodega, Categoria, Item, Stock, Tercero
+from .adjuntos import validar_adjunto
+from .forms import (BodegaForm, CategoriaForm, EntradaForm, ItemForm,
+                    SalidaForm, TerceroForm, TrasladoForm, parsear_lineas)
+from .models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
+                     Movimiento, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
-from .services import items_bajo_minimo
+from .services import (StockInsuficiente, items_bajo_minimo, kardex,
+                       registrar_ajuste, registrar_entrada, registrar_salida,
+                       registrar_traslado)
 
 
 @solo_logistica
@@ -200,3 +208,283 @@ def stock(request):
         'items_alerta': alertas,
         'bajo_minimo_ids': {item.pk for item in alertas},
     })
+
+
+# ---------------------------------------------------------------------------
+# Documentos: entradas, salidas, traslados (Fase 4)
+#
+# Patrón común: la cabecera la valida un form, las líneas las parsea
+# `parsear_lineas` y el documento lo crea SIEMPRE el servicio de dominio
+# (atómico: si una línea falla, nada queda escrito). En error se re-renderiza
+# el form con las líneas que traía el POST (`lineas_previas`) para no perder
+# lo digitado; en éxito, POST-redirect al detalle con toast.
+# ---------------------------------------------------------------------------
+
+def _lineas_previas(post):
+    """Las líneas crudas del POST, para repintar `_lineas_doc.html` tras un error."""
+    return [{'item_id': i, 'cantidad': c}
+            for i, c in zip(post.getlist('linea_item'),
+                            post.getlist('linea_cantidad'))]
+
+
+def _items_para_lineas():
+    return Item.objects.filter(activo=True).order_by('nombre')
+
+
+@solo_logistica
+def entradas_lista(request):
+    lista = (Entrada.objects.select_related('bodega', 'creado_por')
+             .annotate(n_lineas=models.Count('lineas', distinct=True),
+                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0))
+             .order_by('-creado_en'))
+    return render(request, 'inventario/entradas_lista.html', {'entradas': lista})
+
+
+@solo_logistica
+def entrada_nueva(request):
+    form = EntradaForm(request.POST or None)
+    if request.method == 'POST':
+        try:
+            if not form.is_valid():
+                _form_a_messages(request, form)
+                raise ValueError('')  # cae al re-render conservando las líneas
+            lineas = parsear_lineas(request.POST)
+            entrada = registrar_entrada(
+                bodega=form.cleaned_data['bodega'], lineas=lineas,
+                usuario=request.user,
+                proveedor=form.cleaned_data['proveedor'],
+                observaciones=form.cleaned_data['observaciones'])
+        except ValueError as e:
+            if str(e):
+                messages.error(request, str(e))
+        else:
+            messages.success(request, f'Entrada #{entrada.pk} registrada.')
+            return redirect('log_entradas_detalle', pk=entrada.pk)
+    return render(request, 'inventario/entrada_form.html', {
+        'form': form,
+        'items': _items_para_lineas(),
+        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+    })
+
+
+@solo_logistica
+def entrada_detalle(request, pk):
+    entrada = get_object_or_404(
+        Entrada.objects.select_related('bodega', 'creado_por')
+        .prefetch_related('lineas__item', 'adjuntos__subido_por'), pk=pk)
+    return render(request, 'inventario/entrada_detalle.html', {'entrada': entrada})
+
+
+@require_POST
+@solo_logistica
+def entrada_adjunto_subir(request, pk):
+    entrada = get_object_or_404(Entrada, pk=pk)
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        messages.error(request, 'Selecciona un archivo para subir.')
+        return redirect('log_entradas_detalle', pk=entrada.pk)
+    error = validar_adjunto(archivo)
+    if error:
+        messages.error(request, error)
+        return redirect('log_entradas_detalle', pk=entrada.pk)
+    AdjuntoEntrada.objects.create(
+        entrada=entrada, archivo=archivo,
+        nombre_original=archivo.name[:255], subido_por=request.user)
+    messages.success(request, 'Adjunto subido.')
+    return redirect('log_entradas_detalle', pk=entrada.pk)
+
+
+@require_POST
+@solo_logistica
+def entrada_adjunto_eliminar(request, adjunto_id):
+    adjunto = get_object_or_404(AdjuntoEntrada, pk=adjunto_id)
+    entrada_pk = adjunto.entrada_id
+    # Primero el archivo del storage, luego la fila (patrón soportes de pago).
+    adjunto.archivo.delete(save=False)
+    adjunto.delete()
+    messages.success(request, 'Adjunto eliminado.')
+    return redirect('log_entradas_detalle', pk=entrada_pk)
+
+
+@solo_logistica
+def entrada_adjunto_descargar(request, adjunto_id):
+    """Descarga proxiada por el backend de storage (disco o S3): el gate de
+    permiso queda server-side y NUNCA se exponen URLs firmadas. `?inline=1`
+    abre en pestaña; por defecto descarga."""
+    adjunto = get_object_or_404(AdjuntoEntrada, pk=adjunto_id)
+    nombre = os.path.basename(adjunto.archivo.name)
+    return FileResponse(adjunto.archivo.open('rb'),
+                        as_attachment=request.GET.get('inline') != '1',
+                        filename=nombre)
+
+
+@solo_logistica
+def salidas_lista(request):
+    lista = (Salida.objects.select_related('bodega', 'creado_por')
+             .annotate(n_lineas=models.Count('lineas', distinct=True),
+                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0))
+             .order_by('-creado_en'))
+    return render(request, 'inventario/salidas_lista.html', {'salidas': lista})
+
+
+@solo_logistica
+def salida_nueva(request):
+    form = SalidaForm(request.POST or None)
+    if request.method == 'POST':
+        try:
+            if not form.is_valid():
+                _form_a_messages(request, form)
+                raise ValueError('')
+            lineas = parsear_lineas(request.POST)
+            salida = registrar_salida(
+                bodega=form.cleaned_data['bodega'], lineas=lineas,
+                usuario=request.user,
+                tercero=form.cleaned_data['tercero'],
+                motivo=form.cleaned_data['motivo'],
+                observaciones=form.cleaned_data['observaciones'])
+        except (ValueError, StockInsuficiente) as e:
+            if str(e):
+                messages.error(request, str(e))
+        else:
+            messages.success(request, f'Salida #{salida.pk} registrada.')
+            return redirect('log_salidas_detalle', pk=salida.pk)
+    return render(request, 'inventario/salida_form.html', {
+        'form': form,
+        'items': _items_para_lineas(),
+        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+    })
+
+
+@solo_logistica
+def salida_detalle(request, pk):
+    salida = get_object_or_404(
+        Salida.objects.select_related('bodega', 'tercero', 'creado_por')
+        .prefetch_related('lineas__item'), pk=pk)
+    return render(request, 'inventario/salida_detalle.html', {'salida': salida})
+
+
+@solo_logistica
+def traslados_lista(request):
+    lista = (Traslado.objects
+             .select_related('bodega_origen', 'bodega_destino', 'creado_por')
+             .annotate(n_lineas=models.Count('lineas', distinct=True),
+                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0))
+             .order_by('-creado_en'))
+    return render(request, 'inventario/traslados_lista.html', {'traslados': lista})
+
+
+@solo_logistica
+def traslado_nuevo(request):
+    form = TrasladoForm(request.POST or None)
+    if request.method == 'POST':
+        try:
+            if not form.is_valid():
+                _form_a_messages(request, form)
+                raise ValueError('')
+            lineas = parsear_lineas(request.POST)
+            traslado = registrar_traslado(
+                bodega_origen=form.cleaned_data['bodega_origen'],
+                bodega_destino=form.cleaned_data['bodega_destino'],
+                lineas=lineas, usuario=request.user,
+                observaciones=form.cleaned_data['observaciones'])
+        except (ValueError, StockInsuficiente) as e:
+            if str(e):
+                messages.error(request, str(e))
+        else:
+            messages.success(request, f'Traslado #{traslado.pk} registrado.')
+            return redirect('log_traslados_detalle', pk=traslado.pk)
+    return render(request, 'inventario/traslado_form.html', {
+        'form': form,
+        'items': _items_para_lineas(),
+        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+    })
+
+
+@solo_logistica
+def traslado_detalle(request, pk):
+    traslado = get_object_or_404(
+        Traslado.objects.select_related('bodega_origen', 'bodega_destino',
+                                        'creado_por')
+        .prefetch_related('lineas__item'), pk=pk)
+    return render(request, 'inventario/traslado_detalle.html',
+                  {'traslado': traslado})
+
+
+# ---------------------------------------------------------------------------
+# Kardex, ledger global y ajustes
+# ---------------------------------------------------------------------------
+
+def _fecha_get(request, nombre):
+    try:
+        return date.fromisoformat(request.GET.get(nombre, ''))
+    except ValueError:
+        return None
+
+
+@solo_logistica
+def item_kardex(request, pk):
+    """Kardex de un artículo: movimientos en orden cronológico con el saldo
+    por fila que dejó cada uno (`saldo_resultante`). Filtros server-side por
+    bodega y rango de fechas (van por GET, son compartibles por URL)."""
+    item = get_object_or_404(Item, pk=pk)
+    bodega_id = request.GET.get('bodega', '')
+    bodega = Bodega.objects.filter(pk=bodega_id).first() if bodega_id.isdigit() else None
+    desde, hasta = _fecha_get(request, 'desde'), _fecha_get(request, 'hasta')
+    movimientos = (kardex(item, bodega=bodega, desde=desde, hasta=hasta)
+                   .select_related('creado_por'))
+    return render(request, 'inventario/kardex.html', {
+        'item': item,
+        'movimientos': movimientos,
+        # Todas las bodegas (también inactivas): pueden tener historial.
+        'bodegas': Bodega.objects.order_by('nombre'),
+        'bodega_sel': bodega,
+        'desde': desde,
+        'hasta': hasta,
+    })
+
+
+# El ledger crece sin tope; la vista muestra los últimos N y el export de la
+# Fase 6 será la vía para extraer el histórico completo con filtros.
+MOVIMIENTOS_MAX_FILAS = 500
+
+
+@solo_logistica
+def movimientos(request):
+    lista = (Movimiento.objects
+             .select_related('item', 'bodega', 'creado_por')
+             .order_by('-creado_en', '-id')[:MOVIMIENTOS_MAX_FILAS])
+    return render(request, 'inventario/movimientos.html', {
+        'movimientos': lista,
+        'tope': MOVIMIENTOS_MAX_FILAS,
+        'tipos': Movimiento.Tipo.choices,
+    })
+
+
+@require_POST
+@solo_logistica
+def ajuste_crear(request):
+    """Ajuste manual desde el modal de existencias. `registrar_ajuste` recibe
+    la cantidad FINAL (absoluta) y exige motivo; el delta y el tipo de
+    movimiento (AJUSTE_POS/NEG) los resuelve el servicio."""
+    item_id = request.POST.get('item_id', '')
+    bodega_id = request.POST.get('bodega_id', '')
+    if not (item_id.isdigit() and bodega_id.isdigit()):
+        messages.error(request, 'Ajuste inválido: faltan el artículo o la bodega.')
+        return redirect('log_stock')
+    item = get_object_or_404(Item, pk=item_id)
+    bodega = get_object_or_404(Bodega, pk=bodega_id)
+    try:
+        nueva_cantidad = int(request.POST.get('nueva_cantidad', '').strip())
+    except ValueError:
+        messages.error(request, 'La nueva cantidad debe ser un número entero.')
+        return redirect('log_stock')
+    try:
+        registrar_ajuste(item=item, bodega=bodega,
+                         nueva_cantidad=nueva_cantidad, usuario=request.user,
+                         motivo=request.POST.get('motivo', ''))
+        messages.success(
+            request,
+            f'Stock de "{item.nombre}" en "{bodega.nombre}" ajustado a {nueva_cantidad}.')
+    except ValueError as e:
+        messages.error(request, str(e))
+    return redirect('log_stock')

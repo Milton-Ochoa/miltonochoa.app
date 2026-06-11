@@ -30,14 +30,16 @@
                         <th style="width: 34%;">Artículo</th>
                         <th style="width: 16%;">Categoría</th>
                         <th style="width: 18%;">Bodega</th>
-                        <th style="width: 10%; text-align: right;">Cantidad</th>
-                        <th style="width: 10%; text-align: right;">Mínimo global</th>
+                        <th style="width: 9%; text-align: right;">Cantidad</th>
+                        <th style="width: 9%; text-align: right;">Mínimo global</th>
+                        <th style="width: 8%;"></th>
                     </tr>
                     <tr class="fila-filtros">
                         <th><input type="text" data-filtro="codigo"></th>
                         <th><input type="text" data-filtro="nombre"></th>
                         <th><input type="text" data-filtro="categoria"></th>
                         <th><input type="text" data-filtro="bodega"></th>
+                        <th></th>
                         <th></th>
                         <th></th>
                     </tr>
@@ -60,12 +62,26 @@
                         <td>{{ s.bodega.nombre }}</td>
                         <td class="text-end fw-bold">{{ s.cantidad }}</td>
                         <td class="text-end">{% if s.item.stock_minimo %}{{ s.item.stock_minimo }}{% else %}—{% endif %}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{% url 'log_item_kardex' s.item_id %}?bodega={{ s.bodega_id }}"
+                               class="btn btn-outline-secondary btn-sm" title="Kardex en esta bodega">
+                                <i class="fas fa-book"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-warning btn-sm" title="Ajustar stock"
+                                    onclick="abrirAjuste(this)"
+                                    data-item-id="{{ s.item_id }}" data-item-nombre="{{ s.item.nombre }}"
+                                    data-bodega-id="{{ s.bodega_id }}" data-bodega-nombre="{{ s.bodega.nombre }}"
+                                    data-cantidad="{{ s.cantidad }}">
+                                <i class="fas fa-sliders"></i>
+                            </button>
+                        </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
+                        <td colspan="7" class="text-center text-muted py-4">
                             <i class="fas fa-warehouse me-1"></i>
-                            Sin existencias todavía: se llenan con las entradas (Fase 4).
+                            Sin existencias todavía: se llenan con las
+                            <a href="{% url 'log_entradas_nueva' %}">entradas</a>.
                         </td>
                     </tr>
                     {% endfor %}
@@ -80,4 +96,58 @@
     </div>
 </div>
 {% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaStock' %}
+
+{# ── Modal de ajuste manual: registrar_ajuste recibe la cantidad FINAL ── #}
+{# (absoluta, no el delta) y exige motivo; el tipo AJUSTE_POS/NEG lo decide #}
+{# el servicio. #}
+<div class="modal fade" id="modalAjuste" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_ajuste_crear' %}" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="item_id" id="ajuste_item_id">
+            <input type="hidden" name="bodega_id" id="ajuste_bodega_id">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajustar stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">
+                    <strong id="ajuste_item_nombre"></strong> en <strong id="ajuste_bodega_nombre"></strong>
+                    — cantidad actual: <span class="badge bg-secondary" id="ajuste_actual"></span>
+                </p>
+                <div class="mb-2">
+                    <label class="form-label mb-1" for="ajuste_nueva">Nueva cantidad (valor final) *</label>
+                    <input type="number" name="nueva_cantidad" id="ajuste_nueva" class="form-control"
+                           min="0" step="1" required>
+                </div>
+                <div>
+                    <label class="form-label mb-1" for="ajuste_motivo">Motivo *</label>
+                    <input type="text" name="motivo" id="ajuste_motivo" class="form-control"
+                           maxlength="200" placeholder="Conteo físico, daño, pérdida…" required>
+                    <small class="text-muted">El motivo queda en el kardex (el ajuste no se puede editar ni borrar).</small>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-warning btn-sm fw-bold">
+                    <i class="fas fa-sliders me-1"></i> Ajustar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirAjuste(btn) {
+    var d = btn.dataset;
+    document.getElementById('ajuste_item_id').value        = d.itemId;
+    document.getElementById('ajuste_bodega_id').value      = d.bodegaId;
+    document.getElementById('ajuste_item_nombre').textContent   = d.itemNombre;
+    document.getElementById('ajuste_bodega_nombre').textContent = d.bodegaNombre;
+    document.getElementById('ajuste_actual').textContent   = d.cantidad;
+    document.getElementById('ajuste_nueva').value          = d.cantidad;
+    document.getElementById('ajuste_motivo').value         = '';
+    new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+}
+</script>
 {% endblock %}

@@ -136,8 +136,8 @@ AAMO/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
 ├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
-│   │                  #   servicios de dominio listos — tablas log_*; UI de catálogos y
-│   │                  #   existencias activa; movimientos/préstamos en construcción por fases)
+│   │                  #   servicios de dominio listos — tablas log_*; UI de catálogos,
+│   │                  #   existencias y movimientos activa; préstamos en construcción)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -292,6 +292,17 @@ Reglas de oro (NO romper):
 - **Snapshots de texto** (patrón `CancelacionClase`): `Salida.tercero_nombre`,
   `Prestamo.tercero_nombre/_documento` — los documentos sobreviven al borrado del
   `Tercero` (FK `SET_NULL`).
+- **UI de documentos (F4):** las vistas de entradas/salidas/traslados validan la cabecera
+  con un form (`EntradaForm`/`SalidaForm`/`TrasladoForm` en `forms.py`) y las líneas con
+  `forms.parsear_lineas` (lee las listas paralelas `linea_item`/`linea_cantidad` —y
+  `linea_bodega` con `con_bodega=True`, para préstamos— del parcial compartido
+  `inventario/_lineas_doc.html`); el documento lo crea SIEMPRE el servicio. En error se
+  re-renderiza el form conservando las líneas del POST; en éxito, POST-redirect al detalle.
+  El ajuste va por modal en `stock.html` (pide cantidad ABSOLUTA + motivo). Los **adjuntos de
+  entrada** se validan con `adjuntos.validar_adjunto` (PDF/JPG/PNG ≤10 MB) y se descargan
+  SIEMPRE proxiados (`log_entrada_adjunto_descargar`, `?inline=1` abre en pestaña), nunca
+  por URL firmada. El ledger global (`log_movimientos`) muestra los últimos 500; el
+  histórico completo saldrá por el export de la F6.
 - En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
@@ -469,10 +480,14 @@ checkboxes de tipo y rango de fechas). Tests en
   `PerfilEmpleado` y cambio de clave forzado). El **inventario** (sub-app
   `logistica.inventario`, label `log_inventario`, tablas `log_*`) se construye por fases;
   hoy existen la landing `log_home`, el dominio completo (modelos + servicios
-  transaccionales) y la **UI de catálogos** (artículos `log_items_lista`, bodegas/categorías
+  transaccionales), la **UI de catálogos** (artículos `log_items_lista`, bodegas/categorías
   bajo `/catalogos/`, terceros con alta AJAX `log_tercero_ajax_crear` para los documentos, y
-  existencias `log_stock`); las UIs de movimientos y préstamos llegan en las fases 4-5
-  (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
+  existencias `log_stock`) y la **UI de movimientos** (entradas con adjuntos
+  `log_entradas_*`/`log_entrada_adjunto_*`, salidas `log_salidas_*` —con alta de tercero al
+  vuelo—, traslados `log_traslados_*`, kardex por artículo `log_item_kardex`, ledger global
+  `log_movimientos` y ajuste manual `log_ajuste_crear` desde el modal de existencias); la UI
+  de préstamos llega en la fase 5 (ver sección _Inventario de logística_ abajo).
+  Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -662,7 +677,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 512 tests OK
+python manage.py test                        # baseline: 541 tests OK
 python manage.py runserver
 ```
 
@@ -705,7 +720,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (512 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (541 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

@@ -50,13 +50,32 @@
             </div>
         </div>
 
-        {# Movimientos (F4) y préstamos (F5): ítems inertes — patrón "Monitores" #}
-        {# de base_financiera — hasta que cada fase los active. #}
-        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-           style="cursor: not-allowed; opacity: .55;">
-            <i class="fas fa-right-left icon-main text-success"></i> Movimientos
-            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
+        {# Movimientos (desplegable): entradas, salidas, traslados + ledger #}
+        {% with u=request.resolver_match.url_name %}
+        <a href="#collapseMovsLog" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="movimientos_log"
+           aria-expanded="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}true{% else %}false{% endif %}">
+            <span><i class="fas fa-right-left icon-main text-success"></i> Movimientos</span>
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
+        <div class="collapse {% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}show{% endif %}" id="collapseMovsLog">
+            <div class="collapse-inner py-1 bg-dark">
+                <a href="{% url 'log_entradas_lista' %}" class="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' %}active{% endif %}">
+                    <i class="fas fa-arrow-down" style="width: 20px; text-align: center; margin-right: 8px;"></i> Entradas
+                </a>
+                <a href="{% url 'log_salidas_lista' %}" class="{% if u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' %}active{% endif %}">
+                    <i class="fas fa-arrow-up" style="width: 20px; text-align: center; margin-right: 8px;"></i> Salidas
+                </a>
+                <a href="{% url 'log_traslados_lista' %}" class="{% if u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' %}active{% endif %}">
+                    <i class="fas fa-right-left" style="width: 20px; text-align: center; margin-right: 8px;"></i> Traslados
+                </a>
+                <a href="{% url 'log_movimientos' %}" class="{% if u == 'log_movimientos' %}active{% endif %}">
+                    <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Kardex global
+                </a>
+            </div>
+        </div>
+        {% endwith %}
         <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
            style="cursor: not-allowed; opacity: .55;">
             <i class="fas fa-handshake icon-main text-primary"></i> Préstamos

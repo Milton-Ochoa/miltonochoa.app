@@ -31,8 +31,8 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
                     <th style="width: 12%; text-align: right;">Existencia</th>
                     <th style="width: 8%; text-align: right;">Mínimo</th>
                     <th style="width: 9%; text-align: right;">Valor unit.</th>
-                    <th style="width: 8%; text-align: center;">Estado</th>
-                    <th style="width: 6%; text-align: center;">Editar</th>
+                    <th style="width: 7%; text-align: center;">Estado</th>
+                    <th style="width: 7%; text-align: center;">Acciones</th>
                 </tr>
                 <tr class="fila-filtros">
                     <th><input type="text" data-filtro="codigo"></th>
@@ -71,7 +71,11 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
                         {% if it.activo %}<span class="badge bg-success">Activo</span>
                         {% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
                     </td>
-                    <td class="text-center">
+                    <td class="text-center text-nowrap">
+                        <a href="{% url 'log_item_kardex' it.pk %}" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                           title="Kardex del artículo">
+                            <i class="fas fa-book"></i>
+                        </a>
                         <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
                                 onclick="abrirItemModal(this)"
                                 data-id="{{ it.pk }}"
