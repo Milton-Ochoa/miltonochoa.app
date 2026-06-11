@@ -16,19 +16,42 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# Resto del inventario: se activan por fases (artículos/existencias en F3, #}
-        {# movimientos en F4, préstamos en F5). Mientras tanto, ítems inertes — #}
-        {# patrón "Monitores" de base_financiera. #}
-        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-           style="cursor: not-allowed; opacity: .55;">
+        {# ── Artículos ── #}
+        <a href="{% url 'log_items_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_items_lista' %}active{% endif %}">
             <i class="fas fa-box icon-main text-warning"></i> Artículos
-            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
         </a>
-        <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-           style="cursor: not-allowed; opacity: .55;">
+
+        {# ── Existencias ── #}
+        <a href="{% url 'log_stock' %}" class="nav-item {% if request.resolver_match.url_name == 'log_stock' %}active{% endif %}">
             <i class="fas fa-warehouse icon-main text-info"></i> Existencias
-            <span class="badge bg-secondary nav-badge" style="font-size:0.6rem;">Pronto</span>
         </a>
+
+        {# ── Terceros ── #}
+        <a href="{% url 'log_terceros' %}" class="nav-item {% if request.resolver_match.url_name == 'log_terceros' %}active{% endif %}">
+            <i class="fas fa-address-book icon-main text-danger"></i> Terceros
+        </a>
+
+        {# Catálogos (desplegable): bodegas + categorías #}
+        <a href="#collapseCatalogosLog" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="catalogos_log"
+           aria-expanded="{% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}true{% else %}false{% endif %}">
+            <span><i class="fas fa-tags icon-main text-secondary"></i> Catálogos</span>
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
+        </a>
+        <div class="collapse {% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}show{% endif %}" id="collapseCatalogosLog">
+            <div class="collapse-inner py-1 bg-dark">
+                <a href="{% url 'log_bodegas' %}" class="{% if request.resolver_match.url_name == 'log_bodegas' %}active{% endif %}">
+                    <i class="fas fa-warehouse" style="width: 20px; text-align: center; margin-right: 8px;"></i> Bodegas
+                </a>
+                <a href="{% url 'log_categorias' %}" class="{% if request.resolver_match.url_name == 'log_categorias' %}active{% endif %}">
+                    <i class="fas fa-tag" style="width: 20px; text-align: center; margin-right: 8px;"></i> Categorías
+                </a>
+            </div>
+        </div>
+
+        {# Movimientos (F4) y préstamos (F5): ítems inertes — patrón "Monitores" #}
+        {# de base_financiera — hasta que cada fase los active. #}
         <a class="nav-item text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
            style="cursor: not-allowed; opacity: .55;">
             <i class="fas fa-right-left icon-main text-success"></i> Movimientos

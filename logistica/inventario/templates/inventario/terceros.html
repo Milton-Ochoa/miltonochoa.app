@@ -1,0 +1,152 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Terceros{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirTerceroModal(null)">
+    <i class="fas fa-plus me-1"></i> Nuevo tercero
+</button>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+<div class="container-fluid py-3">
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaTerceros">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 26%;">Nombre</th>
+                        <th style="width: 14%;">Documento</th>
+                        <th style="width: 14%;">Teléfono</th>
+                        <th style="width: 26%;">Notas</th>
+                        <th style="width: 10%; text-align: center;">Estado</th>
+                        <th style="width: 10%; text-align: center;">Acciones</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="nombre"></th>
+                        <th><input type="text" data-filtro="documento"></th>
+                        <th></th>
+                        <th></th>
+                        <th><input type="text" data-filtro="estado"></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in terceros %}
+                    <tr data-fila
+                        data-nombre="{{ t.nombre|lower }}"
+                        data-documento="{{ t.documento|lower }}"
+                        data-estado="{% if t.activo %}activo{% else %}inactivo{% endif %}"
+                        {% if not t.activo %}class="opacity-50"{% endif %}>
+                        <td><strong>{{ t.nombre }}</strong></td>
+                        <td>{{ t.documento|default:'—' }}</td>
+                        <td>{{ t.telefono|default:'—' }}</td>
+                        <td class="text-truncate" style="max-width: 0;">{{ t.notas|default:'—' }}</td>
+                        <td class="text-center">
+                            {% if t.activo %}<span class="badge bg-success">Activo</span>
+                            {% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
+                                    onclick="abrirTerceroModal(this)" title="Editar"
+                                    data-id="{{ t.pk }}" data-nombre="{{ t.nombre }}"
+                                    data-documento="{{ t.documento }}" data-telefono="{{ t.telefono }}"
+                                    data-notas="{{ t.notas }}">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('¿{% if t.activo %}Desactivar{% else %}Reactivar{% endif %} a \'{{ t.nombre }}\'?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="toggle">
+                                <input type="hidden" name="tercero_id" value="{{ t.pk }}">
+                                {% if t.activo %}
+                                <button type="submit" class="btn btn-outline-warning btn-sm py-0 px-2" title="Desactivar">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                                {% else %}
+                                <button type="submit" class="btn btn-outline-success btn-sm py-0 px-2" title="Reactivar">
+                                    <i class="fas fa-rotate-left"></i>
+                                </button>
+                                {% endif %}
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-address-book me-1"></i> No hay terceros todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="tablaTerceros_contador">0</span> de {{ terceros|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="tablaTerceros_paginas"></ul></nav>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaTerceros' %}
+
+{# ── Modal Nuevo/Editar tercero ── #}
+<div class="modal fade" id="modalTercero" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="guardar">
+            <input type="hidden" name="tercero_id" id="tercero_id" value="">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTerceroTitulo">Nuevo tercero</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2">
+                    <div class="col-12">
+                        <label class="form-label mb-1" for="tercero_nombre">Nombre *</label>
+                        <input type="text" class="form-control" name="nombre" id="tercero_nombre" required maxlength="200">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="tercero_documento">Documento</label>
+                        <input type="text" class="form-control" name="documento" id="tercero_documento" maxlength="50">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="tercero_telefono">Teléfono</label>
+                        <input type="text" class="form-control" name="telefono" id="tercero_telefono" maxlength="50">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label mb-1" for="tercero_notas">Notas</label>
+                        <textarea class="form-control" name="notas" id="tercero_notas" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-save me-1"></i> Guardar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirTerceroModal(btn) {
+    var d = btn ? btn.dataset : null;
+    document.getElementById('tercero_id').value        = d ? d.id : '';
+    document.getElementById('tercero_nombre').value    = d ? d.nombre : '';
+    document.getElementById('tercero_documento').value = d ? d.documento : '';
+    document.getElementById('tercero_telefono').value  = d ? d.telefono : '';
+    document.getElementById('tercero_notas').value     = d ? d.notas : '';
+    document.getElementById('modalTerceroTitulo').textContent = d ? 'Editar tercero' : 'Nuevo tercero';
+    new bootstrap.Modal(document.getElementById('modalTercero')).show();
+}
+</script>
+{% endblock %}

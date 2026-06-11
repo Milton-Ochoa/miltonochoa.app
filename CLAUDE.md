@@ -136,7 +136,8 @@ AAMO/
 ├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
 │   │                  #   importa los de programacion.viaticos)
 ├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
-│   │                  #   servicios de dominio listos — tablas log_*; UI en construcción por fases)
+│   │                  #   servicios de dominio listos — tablas log_*; UI de catálogos y
+│   │                  #   existencias activa; movimientos/préstamos en construcción por fases)
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -467,8 +468,11 @@ checkboxes de tipo y rango de fechas). Tests en
   desde el panel del apex (`GRUPOS_ETIQUETA` incluye `logistica`; mismo flujo de empleados con
   `PerfilEmpleado` y cambio de clave forzado). El **inventario** (sub-app
   `logistica.inventario`, label `log_inventario`, tablas `log_*`) se construye por fases;
-  hoy existen la landing `log_home` y el **dominio completo sin UI**: modelos + servicios
-  transaccionales (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
+  hoy existen la landing `log_home`, el dominio completo (modelos + servicios
+  transaccionales) y la **UI de catálogos** (artículos `log_items_lista`, bodegas/categorías
+  bajo `/catalogos/`, terceros con alta AJAX `log_tercero_ajax_crear` para los documentos, y
+  existencias `log_stock`); las UIs de movimientos y préstamos llegan en las fases 4-5
+  (ver sección _Inventario de logística_ abajo). Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -658,7 +662,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 485 tests OK
+python manage.py test                        # baseline: 512 tests OK
 python manage.py runserver
 ```
 
@@ -701,7 +705,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (485 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (512 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
