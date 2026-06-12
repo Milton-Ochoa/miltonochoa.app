@@ -18,7 +18,7 @@
             <form method="get" class="row g-2 align-items-end">
                 <div class="col-md-3">
                     <label class="form-label mb-1 small">Bodega</label>
-                    <select name="bodega" class="form-select form-select-sm">
+                    <select name="bodega" class="form-select form-select-sm select2-busqueda">
                         <option value="">Todas</option>
                         {% for b in bodegas %}
                         <option value="{{ b.pk }}" {% if bodega_sel and bodega_sel.pk == b.pk %}selected{% endif %}>{{ b.nombre }}</option>
@@ -91,4 +91,5 @@
         </div>
     </div>
 </div>
+{% include 'inventario/_select2.html' %}
 {% endblock %}

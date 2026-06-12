@@ -11,6 +11,9 @@ Parámetros (include ... with):
 
 Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
   name="linea_item" / name="linea_cantidad" [/ name="linea_bodega"] — listas paralelas.
+
+Los selects llevan `select2-busqueda` (buscador dinámico): la página que incluye
+este parcial debe incluir también inventario/_select2.html al final del content.
 {% endcomment %}
 <div class="mb-3" id="lineas-widget">
     <label class="form-label fw-bold">Artículos</label>
@@ -18,7 +21,7 @@ Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
         {% for l in lineas_previas %}
         <div class="row g-2 mb-2 linea-fila">
             <div class="{% if con_bodega %}col-5{% else %}col-8{% endif %}">
-                <select name="linea_item" class="form-select" required>
+                <select name="linea_item" class="form-select select2-busqueda" required>
                     <option value="">— Artículo —</option>
                     {% for it in items %}
                     <option value="{{ it.pk }}" {% if l.item_id == it.pk|stringformat:'s' %}selected{% endif %}>{{ it.codigo }} - {{ it.nombre }}</option>
@@ -27,7 +30,7 @@ Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
             </div>
             {% if con_bodega %}
             <div class="col-3">
-                <select name="linea_bodega" class="form-select" required>
+                <select name="linea_bodega" class="form-select select2-busqueda" required>
                     <option value="">— Bodega —</option>
                     {% for b in bodegas %}
                     <option value="{{ b.pk }}" {% if l.bodega_id == b.pk|stringformat:'s' %}selected{% endif %}>{{ b.nombre }}</option>
@@ -47,7 +50,7 @@ Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
         {% empty %}
         <div class="row g-2 mb-2 linea-fila">
             <div class="{% if con_bodega %}col-5{% else %}col-8{% endif %}">
-                <select name="linea_item" class="form-select" required>
+                <select name="linea_item" class="form-select select2-busqueda" required>
                     <option value="">— Artículo —</option>
                     {% for it in items %}
                     <option value="{{ it.pk }}">{{ it.codigo }} - {{ it.nombre }}</option>
@@ -56,7 +59,7 @@ Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
             </div>
             {% if con_bodega %}
             <div class="col-3">
-                <select name="linea_bodega" class="form-select" required>
+                <select name="linea_bodega" class="form-select select2-busqueda" required>
                     <option value="">— Bodega —</option>
                     {% for b in bodegas %}
                     <option value="{{ b.pk }}">{{ b.nombre }}</option>
@@ -86,26 +89,41 @@ Contrato del POST (el servidor lo lee con getlist en forms.parsear_lineas):
     var agregar = document.getElementById('linea-agregar');
     if (!filas || !agregar) return;
 
-    agregar.addEventListener('click', function () {
-        var base = filas.querySelector('.linea-fila');
-        var fila = base.cloneNode(true);
-        fila.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
-        fila.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
+    // Plantilla prístina capturada ANTES de que Select2 transforme los selects
+    // (este script corre al parsear; el init de _select2.html corre en el
+    // DOM-ready). Clonar una fila ya select2-izada deja widgets muertos.
+    var plantilla = filas.querySelector('.linea-fila').cloneNode(true);
+    plantilla.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+    plantilla.querySelectorAll('option[selected]').forEach(function (o) { o.removeAttribute('selected'); });
+    plantilla.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
+
+    function nuevaFila() {
+        var fila = plantilla.cloneNode(true);
         filas.appendChild(fila);
-        fila.querySelector('select').focus();
+        fila.querySelectorAll('select.select2-busqueda').forEach(function (sel) {
+            if (window.invSelect2) window.invSelect2(sel);
+        });
+        return fila;
+    }
+
+    agregar.addEventListener('click', function () {
+        var fila = nuevaFila();
+        var sel = fila.querySelector('select');
+        if (window.jQuery && jQuery(sel).hasClass('select2-hidden-accessible')) {
+            jQuery(sel).select2('open');
+        } else if (sel) {
+            sel.focus();
+        }
     });
 
     filas.addEventListener('click', function (e) {
         var btn = e.target.closest('.linea-quitar');
         if (!btn) return;
-        // No dejar el formulario sin filas: si es la última, solo la vacía.
-        if (filas.querySelectorAll('.linea-fila').length > 1) {
-            btn.closest('.linea-fila').remove();
-        } else {
-            var fila = btn.closest('.linea-fila');
-            fila.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
-            fila.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
-        }
+        // No dejar el formulario sin filas: si era la última, se repone una en
+        // blanco desde la plantilla (vaciar un select2 in-place requiere pasar
+        // por la API de jQuery; reponer la fila es más simple y equivalente).
+        btn.closest('.linea-fila').remove();
+        if (!filas.querySelector('.linea-fila')) nuevaFila();
     });
 })();
 </script>

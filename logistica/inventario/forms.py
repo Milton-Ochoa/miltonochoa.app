@@ -39,6 +39,16 @@ class _BootstrapForm(_BootstrapMixin, forms.Form):
     pass
 
 
+def _con_buscador(*campos):
+    """Marca selects respaldados por datos (bodegas/terceros/categorías) para
+    que el template los convierta en buscador dinámico (Select2, clase
+    `select2-busqueda` que inicializa inventario/_select2.html). Los selects
+    de enums fijos (dirección, unidad, tipo) se quedan nativos a propósito.
+    """
+    for campo in campos:
+        campo.widget.attrs['class'] = 'form-select select2-busqueda'
+
+
 class CategoriaForm(_BootstrapModelForm):
     class Meta:
         model = Categoria
@@ -57,6 +67,10 @@ class ItemForm(_BootstrapModelForm):
         fields = ['codigo', 'nombre', 'categoria', 'unidad_medida',
                   'descripcion', 'stock_minimo', 'valor_unitario', 'activo']
         widgets = {'descripcion': forms.Textarea(attrs={'rows': 2})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _con_buscador(self.fields['categoria'])
 
 
 class TerceroForm(_BootstrapModelForm):
@@ -99,6 +113,7 @@ class EntradaForm(_BootstrapForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['bodega'].queryset = _bodegas_activas()
+        _con_buscador(self.fields['bodega'])
 
 
 class SalidaForm(_BootstrapForm):
@@ -117,6 +132,7 @@ class SalidaForm(_BootstrapForm):
         super().__init__(*args, **kwargs)
         self.fields['bodega'].queryset = _bodegas_activas()
         self.fields['tercero'].queryset = Tercero.objects.filter(activo=True)
+        _con_buscador(self.fields['bodega'], self.fields['tercero'])
 
 
 class TrasladoForm(_BootstrapForm):
@@ -133,6 +149,8 @@ class TrasladoForm(_BootstrapForm):
         super().__init__(*args, **kwargs)
         self.fields['bodega_origen'].queryset = _bodegas_activas()
         self.fields['bodega_destino'].queryset = _bodegas_activas()
+        _con_buscador(self.fields['bodega_origen'],
+                      self.fields['bodega_destino'])
 
     def clean(self):
         cleaned = super().clean()
@@ -161,6 +179,7 @@ class PrestamoForm(_BootstrapForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['tercero'].queryset = Tercero.objects.filter(activo=True)
+        _con_buscador(self.fields['tercero'])
 
 
 def parsear_lineas(post, *, con_bodega=False):
