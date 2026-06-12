@@ -81,13 +81,16 @@
     </div>
 </div>
 
+{% include 'inventario/_select2.html' %}
+
 <script>
 function abrirItemModal(btn) {
     var d = btn ? btn.dataset : null;
     document.getElementById('item_id').value            = d ? d.id : '';
     document.getElementById('id_codigo').value          = d ? d.codigo : '';
     document.getElementById('id_nombre').value          = d ? d.nombre : '';
-    document.getElementById('id_categoria').value       = d ? d.categoria : '';
+    // La categoría es un select2: setear .value no refresca el texto visible.
+    jQuery('#id_categoria').val(d ? d.categoria : '').trigger('change');
     document.getElementById('id_unidad_medida').value   = d ? d.unidad : 'UNIDAD';
     document.getElementById('id_descripcion').value     = d ? d.descripcion : '';
     document.getElementById('id_stock_minimo').value    = d ? d.minimo : '0';

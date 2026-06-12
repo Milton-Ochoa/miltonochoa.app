@@ -155,7 +155,7 @@
             <div class="modal-body">
                 <div class="mb-2">
                     <label class="form-label mb-1" for="exp_stock_bodega">Bodega</label>
-                    <select name="bodega" id="exp_stock_bodega" class="form-select">
+                    <select name="bodega" id="exp_stock_bodega" class="form-select select2-busqueda">
                         <option value="">Todas las bodegas</option>
                         {% for b in bodegas %}
                         <option value="{{ b.pk }}">{{ b.nombre }}{% if not b.activa %} (inactiva){% endif %}</option>
@@ -175,6 +175,8 @@
         </form>
     </div>
 </div>
+
+{% include 'inventario/_select2.html' %}
 
 <script>
 function abrirAjuste(btn) {
