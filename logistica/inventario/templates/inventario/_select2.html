@@ -1,0 +1,38 @@
+{% comment %}
+Buscador dinámico para los selects del inventario (mismo Select2 + tema
+Bootstrap 5 que usa programación en colegios/dashboard.html). Inclúyelo UNA
+vez al final del bloque content de la página y marca cada <select> con la
+clase `select2-busqueda`. La búsqueda matchea el TEXTO de la opción, así que
+con labels "codigo - nombre" (Item.__str__) o "nombre (documento)"
+(Tercero.__str__) se busca por cualquiera de los dos sin código extra.
+
+Expone window.invSelect2(el) para inicializar selects creados después del
+load (las filas clonadas de _lineas_doc.html).
+{% endcomment %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<style>
+    /* Dentro de un .input-group (tercero + botón "crear") el contenedor de
+       Select2 debe flexar como lo haría el <select> nativo. */
+    .input-group .select2-container { flex: 1 1 auto; width: auto !important; }
+    .input-group .select2-container .select2-selection--single {
+        border-top-right-radius: 0; border-bottom-right-radius: 0;
+    }
+</style>
+<script>
+window.invSelect2 = function (el) {
+    var $el = jQuery(el);
+    if ($el.hasClass('select2-hidden-accessible')) return; // ya inicializado
+    var opciones = { theme: 'bootstrap-5', width: '100%' };
+    // Sin dropdownParent, el campo de búsqueda no recibe foco dentro de un
+    // modal de Bootstrap (el modal se queda el foco para sí).
+    var $modal = $el.closest('.modal');
+    if ($modal.length) opciones.dropdownParent = $modal;
+    $el.select2(opciones);
+};
+jQuery(function () {
+    jQuery('select.select2-busqueda').each(function () { window.invSelect2(this); });
+});
+</script>

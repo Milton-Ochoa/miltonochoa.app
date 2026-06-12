@@ -87,6 +87,8 @@
     </div>
 </div>
 
+{% include 'inventario/_select2.html' %}
+
 <script>
 document.getElementById('terceroRapidoCrear').addEventListener('click', function () {
     var errorEl = document.getElementById('terceroRapidoError');
@@ -108,6 +110,7 @@ document.getElementById('terceroRapidoCrear').addEventListener('click', function
             }
             var sel = document.getElementById('id_tercero');
             sel.add(new Option(d.tercero.label, d.tercero.id, true, true));
+            jQuery(sel).trigger('change'); // refresca el texto visible del select2
             bootstrap.Modal.getInstance(document.getElementById('modalTerceroRapido')).hide();
             ['Nombre', 'Documento', 'Telefono'].forEach(function (c) {
                 document.getElementById('terceroRapido' + c).value = '';
