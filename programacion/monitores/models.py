@@ -66,3 +66,31 @@ class Monitor(models.Model):
 
     def __str__(self):
         return self.nombre_corto
+
+
+class ColegioSimulacro(models.Model):
+    """Colegio donde se realiza un simulacro.
+
+    Catálogo **independiente** de ``configuracion.Colegio``: los simulacros se
+    hacen en instituciones que no necesariamente están en el sistema, así que
+    se admite alta individual y **carga masiva por Excel**. Solo datos de
+    identificación/ubicación; sin calendario, años ni cronograma.
+    """
+
+    nombre       = models.CharField(max_length=200, verbose_name="Nombre")
+    codigo       = models.CharField(max_length=50, blank=True, null=True,
+                                    verbose_name="Código")
+    ciudad       = models.CharField(max_length=100, blank=True, null=True,
+                                    verbose_name="Ciudad")
+    departamento = models.CharField(max_length=100, blank=True, null=True,
+                                    verbose_name="Departamento")
+    activo       = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        db_table = 'prog_simulacro_colegios'
+        verbose_name = 'Colegio de simulacro'
+        verbose_name_plural = 'Colegios de simulacro'
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
