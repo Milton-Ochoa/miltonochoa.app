@@ -1,0 +1,300 @@
+{% extends 'base_financiera.html' %}
+{% load l10n %}
+{% block header_title %}Pagos · Monitores{% endblock %}
+
+{% comment %}
+  Misma vista de pagos de monitores que programación pero bajo el chrome financiera y CON
+  gestión: marcar/desmarcar el pago y enlazar al detalle (soportes). Reutiliza los
+  parciales de estilo/tabla/modal de la sub-app `pagos` (pagos/_*.html). A diferencia de
+  profesores, monitores NO manejan horas: el desglose del modal muestra el colegio del
+  simulacro y el valor del simulacro.
+{% endcomment %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarPagos"
+        {% if not filas %}disabled{% endif %}>
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
+{% block content %}
+{% include 'pagos/_estilos_tabla.html' %}
+{{ detalles_pagos|json_script:"pagos-data" }}
+
+<div class="container-fluid py-3">
+
+  {# ── Tabla estilo viáticos: cabecera con pestañas + filtro de fechas ── #}
+  <div class="card shadow-sm">
+    <div class="card-header bg-white py-2">
+      {% include 'pagos/_barra_filtros.html' %}
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-pagos" id="tablaPagos">
+        <thead class="table-dark">
+          <tr>
+            <th>Fecha</th>
+            <th>Monitor</th>
+            <th>Documento</th>
+            <th>N° Cuenta</th>
+            <th>Tipo</th>
+            <th>Banco</th>
+            <th>Colegio</th>
+            <th>Código</th>
+            <th class="text-end">Valor</th>
+            {% if tab == 'realizado' %}
+            <th>Pagado</th>
+            <th>Por</th>
+            {% endif %}
+            <th class="text-center">Acción</th>
+          </tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="fecha"></th>
+            <th><input type="text" data-filtro="docente"></th>
+            <th><input type="text" data-filtro="documento"></th>
+            <th><input type="text" data-filtro="cuenta"></th>
+            <th><input type="text" data-filtro="tipo"></th>
+            <th><input type="text" data-filtro="banco"></th>
+            <th><input type="text" data-filtro="colegio"></th>
+            <th><input type="text" data-filtro="codigo"></th>
+            <th></th>
+            {% if tab == 'realizado' %}
+            <th></th><th></th>
+            {% endif %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTablaPagos">
+          {% for f in filas %}
+          <tr class="fila-pago" id="fila-{{ f.monitor_id }}-{{ f.simulacro_id }}"
+              data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+              data-docente="{{ f.docente|lower }}"
+              data-documento="{{ f.documento|lower }}"
+              data-cuenta="{{ f.num_cuenta|lower }}"
+              data-tipo="{{ f.tipo_cuenta|lower }}"
+              data-banco="{{ f.banco|lower }}"
+              data-colegio="{{ f.colegio|lower }}"
+              data-codigo="{{ f.codigo|lower }}">
+            <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
+            <td><strong>{{ f.docente }}</strong></td>
+            <td>{{ f.documento }}</td>
+            <td>{{ f.num_cuenta }}</td>
+            <td>{{ f.tipo_cuenta }}</td>
+            <td>{{ f.banco }}</td>
+            <td>{{ f.colegio }}</td>
+            <td>{{ f.codigo }}</td>
+            <td class="text-end fw-bold">
+              {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin valor</span>{% endif %}
+            </td>
+            {% if tab == 'realizado' %}
+            <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
+            <td class="text-muted small">{{ f.marcado_por }}</td>
+            <td class="text-center text-nowrap">
+              <a href="{% url 'fin_monitores_pago_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver / gestionar soporte">
+                <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
+              </a>
+              <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" title="Desmarcar pago"
+                      onclick="abrirDesmarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}')">
+                <i class="fas fa-undo"></i>
+              </button>
+            </td>
+            {% else %}
+            <td class="text-center">
+              <button type="button" class="btn btn-outline-success btn-sm py-0 px-2" title="Marcar como pagado"
+                      onclick="abrirMarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}','{{ f.valor_total|unlocalize }}')">
+                <i class="fas fa-check"></i>
+              </button>
+            </td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="{% if tab == 'realizado' %}12{% else %}10{% endif %}" class="text-center text-muted py-4">
+              <i class="fas fa-info-circle me-1"></i>
+              {% if tab == 'realizado' %}No hay pagos realizados en este período.{% else %}No hay pagos pendientes en este período.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+      <small class="text-muted">
+        Mostrando <span id="contadorVisiblesPagos">0</span> de {{ filas|length }}
+        · Total del periodo: <strong>${{ total_valor|floatformat:"0" }}</strong>
+      </small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesPagos"></ul></nav>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: exportar a Excel ── #}
+{% include 'pagos/_modal_exportar.html' with export_url='fin_monitores_pagos_exportar' %}
+
+{# ── Modal: Marcar como pagado ── #}
+<div class="modal fade" id="modalMarcar" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Confirmar Pago</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">¿Marcar el siguiente pago como <strong>realizado</strong>?</p>
+        <table class="table table-sm table-bordered mb-2">
+          <tr><th class="text-muted" style="width:130px">Monitor</th><td id="mDocenteNombre"></td></tr>
+          <tr><th class="text-muted">Fecha</th><td id="mFechaLabel"></td></tr>
+          <tr><th class="text-muted">Colegio</th><td id="mColegioNombre"></td></tr>
+        </table>
+        <p class="fw-semibold mb-1 small text-muted">Desglose</p>
+        <table class="table table-sm mb-3">
+          <tbody id="mDesglose"></tbody>
+        </table>
+        <div class="alert alert-warning py-2 mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Esta acción registra que el pago fue realizado. Se puede revertir desde la pestaña <strong>Realizados</strong>.
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="checkConfirmar">
+          <label class="form-check-label fw-bold" for="checkConfirmar">Confirmo que este pago fue realizado correctamente</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success fw-bold" id="btnConfirmarMarcar" disabled>
+          <i class="fas fa-check me-1"></i>Confirmar Pago
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Desmarcar pago ── #}
+<div class="modal fade" id="modalDesmarcar" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-undo me-2"></i>Revertir Pago</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">¿Marcar el siguiente pago como <strong>pendiente</strong> nuevamente?</p>
+        <table class="table table-sm table-bordered mb-3">
+          <tr><th class="text-muted" style="width:110px">Monitor</th><td id="dDocenteNombre"></td></tr>
+          <tr><th class="text-muted">Fecha</th><td id="dFechaLabel"></td></tr>
+          <tr><th class="text-muted">Colegio</th><td id="dColegioNombre"></td></tr>
+        </table>
+        <div class="alert alert-danger py-2 mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Esto revertirá el registro de pago (y elimina sus soportes adjuntos). El pago volverá a aparecer como pendiente.
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="checkDesmarcar">
+          <label class="form-check-label fw-bold" for="checkDesmarcar">Confirmo que quiero revertir este pago</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger fw-bold" id="btnConfirmarDesmarcar" disabled>
+          <i class="fas fa-undo me-1"></i>Revertir Pago
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>const URL_PAGOS = "{% url 'fin_monitores_pagos_lista' %}";</script>
+{% include 'pagos/_tabla_js.html' %}
+
+<script>
+const URL_MARCAR   = "{% url 'fin_monitores_pagos_marcar' %}";
+const CSRF_TOKEN   = "{{ csrf_token }}";
+const FECHA_INICIO = "{{ fecha_inicio }}";
+const FECHA_FIN    = "{{ fecha_fin }}";
+
+let _pendiente = {};
+const PAGOS_DATA = JSON.parse(document.getElementById('pagos-data').textContent || '{}');
+const _fmtCop = n => '$' + Number(n || 0).toLocaleString('es-CO');
+
+// ── Modal: Marcar ─────────────────────────────────────────────
+function abrirMarcar(pagoId, docente, colegio, fechaLabel, valor) {
+    _pendiente = { accion: 'marcar', pagoId };
+    document.getElementById('mDocenteNombre').textContent = docente;
+    document.getElementById('mFechaLabel').textContent    = fechaLabel;
+    document.getElementById('mColegioNombre').textContent = colegio;
+    // Desglose: monitores no manejan horas → colegio + valor del simulacro + extras.
+    const d = PAGOS_DATA[pagoId] || {};
+    let html = '<tr><td>Colegio</td><td class="text-end">' + (d.colegio || '—') + '</td></tr>'
+             + '<tr><td>Valor del simulacro</td><td class="text-end">' + _fmtCop(d.valor_base) + '</td></tr>';
+    (d.extras || []).forEach(e => { html += '<tr><td>' + e.concepto + '</td><td class="text-end">' + _fmtCop(e.valor) + '</td></tr>'; });
+    html += '<tr class="fw-bold border-top"><td>Total</td><td class="text-end text-success">' + _fmtCop(d.total != null ? d.total : valor) + '</td></tr>';
+    document.getElementById('mDesglose').innerHTML = html;
+    document.getElementById('checkConfirmar').checked = false;
+    document.getElementById('btnConfirmarMarcar').disabled = true;
+    new bootstrap.Modal(document.getElementById('modalMarcar')).show();
+}
+
+document.getElementById('checkConfirmar').addEventListener('change', function() {
+    document.getElementById('btnConfirmarMarcar').disabled = !this.checked;
+});
+
+document.getElementById('btnConfirmarMarcar').addEventListener('click', async function() {
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+    const body = new URLSearchParams({
+        accion: 'marcar', pago_id: _pendiente.pagoId, csrfmiddlewaretoken: CSRF_TOKEN,
+    });
+    try {
+        const res  = await fetch(URL_MARCAR, { method: 'POST', body });
+        const data = await res.json();
+        if (data.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('modalMarcar')).hide();
+            window.location.href = `${URL_PAGOS}?semana=${FECHA_INICIO}&hasta=${FECHA_FIN}&tab=pendiente`;
+        } else {
+            alert('Error: ' + (data.error || 'No se pudo guardar'));
+            this.disabled = false; this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Pago';
+        }
+    } catch(e) {
+        alert('Error de red');
+        this.disabled = false; this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Pago';
+    }
+});
+
+// ── Modal: Desmarcar ──────────────────────────────────────────
+function abrirDesmarcar(pagoId, docente, colegio, fechaLabel) {
+    _pendiente = { accion: 'desmarcar', pagoId };
+    document.getElementById('dDocenteNombre').textContent = docente;
+    document.getElementById('dFechaLabel').textContent    = fechaLabel;
+    document.getElementById('dColegioNombre').textContent = colegio;
+    document.getElementById('checkDesmarcar').checked = false;
+    document.getElementById('btnConfirmarDesmarcar').disabled = true;
+    new bootstrap.Modal(document.getElementById('modalDesmarcar')).show();
+}
+
+document.getElementById('checkDesmarcar').addEventListener('change', function() {
+    document.getElementById('btnConfirmarDesmarcar').disabled = !this.checked;
+});
+
+document.getElementById('btnConfirmarDesmarcar').addEventListener('click', async function() {
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Revirtiendo...';
+    const body = new URLSearchParams({
+        accion: 'desmarcar', pago_id: _pendiente.pagoId, csrfmiddlewaretoken: CSRF_TOKEN,
+    });
+    try {
+        const res  = await fetch(URL_MARCAR, { method: 'POST', body });
+        const data = await res.json();
+        if (data.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('modalDesmarcar')).hide();
+            window.location.href = `${URL_PAGOS}?semana=${FECHA_INICIO}&hasta=${FECHA_FIN}&tab=realizado`;
+        } else {
+            alert('Error: ' + (data.error || 'No se pudo revertir'));
+            this.disabled = false; this.innerHTML = '<i class="fas fa-undo me-1"></i>Revertir Pago';
+        }
+    } catch(e) {
+        alert('Error de red');
+        this.disabled = false; this.innerHTML = '<i class="fas fa-undo me-1"></i>Revertir Pago';
+    }
+});
+</script>
+{% endblock %}
