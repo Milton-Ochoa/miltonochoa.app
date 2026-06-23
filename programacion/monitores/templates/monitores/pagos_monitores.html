@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block header_title %}Pagos · Monitores{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item active">Pagos · Monitores</li>
+</ol>
+{% endblock %}
+
+{% comment %}
+  Backlog de pagos a monitores en programación: por defecto muestra TODO lo pendiente por
+  enviar (todas las semanas); el filtro de fechas solo acota al darle Aplicar. Se "Prepara
+  pendientes" (materializa el backlog desde las asignaciones de simulacros) y se "Envía a
+  financiera" (todo lo visible y no excluido). Por fila se ve el detalle (i), se gestionan
+  costos extra y se excluye del envío. A diferencia de profesores, monitores NO tienen
+  gate-por-informe → no hay pestaña "Sin informe". Reusa los partials de `pagos/`.
+{% endcomment %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarPagos"
+        {% if not filas %}disabled{% endif %}>
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
+{% block content %}
+{% include 'pagos/_estilos_tabla.html' %}
+{{ detalles_pagos|json_script:"pagos-data" }}
+
+<div class="container-fluid py-3">
+
+  {# ── Barra de acciones del backlog ── #}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="text-muted small">
+      <i class="fas fa-layer-group me-1"></i>
+      Revisa los pagos de monitores pendientes por enviar; cuando estén listos, envíalos a financiera.
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" action="{% url 'monitores_pagos_preparar' %}" class="m-0">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+        <button class="btn btn-outline-secondary btn-sm" title="Materializar/actualizar los pendientes desde los simulacros">
+          <i class="fas fa-sync me-1"></i>Preparar pendientes
+        </button>
+      </form>
+      <form method="post" action="{% url 'monitores_pagos_enviar' %}" class="m-0"
+            onsubmit="return confirm('¿Enviar a financiera todo lo visible? El envío es definitivo.');">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+        <button class="btn btn-success btn-sm fw-bold" {% if not puede_enviar %}disabled{% endif %}>
+          <i class="fas fa-paper-plane me-1"></i>Enviar a financiera{% if total_por_enviar %} ({{ total_por_enviar }}){% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ── Tabla estilo viáticos: cabecera con pestañas + filtro de fechas ── #}
+  <div class="card shadow-sm">
+    <div class="card-header bg-white py-2">
+      {% include 'pagos/_barra_filtros.html' %}
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-pagos" id="tablaPagos">
+        <thead class="table-dark">
+          <tr>
+            <th>Fecha</th>
+            <th>Monitor</th>
+            <th>Documento</th>
+            <th>N° Cuenta</th>
+            <th>Tipo</th>
+            <th>Banco</th>
+            <th>Colegio</th>
+            <th>Código</th>
+            <th class="text-end">Valor</th>
+            {% if tab == 'realizado' %}
+            <th>Estado</th>
+            <th class="text-center">Ver</th>
+            {% else %}
+            <th class="text-center">Acciones</th>
+            {% endif %}
+          </tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="fecha"></th>
+            <th><input type="text" data-filtro="docente"></th>
+            <th><input type="text" data-filtro="documento"></th>
+            <th><input type="text" data-filtro="cuenta"></th>
+            <th><input type="text" data-filtro="tipo"></th>
+            <th><input type="text" data-filtro="banco"></th>
+            <th><input type="text" data-filtro="colegio"></th>
+            <th><input type="text" data-filtro="codigo"></th>
+            <th></th>
+            {% if tab == 'realizado' %}<th></th><th></th>{% else %}<th></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody id="cuerpoTablaPagos">
+          {% for f in filas %}
+          <tr class="fila-pago {% if f.excluida %}table-secondary text-muted{% endif %}"
+              data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+              data-docente="{{ f.docente|lower }}"
+              data-documento="{{ f.documento|lower }}"
+              data-cuenta="{{ f.num_cuenta|lower }}"
+              data-tipo="{{ f.tipo_cuenta|lower }}"
+              data-banco="{{ f.banco|lower }}"
+              data-colegio="{{ f.colegio|lower }}"
+              data-codigo="{{ f.codigo|lower }}">
+            <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
+            <td>
+              <strong {% if f.excluida %}class="text-decoration-line-through"{% endif %}>{{ f.docente }}</strong>
+              {% if f.excluida %}<span class="badge bg-secondary ms-1">Excluida</span>{% endif %}
+            </td>
+            <td>{{ f.documento }}</td>
+            <td>{{ f.num_cuenta }}</td>
+            <td>{{ f.tipo_cuenta }}</td>
+            <td>{{ f.banco }}</td>
+            <td>{{ f.colegio }}</td>
+            <td>{{ f.codigo }}</td>
+            <td class="text-end fw-bold">
+              {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin valor</span>{% endif %}
+            </td>
+            {% if tab == 'realizado' %}
+            <td class="small">
+              {% if f.fecha_pago %}<span class="badge bg-success">Pagado</span><span class="text-muted d-block">{{ f.fecha_pago|date:"d/m/Y" }}</span>
+              {% else %}<span class="badge bg-info text-dark">Enviado</span>{% endif %}
+            </td>
+            <td class="text-center text-nowrap">
+              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-detalle" data-pago="{{ f.pago_id }}" title="Ver detalle">
+                <i class="fas fa-info-circle"></i>
+              </button>
+              <a href="{% url 'monitores_pago_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver soporte">
+                <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
+              </a>
+            </td>
+            {% else %}
+            <td class="text-center text-nowrap">
+              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 btn-detalle" data-pago="{{ f.pago_id }}" title="Ver detalle del valor">
+                <i class="fas fa-info-circle"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 btn-extras" data-pago="{{ f.pago_id }}" title="Costos extra">
+                <i class="fas fa-coins"></i>{% if f.extras %} <span class="badge bg-info text-dark">{{ f.extras|length }}</span>{% endif %}
+              </button>
+              <form method="post" action="{% url 'monitores_pagos_excluir_fila' f.pago_id %}" class="d-inline m-0">
+                {% csrf_token %}
+                <input type="hidden" name="tab" value="{{ tab }}">
+                <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+                <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+                {% if f.excluida %}
+                <button class="btn btn-outline-success btn-sm py-0 px-2" title="Incluir de nuevo"><i class="fas fa-undo"></i></button>
+                {% else %}
+                <button class="btn btn-outline-danger btn-sm py-0 px-2" title="Excluir del envío"><i class="fas fa-ban"></i></button>
+                {% endif %}
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="{% if tab == 'realizado' %}11{% else %}10{% endif %}" class="text-center text-muted py-4">
+              <i class="fas fa-info-circle me-1"></i>
+              {% if tab == 'realizado' %}No hay pagos enviados{% if filtro_aplicado %} en el rango{% endif %}.
+              {% else %}No hay pagos pendientes por enviar{% if filtro_aplicado %} en el rango{% endif %}. Usa “Preparar pendientes”.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+      <small class="text-muted">
+        Mostrando <span id="contadorVisiblesPagos">0</span> de {{ filas|length }}
+        · Total: <strong>${{ total_valor|floatformat:"0" }}</strong>
+      </small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesPagos"></ul></nav>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: exportar a Excel ── #}
+{% include 'pagos/_modal_exportar.html' with export_url='monitores_pagos_lista' %}
+
+{# ── Modal: detalle del valor (solo lectura) ── #}
+<div class="modal fade" id="modalDetalle" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Detalle del valor <span id="detDocente" class="text-muted fs-6"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <table class="table table-sm mb-0">
+          <tbody id="detCuerpo"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: gestión de costos extra (agregar / eliminar) ── #}
+<div class="modal fade" id="modalExtras" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Costos extra <span id="extDocente" class="text-muted fs-6"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div id="extLista" class="mb-3"></div>
+        <form method="post" id="formExtra" class="d-flex gap-2 align-items-end border-top pt-3">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+          <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+          <div class="flex-grow-1">
+            <label class="form-label small mb-1">Concepto</label>
+            <input type="text" name="concepto" class="form-control form-control-sm" placeholder="p. ej. Transporte" maxlength="200" required>
+          </div>
+          <div style="width:130px;">
+            <label class="form-label small mb-1">Valor (COP)</label>
+            <input type="number" name="valor" class="form-control form-control-sm" min="1" step="1" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Agregar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>const URL_PAGOS = "{% url 'monitores_pagos_lista' %}";</script>
+{% include 'pagos/_tabla_js.html' %}
+
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('pagos-data').textContent || '{}');
+  const CSRF = "{{ csrf_token }}";
+  const TAB = "{{ tab }}", FI = "{{ fecha_inicio }}", FF = "{{ fecha_fin }}";
+  const URL_EXTRA_ADD = "{% url 'monitores_pagos_agregar_extra' 0 %}";
+  const URL_EXTRA_DEL = "{% url 'monitores_pagos_eliminar_extra' 0 %}";
+  const fmt = n => '$' + Number(n || 0).toLocaleString('es-CO');
+
+  // ── Modal detalle (solo lectura) ── monitores: muestra colegio + valor base + extras
+  document.querySelectorAll('.btn-detalle').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const d = DATA[b.dataset.pago]; if (!d) return;
+      document.getElementById('detDocente').textContent = '· ' + (d.docente || '');
+      let html = '<tr><td>Colegio</td><td class="text-end">' + (d.colegio || '—') + '</td></tr>'
+               + '<tr><td>Valor del simulacro</td><td class="text-end">' + fmt(d.valor_base) + '</td></tr>';
+      (d.extras || []).forEach(e => { html += '<tr><td>' + e.concepto + '</td><td class="text-end">' + fmt(e.valor) + '</td></tr>'; });
+      html += '<tr class="fw-bold border-top"><td>Total</td><td class="text-end">' + fmt(d.total) + '</td></tr>';
+      document.getElementById('detCuerpo').innerHTML = html;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDetalle')).show();
+    });
+  });
+
+  // ── Modal gestión de extras (agregar / eliminar) ──
+  document.querySelectorAll('.btn-extras').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const pago = b.dataset.pago, d = DATA[pago]; if (!d) return;
+      document.getElementById('extDocente').textContent = '· ' + (d.docente || '');
+      const lista = document.getElementById('extLista');
+      if (!d.extras || !d.extras.length) {
+        lista.innerHTML = '<p class="text-muted small mb-0">Aún no hay costos extra.</p>';
+      } else {
+        lista.innerHTML = d.extras.map(e =>
+          `<div class="d-flex justify-content-between align-items-center border-bottom py-1">
+             <span>${e.concepto}: <strong>${fmt(e.valor)}</strong></span>
+             <form method="post" action="${URL_EXTRA_DEL.replace('/0/', '/' + e.id + '/')}" class="m-0">
+               <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}">
+               <input type="hidden" name="tab" value="${TAB}">
+               <input type="hidden" name="semana" value="${FI}">
+               <input type="hidden" name="hasta" value="${FF}">
+               <button class="btn btn-outline-danger btn-sm py-0 px-2" title="Eliminar"><i class="fas fa-trash"></i></button>
+             </form>
+           </div>`).join('');
+      }
+      document.getElementById('formExtra').action = URL_EXTRA_ADD.replace('/0/', '/' + pago + '/');
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalExtras')).show();
+    });
+  });
+})();
+</script>
+{% endblock %}

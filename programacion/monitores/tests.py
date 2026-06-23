@@ -548,3 +548,124 @@ class PrepararLoteMonitoresTest(TestCase):
         AsignacionMonitor.objects.create(simulacro=sim_sab, monitor=self.m1)
         lote = preparar_lote_semana_monitores(lunes, lunes + timedelta(days=6))
         self.assertEqual(lote.filas.filter(simulacro=sim_sab).count(), 1)
+
+
+class PagosMonitoresViewTest(TestCase):
+    """Fase 6: UI de pagos de monitores en programación (lista, preparar, enviar,
+    excluir, extras, detalle, export)."""
+
+    def setUp(self):
+        from datetime import date, timedelta
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_pm', password='pass123')
+        self.client.login(username='admin_pm', password='pass123')
+        self.colegio = ColegioSimulacro.objects.create(nombre='Col', codigo='C1')
+        self.m1 = Monitor.objects.create(nombre='Ana', apellido='Diaz', documento='1',
+                                         banco='Bancolombia', tipo_cuenta='Ahorros',
+                                         cuenta_bancaria='123')
+        self.m2 = Monitor.objects.create(nombre='Beto', documento='2')
+        # Simulacro ya ocurrido (fecha <= hoy) para que "Preparar pendientes" (backlog) lo tome.
+        self.fecha = date.today() - timedelta(days=3)
+        self.inicio = self.fecha - timedelta(days=self.fecha.weekday())
+        self.fin = self.inicio + timedelta(days=6)
+        self.sim = Simulacro.objects.create(
+            colegio=self.colegio, fecha=self.fecha, valor=50000)
+        AsignacionMonitor.objects.create(simulacro=self.sim, monitor=self.m1)
+        AsignacionMonitor.objects.create(simulacro=self.sim, monitor=self.m2)
+
+    def _preparar(self):
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        return preparar_lote_semana_monitores(self.inicio, self.fin)
+
+    def test_lista_get_ok(self):
+        r = self.client.get('/monitores/pagos/')
+        self.assertEqual(r.status_code, 200)
+        self.assertTemplateUsed(r, 'monitores/pagos_monitores.html')
+        # Sin pestaña "Sin informe" (monitores no tienen informe).
+        self.assertNotContains(r, 'Sin informe')
+
+    def test_preparar_crea_filas_y_aparecen(self):
+        r = self.client.post('/monitores/pagos/preparar/', {'tab': 'pendiente'})
+        self.assertEqual(r.status_code, 302)
+        from programacion.monitores.models import PagoMonitor
+        self.assertEqual(PagoMonitor.objects.count(), 2)
+        r = self.client.get('/monitores/pagos/?tab=pendiente')
+        self.assertContains(r, 'Ana')
+        self.assertContains(r, 'Beto')
+
+    def test_excluir_y_reincluir_toggle(self):
+        lote = self._preparar()
+        from programacion.monitores.models import PagoMonitor
+        fila = lote.filas.first()
+        self.client.post(f'/monitores/pagos/{fila.id}/excluir/', {'tab': 'pendiente'})
+        fila.refresh_from_db()
+        self.assertTrue(fila.excluida)
+        self.client.post(f'/monitores/pagos/{fila.id}/excluir/', {'tab': 'pendiente'})
+        fila.refresh_from_db()
+        self.assertFalse(fila.excluida)
+
+    def test_agregar_y_eliminar_extra(self):
+        lote = self._preparar()
+        from programacion.monitores.models import ExtraPagoMonitor
+        fila = lote.filas.first()
+        self.client.post(f'/monitores/pagos/{fila.id}/extra/',
+                         {'concepto': 'Transporte', 'valor': '10000', 'tab': 'pendiente'})
+        extra = ExtraPagoMonitor.objects.get(pago=fila)
+        self.assertEqual(extra.valor, 10000)
+        self.assertEqual(fila.total, 60000)
+        self.client.post(f'/monitores/pagos/extra/{extra.id}/eliminar/', {'tab': 'pendiente'})
+        self.assertFalse(ExtraPagoMonitor.objects.filter(id=extra.id).exists())
+
+    def test_extra_no_editable_si_enviado(self):
+        from programacion.monitores.pagos_servicios import enviar_lote_monitores
+        from programacion.monitores.models import ExtraPagoMonitor
+        lote = self._preparar()
+        fila = lote.filas.first()
+        enviar_lote_monitores(lote, None)  # ENVIADO → ya no editable
+        self.client.post(f'/monitores/pagos/{fila.id}/extra/',
+                         {'concepto': 'X', 'valor': '5000', 'tab': 'pendiente'})
+        self.assertFalse(ExtraPagoMonitor.objects.filter(pago=fila).exists())
+
+    def test_enviar_mueve_a_realizado(self):
+        self._preparar()
+        r = self.client.post('/monitores/pagos/enviar/', {'tab': 'pendiente'})
+        self.assertEqual(r.status_code, 302)
+        from programacion.monitores.models import LoteMonitores
+        self.assertTrue(LoteMonitores.objects.filter(
+            estado=LoteMonitores.Estado.ENVIADO).exists())
+        r = self.client.get('/monitores/pagos/?tab=realizado')
+        self.assertContains(r, 'Ana')
+
+    def test_detalle_ok(self):
+        lote = self._preparar()
+        fila = lote.filas.first()
+        r = self.client.get(f'/monitores/pagos/{fila.id}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertTemplateUsed(r, 'monitores/pago_monitor_detalle.html')
+        self.assertContains(r, self.colegio.nombre)
+
+    def test_export_excel(self):
+        self._preparar()
+        r = self.client.post('/monitores/pagos/', {'tab': 'pendiente'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.assertIn('PagosMonitores', r['Content-Disposition'])
+
+    def test_badge_cuenta_borrador_no_excluidas(self):
+        from programacion.monitores.context_processors import pagos_monitores_por_revisar
+        self._preparar()
+
+        class _Req:
+            area = 'programacion'
+            es_personal_programacion = True
+        ctx = pagos_monitores_por_revisar(_Req())
+        self.assertEqual(ctx['pagos_monitores_por_revisar_count'], 2)
+
+    def test_gate_no_personal(self):
+        otro = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_user(username='nadie', password='x')
+        otro.login(username='nadie', password='x')
+        r = otro.get('/monitores/pagos/')
+        self.assertIn(r.status_code, (302, 403))
