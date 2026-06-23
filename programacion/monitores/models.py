@@ -1,4 +1,8 @@
+import os
+
+from django.contrib.auth.models import User
 from django.db import models
+from django.utils.text import slugify
 
 # Reutilizamos los choices bancarios del catálogo de profesores (mismo dominio,
 # mismos bancos colombianos) en lugar de duplicar las listas. Conviven en
@@ -177,3 +181,199 @@ class AsignacionMonitor(models.Model):
 
     def __str__(self):
         return f"{self.monitor} → {self.simulacro}"
+
+
+# ─────────────────────────────────────────────────────────────
+# PAGOS DE MONITORES — espejo del flujo de profesores (programacion.pagos),
+# pero con fuente = simulacros (AsignacionMonitor), no clases. Modelos PROPIOS
+# (no se generalizan los de profesores: ese flujo tiene gate-por-informe, que
+# monitores NO tiene). Mismo ciclo BORRADOR→ENVIADO por lote semanal y PAGADO
+# por fila (`fecha_pago`), para reusar los partials/Excel en las fases de UI.
+# ─────────────────────────────────────────────────────────────
+
+
+class LoteMonitores(models.Model):
+    """Lote semanal de pagos a monitores: ancla el ciclo de revisión.
+
+    Espejo de ``pagos.LotePagos``: programación **prepara** el borrador de una
+    semana (materializa las filas ``PagoMonitor`` desde las asignaciones de
+    simulacros), las revisa y las **envía** a financiera. El estado vive aquí, por
+    semana —no por fila— para que "Enviar" sea un solo UPDATE; ``PAGADO`` es
+    ortogonal y vive por fila (``PagoMonitor.fecha_pago``).
+
+    Flujo de una sola vía ``BORRADOR → ENVIADO`` (el envío es definitivo por lote).
+    Pueden coexistir N lotes ENVIADO por semana pero **máximo un BORRADOR**
+    (constraint parcial): al enviar, las filas excluidas se desacoplan
+    (``lote=None``) y un "Preparar pendientes" posterior las re-adopta.
+    """
+
+    class Estado(models.TextChoices):
+        BORRADOR = 'BORRADOR', 'Borrador'
+        ENVIADO  = 'ENVIADO',  'Enviado'
+
+    fecha_inicio   = models.DateField(verbose_name='Inicio de la semana')
+    fecha_fin      = models.DateField(verbose_name='Fin de la semana')
+    estado         = models.CharField(max_length=10, choices=Estado.choices,
+                                      default=Estado.BORRADOR)
+    enviado_en     = models.DateTimeField(null=True, blank=True)
+    enviado_por    = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lotes_monitores_enviados', verbose_name='Enviado por',
+    )
+    creado_en      = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table            = 'prog_monitores_pagos_lotes'
+        ordering            = ['-fecha_inicio']
+        verbose_name        = 'Lote de pagos de monitores'
+        verbose_name_plural = 'Lotes de pagos de monitores'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['fecha_inicio', 'fecha_fin'],
+                condition=models.Q(estado='BORRADOR'),
+                name='unique_lote_monitores_borrador_por_semana',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Lote monitores {self.fecha_inicio}–{self.fecha_fin} ({self.get_estado_display()})'
+
+    @property
+    def enviado(self):
+        return self.estado == self.Estado.ENVIADO
+
+
+class PagoMonitor(models.Model):
+    """Fila base de un pago a un monitor por su asignación a un simulacro.
+
+    A diferencia de profesores (agrupa por día/colegio), aquí la unidad natural es
+    la **asignación**: un monitor por simulacro = un pago de ``simulacro.valor``.
+    El constraint único ``(monitor, simulacro)`` lo garantiza. ``fecha`` y ``valor``
+    se desnormalizan del simulacro para preservar el histórico y la semana aunque
+    cambien luego.
+
+    - ``valor`` = ``simulacro.valor`` al materializar (no hay horas ni tarifa/hora).
+    - ``excluida`` = la fila no se envía a financiera (no se borra → re-preparar es
+      idempotente).
+    - ``fecha_pago``/``marcado_por`` = los fija financiera al pagar (null = no pagada).
+    - Filas históricas: ``lote IS NULL AND fecha_pago IS NOT NULL``.
+    """
+
+    lote      = models.ForeignKey(
+        LoteMonitores, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='filas', verbose_name='Lote',
+    )
+    monitor   = models.ForeignKey(
+        Monitor, on_delete=models.PROTECT,
+        related_name='pagos', verbose_name='Monitor',
+    )
+    simulacro = models.ForeignKey(
+        # PROTECT: no borrar un simulacro que ya generó pagos.
+        Simulacro, on_delete=models.PROTECT,
+        related_name='pagos', verbose_name='Simulacro',
+    )
+    fecha     = models.DateField(verbose_name='Fecha del simulacro')
+    valor     = models.IntegerField(verbose_name='Valor del simulacro (COP)')
+    excluida  = models.BooleanField(default=False, verbose_name='Excluida del envío')
+    fecha_pago  = models.DateTimeField(null=True, blank=True, verbose_name='Fecha de pago')
+    marcado_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pagos_monitores_marcados', verbose_name='Marcado por',
+    )
+
+    class Meta:
+        db_table            = 'prog_monitores_pagos'
+        unique_together     = ('monitor', 'simulacro')
+        ordering            = ['-fecha', 'monitor__nombre']
+        verbose_name        = 'Pago de monitor'
+        verbose_name_plural = 'Pagos de monitores'
+
+    def __str__(self):
+        return f"{self.monitor} | {self.simulacro} | {self.fecha} | ${self.total:,}"
+
+    @property
+    def valor_base(self):
+        """Valor base efectivo (monitores no editan el valor a mano → es ``valor``).
+        Existe para que los partials/Excel compartidos lo lean igual que en profesores."""
+        return self.valor
+
+    @property
+    def total_extras(self):
+        return sum(e.valor for e in self.extras.all())
+
+    @property
+    def total(self):
+        return self.valor_base + self.total_extras
+
+    @property
+    def pagada(self):
+        return self.fecha_pago is not None
+
+
+class ExtraPagoMonitor(models.Model):
+    """Costo extra del desglose de un pago de monitor (espejo de ``pagos.ExtraPago``)."""
+
+    pago     = models.ForeignKey(PagoMonitor, on_delete=models.CASCADE,
+                                 related_name='extras')
+    concepto = models.CharField(max_length=200)
+    valor    = models.PositiveIntegerField()           # COP, enteros
+    orden    = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table            = 'prog_monitores_pagos_extras'
+        ordering            = ['orden', 'id']
+        verbose_name        = 'Costo extra de pago de monitor'
+        verbose_name_plural = 'Costos extra de pago de monitor'
+
+    def __str__(self):
+        return f'{self.concepto}: {self.valor}'
+
+
+def _monitor_soporte_upload_to(instance, filename):
+    """Ruta/nombre limpio del soporte: ``pagos-monitores/pago-<monitor>-<fecha><ext>``.
+
+    Espejo de ``pagos._pago_soporte_upload_to``: nombre del monitor + fecha del
+    simulacro para un nombre legible y estable. El storage añade un sufijo único
+    cuando hay varios soportes del mismo pago.
+    """
+    pago = instance.pago
+    slug = slugify(pago.monitor.nombre_corto) or str(pago.pk)
+    fecha = pago.fecha.isoformat() if pago.fecha else 'sin-fecha'
+    ext = os.path.splitext(filename)[1].lower()
+    return f'pagos-monitores/pago-{slug}-{fecha}{ext}'
+
+
+class SoportePagoMonitor(models.Model):
+    """Comprobante de un pago liquidado a un monitor (FK a ``PagoMonitor``).
+
+    Espejo de ``pagos.SoportePagoProfesor``: varios archivos por pago e historial de
+    quién subió qué y cuándo. Lo sube/elimina **financiera**; programación lo ve en
+    solo lectura. El ``FileField`` usa ``STORAGES['default']`` (disco en dev, Supabase
+    en prod); la descarga la proxia una vista protegida (fase de financiera).
+    """
+
+    pago = models.ForeignKey(PagoMonitor, on_delete=models.CASCADE,
+                             related_name='soportes')
+    archivo = models.FileField(upload_to=_monitor_soporte_upload_to)
+    nombre_original = models.CharField(max_length=255, blank=True)
+    subido_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='soportes_pago_monitor')
+    subido_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'prog_monitores_pagos_soportes'
+        ordering = ['-subido_en']
+        verbose_name = 'Soporte de pago a monitor'
+        verbose_name_plural = 'Soportes de pago a monitor'
+
+    def __str__(self):
+        return f'Soporte de pago de monitor #{self.pago_id} ({self.nombre_original or self.archivo.name})'
+
+    @property
+    def nombre_mostrar(self):
+        """Nombre visible: el nombre real en storage (refleja el renombrado del
+        ``upload_to`` y el sufijo único), no el ``nombre_original`` subido."""
+        if self.archivo and self.archivo.name:
+            return os.path.basename(self.archivo.name)
+        return self.nombre_original or 'archivo'

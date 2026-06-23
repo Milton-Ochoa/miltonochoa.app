@@ -278,9 +278,9 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'resend')  # Resend exige el
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')  # API key re_...
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'AAMO <notificaciones@miltonochoa.app>')
 
-# Destinatario de los avisos de viáticos. Default = correo de pruebas (dev); en prod
-# se sobreescribe con VIATICOS_NOTIFICAR_A=financiero@aamocolombia.com.
-VIATICOS_NOTIFICAR_A = os.environ.get('VIATICOS_NOTIFICAR_A', 'marlon.medina@aamocolombia.com')
+# Destinatario de los avisos de viáticos. El default es un fallback razonable (el correo
+# del área); en prod lo fija la env var VIATICOS_NOTIFICAR_A.
+VIATICOS_NOTIFICAR_A = os.environ.get('VIATICOS_NOTIFICAR_A', 'financiero@aamocolombia.com')
 
 # Destinatario del aviso de legalización de viáticos enviada (revisión post-pago).
 VIATICOS_LEGALIZACION_NOTIFICAR_A = os.environ.get(
@@ -289,7 +289,7 @@ VIATICOS_LEGALIZACION_NOTIFICAR_A = os.environ.get(
 # Destinatario del aviso de simulacros próximos sin monitor (command
 # avisar_simulacros_proximos, pensado para correr a diario por scheduler).
 MONITORES_NOTIFICAR_A = os.environ.get(
-    'MONITORES_NOTIFICAR_A', 'marlon.medina@aamocolombia.com')
+    'MONITORES_NOTIFICAR_A', 'programacion@aamocolombia.com')
 
 # ─────────────────────────────────────────────────────────────
 # ARCHIVOS ESTÁTICOS
