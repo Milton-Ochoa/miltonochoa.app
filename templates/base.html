@@ -83,13 +83,16 @@
         </a>
 
         {% with url_name=request.resolver_match.url_name %}
-        <div class="collapse {% if url_name == 'configuracion_colegios' or url_name == 'configuracion_profesores' or url_name == 'configuracion_libros' or url_name == 'gestionar_usuarios' or url_name == 'gestionar_usuarios_colegios' or url_name == 'gestionar_usuarios_profesores' %}show{% endif %}" id="collapseConfig">
+        <div class="collapse {% if url_name == 'configuracion_colegios' or url_name == 'configuracion_profesores' or url_name == 'configuracion_monitores' or url_name == 'configuracion_libros' or url_name == 'gestionar_usuarios' or url_name == 'gestionar_usuarios_colegios' or url_name == 'gestionar_usuarios_profesores' %}show{% endif %}" id="collapseConfig">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'configuracion_colegios' %}" class="{% if url_name == 'configuracion_colegios' %}active{% endif %}">
                     <i class="fas fa-school" style="width: 20px; text-align: center; margin-right: 8px;"></i> Colegios
                 </a>
                 <a href="{% url 'configuracion_profesores' %}" class="{% if url_name == 'configuracion_profesores' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
+                </a>
+                <a href="{% url 'configuracion_monitores' %}" class="{% if url_name == 'configuracion_monitores' %}active{% endif %}">
+                    <i class="fas fa-user-shield" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
                 </a>
                 <a href="{% url 'configuracion_libros' %}" class="{% if url_name == 'configuracion_libros' %}active{% endif %}">
                     <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Libros
