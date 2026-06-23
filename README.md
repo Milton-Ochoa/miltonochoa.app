@@ -73,8 +73,8 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 | Área | Subdominio | Estado | Qué hace |
 |------|------------|:------:|----------|
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
-| **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores y viáticos. |
-| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badge de pendientes. Acceso por grupo `area:financiera`. |
+| **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores, viáticos y **monitores/simulacros** (con su ciclo de pago propio). |
+| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** y **a monitores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badges de pendientes. Acceso por grupo `area:financiera`. |
 | **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega: catálogos, entradas/salidas/traslados, kardex inmutable, préstamos bidireccionales con devolución parcial, dashboard con alertas y exports a Excel. Acceso por grupo `area:logistica`. |
 
 **Programación**, **Financiera** y **Logística** comparten el mismo *chrome* visual (sidebar,
@@ -145,7 +145,7 @@ Vistas HTMX    Comandos manage   Caché (locmem)    Login/SSO         PWA (manif
 ## Área Programación
 
 El área **Programación** (`programacion.miltonochoa.app`) gestiona la programación académica
-de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **9 sub-apps**.
+de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **10 sub-apps**.
 
 ### Programación visual
 
@@ -244,6 +244,25 @@ sidebar con tres ítems:
   por correo). Financiera los revisa y devuelve con motivo o **finaliza** la solicitud
   (cierre definitivo del expediente).
 
+### Monitores y simulacros
+
+En eventos como **simulacros** (exámenes de práctica) no van profesores sino **monitores**
+que vigilan los salones. Es un dominio paralelo al de clases, con su propio ciclo de pago:
+
+- **Monitores** (Configuración): catálogo de personas estilo profesor simplificado (datos
+  bancarios y documento, sin materias ni horario).
+- **Colegios de simulacro** (Configuración): catálogo **independiente** de los colegios del
+  sistema, con alta individual y **carga masiva por Excel** (`.xlsx` con columnas nombre /
+  código / ciudad / departamento, idempotente) + plantilla de ejemplo descargable.
+- **Simulacros** (Operaciones): se crea cada simulacro (colegio, fecha, grados, jornada y
+  **valor en COP por monitor**) y se le asignan **uno o más monitores** (o ninguno al inicio).
+- **Aviso de próximos sin monitor**: badge en el menú + banner en la lista para los simulacros
+  a ≤ 7 días sin monitor asignado, y un **correo automático** (comando
+  `avisar_simulacros_proximos`, pensado para un cron diario).
+- **Pagos de monitores**: mismo flujo borrador → enviado que los pagos a profesores (lote
+  **semanal**, marcar/desmarcar pagado en financiera, soportes), pero **sin gate por informe**.
+  El valor de cada fila es el del simulacro, una por monitor asignado.
+
 ### Exportación Excel
 
 - Generación 100 % en memoria con **openpyxl** (sin tocar disco — ideal para Railway).
@@ -259,8 +278,8 @@ Pendientes con tres columnas (Pendiente · En gestión · Completado), operable 
 ## Área Financiera
 
 El área **Financiera** (`financiera.miltonochoa.app`) no tiene modelos propios: importa los de
-`programacion.viaticos` y `programacion.pagos` (BD única compartida). Acceso por grupo
-`area:financiera`.
+`programacion.viaticos`, `programacion.pagos` y `programacion.monitores` (BD única compartida).
+Acceso por grupo `area:financiera`.
 
 ### Gestión de viáticos
 
@@ -288,6 +307,13 @@ lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 - Sube/elimina comprobantes (`SoportePagoProfesor`: `.pdf/.jpg/.jpeg/.png`, ≤ 10 MB).
 - Exporta a Excel por tab (por pagar / pagadas), con columna de desglose.
 - Badge en el menú: filas enviadas y no pagadas.
+
+### Pagos a monitores
+
+- Espejo de los pagos a profesores: ve **solo las semanas enviadas** de monitores, marca/
+  desmarca el pago por fila y sube/elimina comprobantes (`SoportePagoMonitor`).
+- Exporta a Excel por tab y tiene su propio **badge** (filas enviadas y no pagadas).
+- En el menú **Pagos → Monitores** (Profesores y Monitores conviven en el desplegable).
 
 ### Proyección de pagos
 
@@ -402,14 +428,16 @@ AAMO/
 │   ├── exportar/            #   Generación de Excel de horarios
 │   ├── pagos/               #   Pagos semanales: LotePagos, PagoRealizado, ExtraPago, SoportePagoProfesor
 │   ├── pendientes/          #   Tablero Kanban (home del área)
-│   └── viaticos/            #   Solicitudes de viáticos: SolicitudViatico, GastoViatico, SoportePago
+│   ├── viaticos/            #   Solicitudes de viáticos: SolicitudViatico, GastoViatico, SoportePago
+│   └── monitores/           #   Monitores + ColegioSimulacro + Simulacro + sus pagos (tablas prog_*)
 │
 ├── financiera/             # ÁREA financiera (financiera.miltonochoa.app)
-│   ├── urls.py              #   router del área (raíz /): viaticos + pagos
+│   ├── urls.py              #   router del área (raíz /): viaticos + pagos + monitores
 │   ├── viaticos/            #   Inicio + gestión: devolver/aprobar/pagar/editar + soportes + Excel
-│   └── pagos/               #   Pagos a profesores: semanas enviadas → marcar + soportes + Excel
-│                            #   + proyección de pagos (clases programadas, solo lectura)
-│                            #   (sin modelos propios — importa de programacion.pagos)
+│   ├── pagos/               #   Pagos a profesores: semanas enviadas → marcar + soportes + Excel
+│   │                        #   + proyección de pagos (clases programadas, solo lectura)
+│   └── monitores/           #   Pagos a monitores: semanas enviadas → marcar + soportes + Excel
+│                            #   (sin modelos propios — importan de programacion.*)
 │
 ├── logistica/              # ÁREA logística (logistica.miltonochoa.app)
 │   ├── urls.py              #   router del área (raíz /): inventario
@@ -569,6 +597,7 @@ redirige al subdominio del área del usuario (o al `/panel/` si es superusuario)
 | `EMAIL_HOST_PASSWORD` | No | — | API key de Resend (re_…) para envío de correo en producción. |
 | `VIATICOS_NOTIFICAR_A` | No | `marlon.medina@aamocolombia.com` | Destinatario de los avisos de viáticos. |
 | `VIATICOS_LEGALIZACION_NOTIFICAR_A` | No | `financiero@aamocolombia.com` | Destinatario del aviso de legalización de viáticos enviada. |
+| `MONITORES_NOTIFICAR_A` | No | `marlon.medina@aamocolombia.com` | Destinatario del aviso de simulacros próximos sin monitor (comando `avisar_simulacros_proximos`). |
 | `BACKUP_DIR` | No | `backups/` | Directorio para respaldos. |
 
 > Si existe `.env.dev-api` se carga **antes** del `.env`. Sirve para usar SQLite local sin
@@ -594,7 +623,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 587 tests OK.**
+**Baseline actual: 668 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -672,6 +701,10 @@ alertas en cada carga (era un barrido global costoso bajo concurrencia). Program
 Service* en Railway con `python manage.py ejecutar_auditoria` (sugerido cada 30 min) para
 mantener las alertas frescas; la vista de Auditoría también las reconcilia al visitarla.
 
+**Aviso de simulacros (recomendado):** programa un *Cron Service* en Railway con
+`python manage.py avisar_simulacros_proximos` (sugerido diario) para enviar por correo el
+resumen de simulacros próximos sin monitor (destinatario en `MONITORES_NOTIFICAR_A`).
+
 > Filesystem efímero en Railway — todos los Excel/ZIP se generan en `BytesIO` y se
 > devuelven directamente en la respuesta HTTP (sin tocar disco).
 
@@ -744,7 +777,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 587 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 668 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
