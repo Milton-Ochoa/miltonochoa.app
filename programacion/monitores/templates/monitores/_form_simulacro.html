@@ -1,0 +1,45 @@
+{% comment %}
+Form compartido de simulacro (modales Nuevo / Editar). Parámetro:
+  - prefijo: 'nuevo' | 'edit' (para ids únicos por modal).
+Las listas (colegios, grados, monitores, jornadas) vienen del contexto de la vista.
+{% endcomment %}
+<div class="row g-3">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold">Colegio <span class="text-danger">*</span></label>
+    <select name="colegio" id="{{ prefijo }}_colegio" class="form-select select2-colegio" required>
+      <option value="">-- Seleccionar --</option>
+      {% for c in colegios %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label small fw-bold">Fecha <span class="text-danger">*</span></label>
+    <input type="date" name="fecha" id="{{ prefijo }}_fecha" class="form-control" required>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label small fw-bold">Jornada</label>
+    <select name="jornada" id="{{ prefijo }}_jornada" class="form-select">
+      {% for val, label in jornadas %}<option value="{{ val }}"{% if val == 'TODO_DIA' %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-md-8">
+    <label class="form-label small fw-bold">Grados</label>
+    <select name="grados" id="{{ prefijo }}_grados" class="form-select select2-grados" multiple>
+      {% for g in grados %}<option value="{{ g.id }}">{{ g.nombre }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold">Valor por monitor (COP)</label>
+    <input type="number" name="valor" id="{{ prefijo }}_valor" class="form-control" min="0" value="0">
+  </div>
+  <div class="col-12">
+    <label class="form-label small fw-bold">Monitores</label>
+    <select name="monitores" id="{{ prefijo }}_monitores" class="form-select select2-monitores" multiple>
+      {% for m in monitores %}<option value="{{ m.id }}">{{ m.nombre_corto }}{% if m.documento %} ({{ m.documento }}){% endif %}</option>{% endfor %}
+    </select>
+    <small class="text-muted">Cada monitor asignado genera un pago por el valor indicado. Puedes dejarlo vacío y asignar después.</small>
+  </div>
+  <div class="col-12">
+    <label class="form-label small fw-bold">Observaciones</label>
+    <textarea name="observaciones" id="{{ prefijo }}_observaciones" class="form-control" rows="2"></textarea>
+  </div>
+</div>

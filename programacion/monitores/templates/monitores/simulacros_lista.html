@@ -1,0 +1,300 @@
+{% extends 'base.html' %}
+{% block header_title %}Simulacros{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Operaciones</li>
+    <li class="breadcrumb-item active">Simulacros</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<button class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+    <i class="fas fa-plus me-1"></i> Nuevo Simulacro
+</button>
+{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-sim { table-layout: fixed; width: 100%; }
+    .tabla-sim th, .tabla-sim td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-sim thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-sim tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-sim tr.fila-filtros th input, .tabla-sim tr.fila-filtros th select {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .col-colegio { width: 26%; }
+    .col-fecha   { width: 12%; }
+    .col-jornada { width: 12%; }
+    .col-grados  { width: 18%; }
+    .col-valor   { width: 12%; text-align: right; }
+    .col-monit   { width: 12%; text-align: center; }
+    .col-acc     { width: 8%;  text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-sim" id="tablaSim">
+        <thead class="table-dark">
+          <tr>
+            <th class="col-colegio">Colegio</th>
+            <th class="col-fecha">Fecha</th>
+            <th class="col-jornada">Jornada</th>
+            <th class="col-grados">Grados</th>
+            <th class="col-valor">Valor/monitor</th>
+            <th class="col-monit">Monitores</th>
+            <th class="col-acc">Acciones</th>
+          </tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="colegio"></th>
+            <th><input type="text" data-filtro="fecha"></th>
+            <th>
+              <select data-filtro="jornada">
+                <option value="">Todas</option>
+                {% for val, label in jornadas %}<option value="{{ label|lower }}">{{ label }}</option>{% endfor %}
+              </select>
+            </th>
+            <th><input type="text" data-filtro="grados"></th>
+            <th></th>
+            <th>
+              <select data-filtro="asignacion">
+                <option value="">Todos</option>
+                <option value="con">Con monitor</option>
+                <option value="sin">Sin monitor</option>
+              </select>
+            </th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTabla">
+          {% for s in simulacros %}
+          <tr data-colegio="{{ s.nombre_colegio|lower }}"
+              data-fecha="{{ s.fecha|date:'d/m/Y' }}"
+              data-jornada="{{ s.get_jornada_display|lower }}"
+              data-grados="{% for g in s.grados.all %}{{ g.nombre|lower }} {% endfor %}"
+              data-asignacion="{% if s.monitores.all %}con{% else %}sin{% endif %}">
+            <td class="fw-bold">{{ s.nombre_colegio }}</td>
+            <td>{{ s.fecha|date:'d/m/Y' }}</td>
+            <td>{{ s.get_jornada_display }}</td>
+            <td>
+              {% for g in s.grados.all %}<span class="badge bg-light text-dark border">{{ g.nombre }}</span> {% empty %}<span class="text-muted">—</span>{% endfor %}
+            </td>
+            <td class="text-end">${{ s.valor|floatformat:'0' }}</td>
+            <td class="text-center">
+              {% with n=s.monitores.all|length %}
+              {% if n %}<span class="badge bg-success">{{ n }}</span>{% else %}<span class="badge bg-warning text-dark">0</span>{% endif %}
+              {% endwith %}
+            </td>
+            <td class="text-center text-nowrap">
+              <button class="btn btn-sm btn-outline-primary py-0 px-2" title="Gestionar"
+                      data-sim-id="{{ s.id }}"
+                      data-colegio="{{ s.colegio_id|default:'' }}"
+                      data-colegio-nombre="{{ s.nombre_colegio|escapejs }}"
+                      data-fecha="{{ s.fecha|date:'Y-m-d' }}"
+                      data-jornada="{{ s.jornada }}"
+                      data-valor="{{ s.valor }}"
+                      data-observaciones="{{ s.observaciones|escapejs }}"
+                      data-grados="[{% for g in s.grados.all %}{{ g.id }}{% if not forloop.last %},{% endif %}{% endfor %}]"
+                      data-monitores="[{% for m in s.monitores.all %}{{ m.id }}{% if not forloop.last %},{% endif %}{% endfor %}]"
+                      onclick="abrirGestionar(this)">
+                <i class="fas fa-cogs"></i>
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              <i class="fas fa-clipboard-list me-1"></i> No hay simulacros registrados.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+      <small class="text-muted">Mostrando <span id="contadorVisibles">0</span> de {{ simulacros|length }} simulacros</small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControles"></ul></nav>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Nuevo ── #}
+<div class="modal fade" id="modalNuevo" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-fullscreen-sm-down modal-dialog-centered modal-dialog-scrollable">
+    <form method="post" class="modal-content">
+      {% csrf_token %}
+      <input type="hidden" name="accion" value="add">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title fw-bold"><i class="fas fa-clipboard-list me-2"></i>Nuevo Simulacro</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        {% include 'monitores/_form_simulacro.html' with prefijo='nuevo' %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-success fw-bold"><i class="fas fa-save me-1"></i> Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Modal Gestionar (Editar / Eliminar) ── #}
+<div class="modal fade" id="modalGestionar" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-fullscreen-sm-down modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h5 class="modal-title" id="gestTitulo">—</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" id="formEditar">
+          {% csrf_token %}
+          <input type="hidden" name="accion" value="edit">
+          <input type="hidden" name="simulacro_id" id="edit_simulacro_id">
+          {% include 'monitores/_form_simulacro.html' with prefijo='edit' %}
+          <div class="d-flex justify-content-between mt-3">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="document.getElementById('formEliminar').submit();">
+              <i class="fas fa-trash me-1"></i> Eliminar
+            </button>
+            <button type="submit" class="btn btn-success fw-bold"><i class="fas fa-save me-1"></i> Guardar Cambios</button>
+          </div>
+        </form>
+        <form method="post" id="formEliminar" class="d-none"
+              onsubmit="return confirm('¿Eliminar este simulacro permanentemente?');">
+          {% csrf_token %}
+          <input type="hidden" name="accion" value="del">
+          <input type="hidden" name="simulacro_id" id="del_simulacro_id">
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const S2_OPTS = { theme: 'bootstrap-5', width: '100%' };
+
+function initSelect2(modal) {
+  const $m = $(modal);
+  $m.find('.select2-colegio').select2({ ...S2_OPTS, placeholder: 'Buscar colegio...', allowClear: true, dropdownParent: $m });
+  $m.find('.select2-grados').select2({ ...S2_OPTS, placeholder: 'Seleccionar grados...', dropdownParent: $m });
+  $m.find('.select2-monitores').select2({ ...S2_OPTS, placeholder: 'Asignar monitores...', dropdownParent: $m });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  document.getElementById('modalNuevo').addEventListener('shown.bs.modal', function () {
+    initSelect2(this);
+  }, { once: true });
+  document.getElementById('modalGestionar').addEventListener('shown.bs.modal', function () {
+    initSelect2(this);
+  }, { once: true });
+});
+
+function abrirGestionar(btn) {
+  const d = btn.dataset;
+  document.getElementById('gestTitulo').textContent = d.colegioNombre + ' · ' + d.fecha;
+  document.getElementById('edit_simulacro_id').value = d.simId;
+  document.getElementById('del_simulacro_id').value  = d.simId;
+  document.getElementById('edit_colegio').value       = d.colegio;
+  document.getElementById('edit_fecha').value         = d.fecha;
+  document.getElementById('edit_jornada').value       = d.jornada;
+  document.getElementById('edit_valor').value         = d.valor;
+  document.getElementById('edit_observaciones').value = d.observaciones || '';
+
+  const grados    = JSON.parse(d.grados || '[]').map(String);
+  const monitores = JSON.parse(d.monitores || '[]').map(String);
+  // Aplicar valores; si Select2 ya está inicializado, refrescar con 'change'.
+  $('#edit_colegio').val(d.colegio).trigger('change');
+  $('#edit_grados').val(grados).trigger('change');
+  $('#edit_monitores').val(monitores).trigger('change');
+
+  new bootstrap.Modal(document.getElementById('modalGestionar')).show();
+}
+
+// ── Filtrado + paginación inline ──
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+    var inputs = document.querySelectorAll('.fila-filtros [data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTabla tr[data-colegio]'));
+    var ctrl   = document.getElementById('paginaControles');
+    var cont   = document.getElementById('contadorVisibles');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = (inp.value || '').trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if (k === 'asignacion' || k === 'jornada') {
+                    if ((tr.dataset[k] || '') !== q[k]) return false;
+                } else {
+                    if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link'; a.href = '#'; a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page; render();
+            });
+            li.appendChild(a); ctrl.appendChild(li);
+        }
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+        inp.addEventListener('change', function () { pagina = 1; render(); });
+    });
+    render();
+})();
+</script>
+{% endblock %}

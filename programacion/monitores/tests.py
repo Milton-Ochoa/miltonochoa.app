@@ -6,7 +6,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from openpyxl import Workbook, load_workbook
 
-from programacion.monitores.models import ColegioSimulacro, Monitor
+from programacion.colegios.models import Grado
+from programacion.monitores.models import (AsignacionMonitor, ColegioSimulacro,
+                                           Monitor, Simulacro)
 
 
 def _xlsx_bytes(filas, *, encabezados=('nombre', 'codigo', 'ciudad', 'departamento')):
@@ -222,3 +224,93 @@ class ColegioSimulacroViewTest(TestCase):
         wb = load_workbook(io.BytesIO(resp.content))
         encabezados = [c.value for c in wb.active[1]]
         self.assertEqual(encabezados, ['nombre', 'codigo', 'ciudad', 'departamento'])
+
+
+class SimulacroViewTest(TestCase):
+    """CRUD de simulacros + asignación de monitores (Operaciones, programación)."""
+
+    URL = '/monitores/'
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_sim', password='pass123')
+        self.client.login(username='admin_sim', password='pass123')
+        self.colegio = ColegioSimulacro.objects.create(nombre='Colegio Norte')
+        self.g6 = Grado.objects.create(nombre='Sexto')
+        self.g7 = Grado.objects.create(nombre='Séptimo')
+        self.m1 = Monitor.objects.create(nombre='Ana', documento='111')
+        self.m2 = Monitor.objects.create(nombre='Beto', documento='222')
+
+    def test_listado_accesible(self):
+        Simulacro.objects.create(colegio=self.colegio, fecha='2026-07-01')
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Colegio Norte')
+
+    def test_crear_simulacro_con_monitores_y_grados(self):
+        self.client.post(self.URL, {
+            'accion': 'add',
+            'colegio': self.colegio.id,
+            'fecha': '2026-07-10',
+            'jornada': 'MANANA',
+            'valor': '50000',
+            'grados': [self.g6.id, self.g7.id],
+            'monitores': [self.m1.id, self.m2.id],
+            'observaciones': 'Simulacro de prueba',
+        })
+        s = Simulacro.objects.get()
+        self.assertEqual(s.valor, 50000)
+        self.assertEqual(s.jornada, 'MANANA')
+        self.assertEqual(s.colegio_nombre, 'Colegio Norte')  # snapshot
+        self.assertEqual(set(s.grados.values_list('id', flat=True)), {self.g6.id, self.g7.id})
+        self.assertEqual(s.asignaciones.count(), 2)
+
+    def test_crear_simulacro_sin_monitores(self):
+        self.client.post(self.URL, {
+            'accion': 'add', 'colegio': self.colegio.id,
+            'fecha': '2026-07-10', 'jornada': 'TODO_DIA', 'valor': '0',
+        })
+        s = Simulacro.objects.get()
+        self.assertEqual(s.asignaciones.count(), 0)
+
+    def test_editar_sincroniza_monitores(self):
+        s = Simulacro.objects.create(colegio=self.colegio, fecha='2026-07-10')
+        AsignacionMonitor.objects.create(simulacro=s, monitor=self.m1)
+        # Editar: quita m1, agrega m2.
+        self.client.post(self.URL, {
+            'accion': 'edit', 'simulacro_id': s.id,
+            'colegio': self.colegio.id, 'fecha': '2026-07-10',
+            'jornada': 'TODO_DIA', 'valor': '10000',
+            'monitores': [self.m2.id],
+        })
+        s.refresh_from_db()
+        self.assertEqual(s.valor, 10000)
+        self.assertEqual(list(s.asignaciones.values_list('monitor_id', flat=True)), [self.m2.id])
+
+    def test_eliminar_simulacro(self):
+        s = Simulacro.objects.create(colegio=self.colegio, fecha='2026-07-10')
+        AsignacionMonitor.objects.create(simulacro=s, monitor=self.m1)
+        self.client.post(self.URL, {'accion': 'del', 'simulacro_id': s.id})
+        self.assertEqual(Simulacro.objects.count(), 0)
+        self.assertEqual(AsignacionMonitor.objects.count(), 0)  # CASCADE
+
+    def test_monitor_con_asignacion_es_protegido(self):
+        s = Simulacro.objects.create(colegio=self.colegio, fecha='2026-07-10')
+        AsignacionMonitor.objects.create(simulacro=s, monitor=self.m1)
+        from django.db.models import ProtectedError
+        with self.assertRaises(ProtectedError):
+            self.m1.delete()
+
+    def test_borrar_colegio_conserva_snapshot(self):
+        s = Simulacro.objects.create(colegio=self.colegio, fecha='2026-07-10')
+        self.colegio.delete()  # SET_NULL
+        s.refresh_from_db()
+        self.assertIsNone(s.colegio_id)
+        self.assertEqual(s.nombre_colegio, 'Colegio Norte')  # snapshot intacto
+
+    def test_gate_requiere_personal(self):
+        otro = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_user(username='pepe', password='x')
+        otro.login(username='pepe', password='x')
+        resp = otro.get(self.URL)
+        self.assertNotEqual(resp.status_code, 200)
