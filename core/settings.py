@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     'programacion.pagos',
     'programacion.pendientes',
     'programacion.viaticos',
+    'programacion.monitores',
     'financiera.viaticos',
     'financiera.pagos',
     'logistica.inventario',
