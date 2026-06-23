@@ -379,3 +379,172 @@ class AvisoSimulacrosProximosTest(TestCase):
         from django.core.management import call_command
         self._simulacro(2)
         call_command('avisar_simulacros_proximos')  # no debe lanzar
+
+
+class PagoMonitorModelTest(TestCase):
+    """Fase 5: propiedades del modelo de pago (espejo de PagoRealizado)."""
+
+    def setUp(self):
+        from datetime import date
+        self.colegio = ColegioSimulacro.objects.create(nombre='Col')
+        self.monitor = Monitor.objects.create(nombre='Ana', documento='1')
+        self.sim = Simulacro.objects.create(
+            colegio=self.colegio, fecha=date(2026, 7, 8), valor=50000)
+
+    def _pago(self, **kw):
+        from programacion.monitores.models import PagoMonitor
+        defaults = dict(monitor=self.monitor, simulacro=self.sim,
+                        fecha=self.sim.fecha, valor=50000)
+        defaults.update(kw)
+        return PagoMonitor.objects.create(**defaults)
+
+    def test_valor_base_es_el_valor(self):
+        self.assertEqual(self._pago().valor_base, 50000)
+
+    def test_total_suma_extras(self):
+        from programacion.monitores.models import ExtraPagoMonitor
+        p = self._pago()
+        ExtraPagoMonitor.objects.create(pago=p, concepto='Transporte', valor=10000)
+        self.assertEqual(p.total, 60000)
+        self.assertEqual(p.total_extras, 10000)
+
+    def test_fecha_pago_nullable_y_pagada(self):
+        from django.utils import timezone
+        p = self._pago()
+        self.assertFalse(p.pagada)
+        p.fecha_pago = timezone.now()
+        p.save(update_fields=['fecha_pago'])
+        self.assertTrue(p.pagada)
+
+    def test_fila_historica_sin_lote(self):
+        from django.utils import timezone
+        p = self._pago(lote=None, fecha_pago=timezone.now())
+        self.assertIsNone(p.lote_id)
+        self.assertTrue(p.pagada)
+
+
+class PrepararLoteMonitoresTest(TestCase):
+    """Fase 5: materialización/envío/idempotencia de pagos de monitores."""
+
+    def setUp(self):
+        from datetime import date, timedelta
+        self.colegio = ColegioSimulacro.objects.create(nombre='Col')
+        self.m1 = Monitor.objects.create(nombre='Ana', documento='1')
+        self.m2 = Monitor.objects.create(nombre='Beto', documento='2')
+        # Simulacro en una semana conocida; ancla = lunes de esa fecha.
+        self.fecha = date(2026, 7, 8)  # miércoles
+        self.inicio = self.fecha - timedelta(days=self.fecha.weekday())
+        self.fin = self.inicio + timedelta(days=6)  # semana completa (lunes–domingo)
+        self.sim = Simulacro.objects.create(
+            colegio=self.colegio, fecha=self.fecha, valor=50000)
+        AsignacionMonitor.objects.create(simulacro=self.sim, monitor=self.m1)
+        AsignacionMonitor.objects.create(simulacro=self.sim, monitor=self.m2)
+
+    def test_preparar_crea_lote_y_filas(self):
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        from programacion.monitores.models import LoteMonitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.assertEqual(lote.estado, LoteMonitores.Estado.BORRADOR)
+        self.assertEqual(lote.filas.count(), 2)  # un pago por monitor asignado
+        self.assertEqual({f.valor for f in lote.filas.all()}, {50000})
+
+    def test_preparar_idempotente_y_respeta_excluida(self):
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        fila = lote.filas.first()
+        fila.excluida = True
+        fila.save(update_fields=['excluida'])
+        preparar_lote_semana_monitores(self.inicio, self.fin)  # 2ª pasada
+        self.assertEqual(lote.filas.count(), 2)  # no duplica
+        fila.refresh_from_db()
+        self.assertTrue(fila.excluida)           # no resucita
+
+    def test_preparar_refresca_valor_si_cambia_el_simulacro(self):
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.sim.valor = 70000
+        self.sim.save(update_fields=['valor'])
+        preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.assertEqual({f.valor for f in lote.filas.all()}, {70000})
+
+    def test_preparar_elimina_autogenerada_si_se_quita_la_asignacion(self):
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        AsignacionMonitor.objects.filter(simulacro=self.sim, monitor=self.m2).delete()
+        preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.assertEqual(lote.filas.count(), 1)
+        self.assertEqual(lote.filas.first().monitor_id, self.m1.id)
+
+    def test_lote_enviado_no_se_remateriliza(self):
+        from programacion.monitores.pagos_servicios import (
+            preparar_lote_semana_monitores, enviar_lote_monitores)
+        from programacion.monitores.models import LoteMonitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.assertTrue(enviar_lote_monitores(lote, None))
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, LoteMonitores.Estado.ENVIADO)
+        # Re-preparar crea un BORRADOR nuevo SIN tocar las filas congeladas.
+        nuevo = preparar_lote_semana_monitores(self.inicio, self.fin)
+        self.assertNotEqual(nuevo.id, lote.id)
+        self.assertEqual(lote.filas.count(), 2)   # siguen en el ENVIADO
+        self.assertEqual(nuevo.filas.count(), 0)  # nada que adoptar
+
+    def test_enviar_desacopla_excluidas(self):
+        from programacion.monitores.pagos_servicios import (
+            preparar_lote_semana_monitores, enviar_lote_monitores)
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        fila = lote.filas.first()
+        fila.excluida = True
+        fila.save(update_fields=['excluida'])
+        self.assertTrue(enviar_lote_monitores(lote, None))
+        self.assertEqual(lote.filas.count(), 1)   # la excluida se desacopló
+        fila.refresh_from_db()
+        self.assertIsNone(fila.lote_id)
+
+    def test_enviar_sin_filas_enviables_no_marca(self):
+        from programacion.monitores.pagos_servicios import (
+            preparar_lote_semana_monitores, enviar_lote_monitores)
+        from programacion.monitores.models import LoteMonitores
+        lote = preparar_lote_semana_monitores(self.inicio, self.fin)
+        lote.filas.update(excluida=True)
+        self.assertFalse(enviar_lote_monitores(lote, None))
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, LoteMonitores.Estado.BORRADOR)
+
+    def test_un_solo_borrador_por_semana(self):
+        from django.db import IntegrityError, transaction
+        from programacion.monitores.models import LoteMonitores
+        LoteMonitores.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                LoteMonitores.objects.create(fecha_inicio=self.inicio, fecha_fin=self.fin)
+
+    def test_preparar_pendientes_materializa_y_borra_vacios(self):
+        from programacion.monitores.pagos_servicios import preparar_pendientes_monitores
+        from programacion.monitores.models import LoteMonitores
+        from datetime import date, timedelta
+        # Mueve el simulacro al pasado para que entre en el backlog (<= hoy).
+        self.sim.fecha = date.today() - timedelta(days=3)
+        self.sim.save(update_fields=['fecha'])
+        # Un borrador vacío de otra semana debe quedar barrido.
+        LoteMonitores.objects.create(
+            fecha_inicio=date(2020, 1, 6), fecha_fin=date(2020, 1, 10))
+        n = preparar_pendientes_monitores(None)
+        self.assertGreaterEqual(n, 1)
+        self.assertFalse(LoteMonitores.objects.filter(
+            fecha_inicio=date(2020, 1, 6)).exists())
+        # La semana del simulacro sí tiene su borrador con filas.
+        from programacion.monitores.models import PagoMonitor
+        self.assertTrue(PagoMonitor.objects.exists())
+
+    def test_simulacro_de_sabado_entra_en_su_semana(self):
+        """Los simulacros de fin de semana caen en su lote (semana lunes–domingo)."""
+        from datetime import date, timedelta
+        from programacion.monitores.pagos_servicios import preparar_lote_semana_monitores
+        sabado = date(2026, 7, 11)  # sábado
+        lunes = sabado - timedelta(days=sabado.weekday())
+        sim_sab = Simulacro.objects.create(
+            colegio=self.colegio, fecha=sabado, valor=40000)
+        AsignacionMonitor.objects.create(simulacro=sim_sab, monitor=self.m1)
+        lote = preparar_lote_semana_monitores(lunes, lunes + timedelta(days=6))
+        self.assertEqual(lote.filas.filter(simulacro=sim_sab).count(), 1)
