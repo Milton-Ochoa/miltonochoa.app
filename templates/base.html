@@ -23,7 +23,7 @@
             <span><i class="fas fa-tasks icon-main text-success"></i> Operaciones</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' or request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}show{% endif %}" id="collapseOperaciones">
+        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' or request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' or request.resolver_match.url_name == 'simulacros_lista' %}show{% endif %}" id="collapseOperaciones">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'vista_general' %}" class="{% if request.resolver_match.url_name == 'vista_general' %}active{% endif %}">
                     <i class="fas fa-calendar-week" style="width: 20px; text-align: center; margin-right: 8px;"></i> General
@@ -36,6 +36,9 @@
                 </a>
                 <a href="{% url 'viaticos_lista' %}" class="{% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
                     <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
+                </a>
+                <a href="{% url 'simulacros_lista' %}" class="{% if request.resolver_match.url_name == 'simulacros_lista' %}active{% endif %}">
+                    <i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i> Simulacros
                 </a>
             </div>
         </div>

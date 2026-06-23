@@ -94,3 +94,86 @@ class ColegioSimulacro(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class Simulacro(models.Model):
+    """Un simulacro (examen de práctica) realizado en un colegio.
+
+    A diferencia de las clases, en un simulacro no van profesores sino
+    **monitores** (vigilan los salones). El ``valor`` es lo que se le paga a
+    **cada** monitor asignado (2 monitores = 2 pagos de ese valor). Los monitores
+    se asignan vía ``AsignacionMonitor`` (0..N por simulacro).
+    """
+
+    class Jornada(models.TextChoices):
+        MANANA   = 'MANANA', 'Mañana'
+        TARDE    = 'TARDE', 'Tarde'
+        TODO_DIA = 'TODO_DIA', 'Todo el día'
+
+    # SET_NULL + snapshot: el documento del simulacro sobrevive al borrado del
+    # colegio del catálogo (patrón CancelacionClase). El nombre se congela en save().
+    colegio        = models.ForeignKey(ColegioSimulacro, on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='simulacros',
+                                       verbose_name="Colegio")
+    colegio_nombre = models.CharField(max_length=200, blank=True,
+                                      verbose_name="Colegio (snapshot)")
+    fecha          = models.DateField(verbose_name="Fecha")
+    # M2M al catálogo global de grados (nunca texto libre).
+    grados         = models.ManyToManyField('colegios.Grado', blank=True,
+                                            related_name='simulacros',
+                                            verbose_name="Grados")
+    jornada        = models.CharField(max_length=10, choices=Jornada.choices,
+                                      default=Jornada.TODO_DIA, verbose_name="Jornada")
+    valor          = models.PositiveIntegerField(default=0,
+                                                 verbose_name="Valor por monitor (COP)")
+    monitores      = models.ManyToManyField(Monitor, through='AsignacionMonitor',
+                                            related_name='simulacros', blank=True,
+                                            verbose_name="Monitores")
+    observaciones  = models.TextField(blank=True, verbose_name="Observaciones")
+    creado_en      = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'prog_simulacros'
+        verbose_name = 'Simulacro'
+        verbose_name_plural = 'Simulacros'
+        ordering = ['-fecha']
+
+    def save(self, *args, **kwargs):
+        # Congela el nombre del colegio mientras la FK exista (sobrevive al borrado).
+        if self.colegio_id:
+            self.colegio_nombre = self.colegio.nombre
+        super().save(*args, **kwargs)
+
+    @property
+    def nombre_colegio(self):
+        """Nombre a mostrar: la FK viva o el snapshot si el colegio se borró."""
+        return self.colegio.nombre if self.colegio_id else self.colegio_nombre
+
+    def __str__(self):
+        return f"Simulacro {self.nombre_colegio} {self.fecha:%d/%m/%Y}"
+
+
+class AsignacionMonitor(models.Model):
+    """Through del M2M ``Simulacro.monitores``: un monitor asignado a un simulacro.
+
+    FK ``monitor`` con ``PROTECT`` para no perder el rastro de a quién se le debe
+    un pago; el simulacro con ``CASCADE`` (si se borra el simulacro, sus
+    asignaciones se van con él). Un monitor no puede asignarse dos veces al mismo
+    simulacro (``unique_together``).
+    """
+
+    simulacro = models.ForeignKey(Simulacro, on_delete=models.CASCADE,
+                                  related_name='asignaciones', verbose_name="Simulacro")
+    monitor   = models.ForeignKey(Monitor, on_delete=models.PROTECT,
+                                  related_name='asignaciones', verbose_name="Monitor")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'prog_simulacros_monitores'
+        verbose_name = 'Asignación de monitor'
+        verbose_name_plural = 'Asignaciones de monitor'
+        unique_together = ('simulacro', 'monitor')
+
+    def __str__(self):
+        return f"{self.monitor} → {self.simulacro}"

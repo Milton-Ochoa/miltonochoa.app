@@ -13,8 +13,10 @@ from openpyxl import Workbook, load_workbook
 from core.areas import es_personal_programacion
 from programacion.configuracion.colombia_geo import DEPARTAMENTOS, DEPARTAMENTOS_CIUDADES
 
-from .models import ColegioSimulacro, Monitor
-from .forms import ColegioSimulacroForm, MonitorForm
+from programacion.colegios.models import Grado
+
+from .models import AsignacionMonitor, ColegioSimulacro, Monitor, Simulacro
+from .forms import ColegioSimulacroForm, MonitorForm, SimulacroForm
 
 # Mismo gate que el resto de Configuración: superusuario o staff del área.
 solo_personal = user_passes_test(es_personal_programacion)
@@ -245,6 +247,82 @@ def _cargar_colegios_excel(request):
         messages.success(request, 'Carga masiva: ' + ', '.join(partes) + '.')
     else:
         messages.warning(request, 'Carga masiva: ' + ', '.join(partes) + '.')
+
+
+# ── Simulacros (Operaciones) ─────────────────────────────────────────────────
+
+def _sync_monitores(simulacro, ids):
+    """Sincroniza las ``AsignacionMonitor`` del simulacro con la lista de ids del
+    POST (multiselect de monitores). Crea las que falten y borra las que sobren;
+    es idempotente. Ignora ids inválidos."""
+    deseados = set()
+    for raw in ids:
+        try:
+            deseados.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    # Solo monitores que existen (evita FK rotas por ids manipulados).
+    deseados &= set(Monitor.objects.filter(id__in=deseados).values_list('id', flat=True))
+
+    actuales = set(simulacro.asignaciones.values_list('monitor_id', flat=True))
+    a_crear  = deseados - actuales
+    a_borrar = actuales - deseados
+
+    if a_borrar:
+        simulacro.asignaciones.filter(monitor_id__in=a_borrar).delete()
+    if a_crear:
+        AsignacionMonitor.objects.bulk_create(
+            [AsignacionMonitor(simulacro=simulacro, monitor_id=mid) for mid in a_crear])
+
+
+@solo_personal
+def simulacros_lista(request):
+    """Lista de simulacros (Operaciones) + alta/edición/borrado por modal.
+
+    Acciones POST: add, edit, del. Los monitores se asignan/quitan en el mismo
+    form (multiselect) vía ``_sync_monitores``; los grados los maneja el ModelForm.
+    """
+    if request.method == 'POST':
+        accion = request.POST.get('accion', 'add')
+
+        if accion == 'del':
+            s_del = Simulacro.objects.filter(id=request.POST.get('simulacro_id')).first()
+            if s_del:
+                # CASCADE en asignaciones; el simulacro no es PROTECT de nada aún.
+                s_del.delete()
+                messages.success(request, 'Simulacro eliminado.')
+            return redirect('simulacros_lista')
+
+        if accion == 'edit':
+            simulacro = get_object_or_404(Simulacro, id=request.POST.get('simulacro_id'))
+            form = SimulacroForm(request.POST, instance=simulacro)
+        else:  # add
+            form = SimulacroForm(request.POST)
+
+        if form.is_valid():
+            with transaction.atomic():
+                simulacro = form.save()  # guarda también el M2M de grados
+                _sync_monitores(simulacro, request.POST.getlist('monitores'))
+            messages.success(
+                request,
+                'Simulacro actualizado.' if accion == 'edit' else 'Simulacro creado.')
+        else:
+            messages.error(request, 'No se pudo guardar el simulacro: revisa los datos.')
+
+        return redirect('simulacros_lista')
+
+    simulacros = (Simulacro.objects
+                  .select_related('colegio')
+                  .prefetch_related('grados', 'monitores')
+                  .order_by('-fecha'))
+
+    return render(request, 'monitores/simulacros_lista.html', {
+        'simulacros': simulacros,
+        'colegios':   ColegioSimulacro.objects.filter(activo=True).order_by('nombre'),
+        'grados':     Grado.objects.all(),
+        'monitores':  Monitor.objects.filter(activo=True).order_by('nombre'),
+        'jornadas':   Simulacro.Jornada.choices,
+    })
 
 
 @require_POST
