@@ -24,32 +24,36 @@
             {% endif %}
         </a>
 
-        {# Pagos (desplegable): Profesores (funcional) + Proyección (solo lectura) + Monitores (placeholder); badge = pendientes de la semana #}
+        {# Pagos (desplegable): Profesores (funcional) + Proyección (solo lectura) + Monitores (funcional); badge = suma de pendientes (profesores + monitores) #}
         <a href="#collapsePagosFin" data-bs-toggle="collapse"
            class="nav-item justify-content-between sidebar-section-toggle"
            data-section-key="pagos_fin"
-           aria-expanded="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' %}true{% else %}false{% endif %}">
+           aria-expanded="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}true{% else %}false{% endif %}">
             <span>
                 <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos
-                {% if pagos_pendientes_count %}
-                <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count }}</span>
+                {# Suma de pendientes (profesores + monitores); el if tolera vars indefinidas (test que renderiza sin context processors). #}
+                {% if pagos_pendientes_count or pagos_monitores_pendientes_count %}
+                <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count|add:pagos_monitores_pendientes_count }}</span>
                 {% endif %}
             </span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' %}show{% endif %}" id="collapsePagosFin">
+        <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}show{% endif %}" id="collapsePagosFin">
             <div class="collapse-inner py-1 bg-dark">
-                <a href="{% url 'fin_pagos_lista' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
+                <a href="{% url 'fin_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
+                    {% if pagos_pendientes_count %}
+                    <span class="badge bg-danger ms-auto">{{ pagos_pendientes_count }}</span>
+                    {% endif %}
                 </a>
                 <a href="{% url 'fin_pagos_proyeccion' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_proyeccion' %}active{% endif %}">
                     <i class="fas fa-chart-line" style="width: 20px; text-align: center; margin-right: 8px;"></i> Proyección
                 </a>
-                {# Monitores: aún no implementado → ítem inerte (sin href), gris, con aviso. #}
-                <a class="text-muted" tabindex="-1" aria-disabled="true" title="Próximamente"
-                   style="cursor: not-allowed; opacity: .55;">
+                <a href="{% url 'fin_monitores_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}active{% endif %}">
                     <i class="fas fa-user-graduate" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
-                    <span class="badge bg-secondary ms-auto" style="font-size:0.6rem;">Pronto</span>
+                    {% if pagos_monitores_pendientes_count %}
+                    <span class="badge bg-danger ms-auto">{{ pagos_monitores_pendientes_count }}</span>
+                    {% endif %}
                 </a>
             </div>
         </div>

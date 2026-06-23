@@ -10,4 +10,5 @@ from django.urls import path, include
 urlpatterns = [
     path('', include('financiera.viaticos.urls')),
     path('', include('financiera.pagos.urls')),
+    path('', include('financiera.monitores.urls')),
 ]

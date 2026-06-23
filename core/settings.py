@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     'programacion.monitores',
     'financiera.viaticos',
     'financiera.pagos',
+    'financiera.monitores',
     'logistica.inventario',
 ]
 
@@ -128,6 +129,7 @@ TEMPLATES = [
                 'programacion.auditoria.context_processors.alertas_vigentes',
                 'financiera.viaticos.context_processors.viaticos_pendientes',
                 'financiera.pagos.context_processors.pagos_pendientes',
+                'financiera.monitores.context_processors.pagos_monitores_pendientes',
                 'programacion.pagos.context_processors.pagos_por_revisar',
                 'programacion.monitores.context_processors.simulacros_sin_monitor',
                 'programacion.monitores.context_processors.pagos_monitores_por_revisar',
