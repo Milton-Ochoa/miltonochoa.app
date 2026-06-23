@@ -44,6 +44,19 @@
 </style>
 
 <div class="container-fluid py-3">
+  {% if proximos_sin_monitor %}
+  <div class="alert alert-warning d-flex align-items-start shadow-sm" role="alert">
+    <i class="fas fa-triangle-exclamation me-2 mt-1"></i>
+    <div>
+      <strong>{{ proximos_sin_monitor|length }} simulacro(s) en los próximos 7 días sin monitor asignado:</strong>
+      <ul class="mb-0 mt-1">
+        {% for s in proximos_sin_monitor %}
+        <li>{{ s.fecha|date:'d/m/Y' }} — {{ s.nombre_colegio }} ({{ s.get_jornada_display }})</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
   <div class="card shadow-sm">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0 tabla-sim" id="tablaSim">

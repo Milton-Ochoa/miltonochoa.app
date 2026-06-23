@@ -37,8 +37,12 @@
                 <a href="{% url 'viaticos_lista' %}" class="{% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
                     <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
                 </a>
-                <a href="{% url 'simulacros_lista' %}" class="{% if request.resolver_match.url_name == 'simulacros_lista' %}active{% endif %}">
-                    <i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i> Simulacros
+                <a href="{% url 'simulacros_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'simulacros_lista' %}active{% endif %}">
+                    <i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i>
+                    <span>Simulacros</span>
+                    {% if simulacros_sin_monitor_count %}
+                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ simulacros_sin_monitor_count }}</span>
+                    {% endif %}
                 </a>
             </div>
         </div>

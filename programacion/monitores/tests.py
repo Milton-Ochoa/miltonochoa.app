@@ -314,3 +314,68 @@ class SimulacroViewTest(TestCase):
         otro.login(username='pepe', password='x')
         resp = otro.get(self.URL)
         self.assertNotEqual(resp.status_code, 200)
+
+
+class AvisoSimulacrosProximosTest(TestCase):
+    """Fase 4: badge + banner + correo de simulacros próximos sin monitor."""
+
+    URL = '/monitores/'
+
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        self.hoy = timezone.localdate()
+        self.delta = timedelta
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_av', password='pass123')
+        self.client.login(username='admin_av', password='pass123')
+        self.colegio = ColegioSimulacro.objects.create(nombre='Colegio Aviso')
+        self.monitor = Monitor.objects.create(nombre='Vigi', documento='999')
+
+    def _simulacro(self, dias, *, con_monitor=False):
+        s = Simulacro.objects.create(
+            colegio=self.colegio, fecha=self.hoy + self.delta(days=dias))
+        if con_monitor:
+            AsignacionMonitor.objects.create(simulacro=s, monitor=self.monitor)
+        return s
+
+    def test_selector_solo_proximos_sin_monitor(self):
+        from programacion.monitores.avisos import simulacros_proximos_sin_monitor
+        proximo_sin = self._simulacro(3)          # entra
+        self._simulacro(3, con_monitor=True)      # tiene monitor → fuera
+        self._simulacro(30)                       # lejano → fuera
+        self._simulacro(-1)                        # pasado → fuera
+        ids = list(simulacros_proximos_sin_monitor().values_list('id', flat=True))
+        self.assertEqual(ids, [proximo_sin.id])
+
+    def test_badge_en_contexto(self):
+        self._simulacro(2)
+        self._simulacro(5, con_monitor=True)
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.context['simulacros_sin_monitor_count'], 1)
+
+    def test_banner_en_lista(self):
+        self._simulacro(2)
+        resp = self.client.get(self.URL)
+        self.assertContains(resp, 'sin monitor asignado')
+
+    def test_correo_envia_cuando_hay_proximos(self):
+        from django.core import mail
+        from programacion.monitores.avisos import notificar_simulacros_proximos
+        self._simulacro(2)
+        n = notificar_simulacros_proximos()
+        self.assertEqual(n, 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_correo_no_envia_sin_proximos(self):
+        from django.core import mail
+        from programacion.monitores.avisos import notificar_simulacros_proximos
+        self._simulacro(30)  # lejano
+        n = notificar_simulacros_proximos()
+        self.assertEqual(n, 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_command_no_rompe(self):
+        from django.core.management import call_command
+        self._simulacro(2)
+        call_command('avisar_simulacros_proximos')  # no debe lanzar
