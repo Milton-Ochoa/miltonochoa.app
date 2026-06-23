@@ -17,6 +17,7 @@ from programacion.colegios.models import Grado
 
 from .models import AsignacionMonitor, ColegioSimulacro, Monitor, Simulacro
 from .forms import ColegioSimulacroForm, MonitorForm, SimulacroForm
+from .avisos import simulacros_proximos_sin_monitor
 
 # Mismo gate que el resto de Configuración: superusuario o staff del área.
 solo_personal = user_passes_test(es_personal_programacion)
@@ -316,12 +317,18 @@ def simulacros_lista(request):
                   .prefetch_related('grados', 'monitores')
                   .order_by('-fecha'))
 
+    # Banner de aviso: simulacros próximos (≤7 días) sin monitor (mismo cálculo
+    # que el badge del menú). prefetch de grados para mostrarlos sin N+1.
+    proximos_sin_monitor = list(
+        simulacros_proximos_sin_monitor().prefetch_related('grados'))
+
     return render(request, 'monitores/simulacros_lista.html', {
         'simulacros': simulacros,
         'colegios':   ColegioSimulacro.objects.filter(activo=True).order_by('nombre'),
         'grados':     Grado.objects.all(),
         'monitores':  Monitor.objects.filter(activo=True).order_by('nombre'),
         'jornadas':   Simulacro.Jornada.choices,
+        'proximos_sin_monitor': proximos_sin_monitor,
     })
 
 

@@ -129,6 +129,7 @@ TEMPLATES = [
                 'financiera.viaticos.context_processors.viaticos_pendientes',
                 'financiera.pagos.context_processors.pagos_pendientes',
                 'programacion.pagos.context_processors.pagos_por_revisar',
+                'programacion.monitores.context_processors.simulacros_sin_monitor',
                 'logistica.inventario.context_processors.alertas_inventario',
             ],
         },
@@ -284,6 +285,11 @@ VIATICOS_NOTIFICAR_A = os.environ.get('VIATICOS_NOTIFICAR_A', 'marlon.medina@aam
 # Destinatario del aviso de legalización de viáticos enviada (revisión post-pago).
 VIATICOS_LEGALIZACION_NOTIFICAR_A = os.environ.get(
     'VIATICOS_LEGALIZACION_NOTIFICAR_A', 'financiero@aamocolombia.com')
+
+# Destinatario del aviso de simulacros próximos sin monitor (command
+# avisar_simulacros_proximos, pensado para correr a diario por scheduler).
+MONITORES_NOTIFICAR_A = os.environ.get(
+    'MONITORES_NOTIFICAR_A', 'marlon.medina@aamocolombia.com')
 
 # ─────────────────────────────────────────────────────────────
 # ARCHIVOS ESTÁTICOS
