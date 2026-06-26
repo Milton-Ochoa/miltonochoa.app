@@ -23,7 +23,7 @@
             <span><i class="fas fa-tasks icon-main text-success"></i> Operaciones</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' or request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}show{% endif %}" id="collapseOperaciones">
+        <div class="collapse {% if request.resolver_match.url_name == 'vista_general' or request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'configurar_colegio' or request.resolver_match.url_name == 'ver_horario' or request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' or request.resolver_match.url_name == 'simulacros_lista' %}show{% endif %}" id="collapseOperaciones">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'vista_general' %}" class="{% if request.resolver_match.url_name == 'vista_general' %}active{% endif %}">
                     <i class="fas fa-calendar-week" style="width: 20px; text-align: center; margin-right: 8px;"></i> General
@@ -37,6 +37,13 @@
                 <a href="{% url 'viaticos_lista' %}" class="{% if request.resolver_match.url_name == 'viaticos_lista' or request.resolver_match.url_name == 'viaticos_crear' or request.resolver_match.url_name == 'viaticos_detalle' or request.resolver_match.url_name == 'viaticos_editar' %}active{% endif %}">
                     <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
                 </a>
+                <a href="{% url 'simulacros_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'simulacros_lista' %}active{% endif %}">
+                    <i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i>
+                    <span>Simulacros</span>
+                    {% if simulacros_sin_monitor_count %}
+                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ simulacros_sin_monitor_count }}</span>
+                    {% endif %}
+                </a>
             </div>
         </div>
 
@@ -48,7 +55,7 @@
             <span><i class="fas fa-chart-line icon-main text-primary"></i> Reportes</span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'reporte_cancelaciones' %}show{% endif %}" id="collapseReportes">
+        <div class="collapse {% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' or request.resolver_match.url_name == 'lista_alertas' or request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'monitores_pagos_lista' or request.resolver_match.url_name == 'monitores_pago_detalle' or request.resolver_match.url_name == 'reporte_cancelaciones' %}show{% endif %}" id="collapseReportes">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'lista_informes' %}" class="{% if request.resolver_match.url_name == 'lista_informes' or request.resolver_match.url_name == 'detalle_informe' %}active{% endif %}">
                     <i class="fas fa-file-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Informes
@@ -56,13 +63,37 @@
                 <a href="{% url 'reporte_cancelaciones' %}" class="{% if request.resolver_match.url_name == 'reporte_cancelaciones' %}active{% endif %}">
                     <i class="fas fa-ban" style="width: 20px; text-align: center; margin-right: 8px;"></i> Cancelaciones
                 </a>
-                <a href="{% url 'pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
-                    <i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
-                    <span>Pagos</span>
-                    {% if pagos_por_revisar_count %}
-                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ pagos_por_revisar_count }}</span>
+
+                {# ── Submenu anidado: Pagos → Profesores / Monitores ── #}
+                <a href="#collapsePagosReportes" data-bs-toggle="collapse"
+                   class="d-flex justify-content-between align-items-center sidebar-section-toggle"
+                   data-section-key="pagos_reportes"
+                   aria-expanded="{% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'monitores_pagos_lista' or request.resolver_match.url_name == 'monitores_pago_detalle' %}true{% else %}false{% endif %}">
+                    <span><i class="fas fa-money-check-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i> Pagos</span>
+                    {% if pagos_por_revisar_count or pagos_monitores_por_revisar_count %}
+                    <span class="badge bg-danger" style="font-size:0.7rem; padding:2px 6px;">{{ pagos_por_revisar_count|add:pagos_monitores_por_revisar_count }}</span>
+                    {% else %}
+                    <i class="fas fa-chevron-down" style="font-size: 0.7rem;"></i>
                     {% endif %}
                 </a>
+                <div class="collapse {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' or request.resolver_match.url_name == 'monitores_pagos_lista' or request.resolver_match.url_name == 'monitores_pago_detalle' %}show{% endif %}" id="collapsePagosReportes">
+                    <div class="collapse-inner py-1">
+                        <a href="{% url 'pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'pagos_lista' or request.resolver_match.url_name == 'pago_detalle' %}active{% endif %}">
+                            <i class="fas fa-chalkboard-teacher" style="width: 18px; text-align: center; margin-right: 8px;"></i>
+                            <span>Profesores</span>
+                            {% if pagos_por_revisar_count %}
+                            <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ pagos_por_revisar_count }}</span>
+                            {% endif %}
+                        </a>
+                        <a href="{% url 'monitores_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'monitores_pagos_lista' or request.resolver_match.url_name == 'monitores_pago_detalle' %}active{% endif %}">
+                            <i class="fas fa-user-shield" style="width: 18px; text-align: center; margin-right: 8px;"></i>
+                            <span>Monitores</span>
+                            {% if pagos_monitores_por_revisar_count %}
+                            <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ pagos_monitores_por_revisar_count }}</span>
+                            {% endif %}
+                        </a>
+                    </div>
+                </div>
                 <a href="{% url 'lista_alertas' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'lista_alertas' %}active{% endif %}">
                     <i class="fas fa-shield-alt" style="width: 20px; text-align: center; margin-right: 8px;"></i>
                     <span>Auditoría</span>
@@ -83,7 +114,7 @@
         </a>
 
         {% with url_name=request.resolver_match.url_name %}
-        <div class="collapse {% if url_name == 'configuracion_colegios' or url_name == 'configuracion_profesores' or url_name == 'configuracion_libros' or url_name == 'gestionar_usuarios' or url_name == 'gestionar_usuarios_colegios' or url_name == 'gestionar_usuarios_profesores' %}show{% endif %}" id="collapseConfig">
+        <div class="collapse {% if url_name == 'configuracion_colegios' or url_name == 'configuracion_profesores' or url_name == 'configuracion_monitores' or url_name == 'configuracion_colegios_simulacro' or url_name == 'configuracion_libros' or url_name == 'gestionar_usuarios' or url_name == 'gestionar_usuarios_colegios' or url_name == 'gestionar_usuarios_profesores' %}show{% endif %}" id="collapseConfig">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'configuracion_colegios' %}" class="{% if url_name == 'configuracion_colegios' %}active{% endif %}">
                     <i class="fas fa-school" style="width: 20px; text-align: center; margin-right: 8px;"></i> Colegios
@@ -91,6 +122,24 @@
                 <a href="{% url 'configuracion_profesores' %}" class="{% if url_name == 'configuracion_profesores' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
                 </a>
+                {# ── Submenu anidado: Simulacros → Monitores / Colegios ── #}
+                <a href="#collapseSimulacrosConfig" data-bs-toggle="collapse"
+                   class="d-flex justify-content-between align-items-center sidebar-section-toggle"
+                   data-section-key="simulacros_config"
+                   aria-expanded="{% if url_name == 'configuracion_monitores' or url_name == 'configuracion_colegios_simulacro' %}true{% else %}false{% endif %}">
+                    <span><i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i> Simulacros</span>
+                    <i class="fas fa-chevron-down" style="font-size: 0.7rem;"></i>
+                </a>
+                <div class="collapse {% if url_name == 'configuracion_monitores' or url_name == 'configuracion_colegios_simulacro' %}show{% endif %}" id="collapseSimulacrosConfig">
+                    <div class="collapse-inner py-1">
+                        <a href="{% url 'configuracion_monitores' %}" class="{% if url_name == 'configuracion_monitores' %}active{% endif %}">
+                            <i class="fas fa-user-shield" style="width: 18px; text-align: center; margin-right: 8px;"></i> Monitores
+                        </a>
+                        <a href="{% url 'configuracion_colegios_simulacro' %}" class="{% if url_name == 'configuracion_colegios_simulacro' %}active{% endif %}">
+                            <i class="fas fa-school" style="width: 18px; text-align: center; margin-right: 8px;"></i> Colegios
+                        </a>
+                    </div>
+                </div>
                 <a href="{% url 'configuracion_libros' %}" class="{% if url_name == 'configuracion_libros' %}active{% endif %}">
                     <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Libros
                 </a>

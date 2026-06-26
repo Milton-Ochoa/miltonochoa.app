@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block header_title %}Pago a monitor{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'monitores_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado">Pagos · Monitores</a></li>
+    <li class="breadcrumb-item active">Pago #{{ pago.pk }}</li>
+</ol>
+{% endblock %}
+
+{% comment %}
+  Detalle de SOLO LECTURA para programación: datos del pago de un monitor y consulta de
+  los soportes (ver/descargar). Subir/eliminar comprobantes y marcar el pago es de
+  financiera (Fase 7). Card de datos propia (monitores no tienen horas/periodo).
+{% endcomment %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 text-secondary fw-bold">
+            <i class="fas fa-money-check-alt me-1"></i> Pago #{{ pago.pk }}
+            {% if pago.pagada %}<span class="badge bg-success ms-2">Pagado</span>
+            {% elif pago.lote.enviado %}<span class="badge bg-info text-dark ms-2">Enviado</span>
+            {% else %}<span class="badge bg-warning text-dark ms-2">Borrador</span>{% endif %}
+        </h5>
+        <a href="{% url 'monitores_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
+           class="btn btn-outline-secondary btn-sm">Volver</a>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-dark text-white fw-bold">Datos</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6"><span class="text-muted small d-block">Monitor</span><strong>{{ pago.monitor.nombre_corto }}</strong></div>
+                <div class="col-md-2"><span class="text-muted small d-block">Documento</span>{{ pago.monitor.documento|default:"—" }}</div>
+                <div class="col-md-2"><span class="text-muted small d-block">Cuenta</span>{{ pago.monitor.cuenta_bancaria|default:"—" }}</div>
+                <div class="col-md-2"><span class="text-muted small d-block">Banco</span>{{ pago.monitor.banco|default:"—" }}</div>
+                <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ pago.simulacro.nombre_colegio }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Fecha del simulacro</span>{{ pago.fecha|date:"d/m/Y" }}</div>
+                <div class="col-md-3"><span class="text-muted small d-block">Total</span><strong class="text-success">${{ pago.total|floatformat:"0" }}</strong></div>
+            </div>
+
+            {# ── Desglose: base + costos extra ── #}
+            <hr>
+            <span class="text-muted small d-block mb-1">Desglose</span>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr><td>Valor del simulacro</td><td class="text-end">${{ pago.valor_base|floatformat:"0" }}</td></tr>
+                    {% for e in pago.extras.all %}
+                    <tr><td>{{ e.concepto }}</td><td class="text-end">${{ e.valor|floatformat:"0" }}</td></tr>
+                    {% endfor %}
+                    <tr class="fw-bold border-top"><td>Total</td><td class="text-end">${{ pago.total|floatformat:"0" }}</td></tr>
+                </tbody>
+            </table>
+
+            {% if pago.pagada %}
+            <hr>
+            <div class="row g-3">
+                <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>
+                <div class="col-md-4"><span class="text-muted small d-block">Por</span>{% if pago.marcado_por %}{{ pago.marcado_por.get_full_name|default:pago.marcado_por.username }}{% else %}—{% endif %}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Soporte de pago: ver/descargar (solo lectura) ── #}
+    {% include 'viaticos/_soportes_card.html' with soportes=pago.soportes.all descargar_url='monitores_pago_soporte_descargar' vacio_msg='Aún no se ha adjuntado ningún soporte. Financiera lo sube desde su área.' %}
+
+</div>
+</div>
+{% endblock %}

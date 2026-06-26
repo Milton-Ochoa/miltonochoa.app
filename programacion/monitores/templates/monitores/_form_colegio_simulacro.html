@@ -1,0 +1,32 @@
+{% comment %}Form compartido del colegio de simulacro. `prefijo` ('nuevo'/'edit') hace
+únicos los ids para que Nuevo y Editar coexistan en la misma página.{% endcomment %}
+<p class="section-title">Datos del colegio</p>
+<div class="row g-2">
+  <div class="col-md-8">
+    <label class="form-label small fw-bold mb-1">Nombre <span class="text-danger">*</span></label>
+    <input type="text" name="nombre" id="{{ prefijo }}_nombre" class="form-control form-control-sm" required>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Código</label>
+    <input type="text" name="codigo" id="{{ prefijo }}_codigo" class="form-control form-control-sm">
+  </div>
+</div>
+
+<p class="section-title">Ubicación</p>
+<div class="row g-2">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Departamento</label>
+    <select name="departamento" id="{{ prefijo }}_departamento" class="form-select form-select-sm select2-depto">
+      <option value="">-- Seleccionar --</option>
+      {% for d in departamentos %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Ciudad</label>
+    <select name="ciudad" id="{{ prefijo }}_ciudad" class="form-select form-select-sm select2-ciudad">
+      <option value="">-- Seleccionar departamento --</option>
+    </select>
+  </div>
+</div>

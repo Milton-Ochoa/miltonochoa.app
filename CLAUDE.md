@@ -132,9 +132,10 @@ AAMO/
 ├── usuarios/          # GLOBAL: login único, perfiles, middleware de acceso, ratelimit
 ├── programacion/      # ÁREA: paquete Python con urls.py + sus sub-apps
 │   ├── urls.py        #   agrupa las rutas del área en la RAÍZ de su subdominio
-│   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/
-├── financiera/        # ÁREA: urls.py + viaticos/ (Inicio + gestión; SIN modelos propios,
-│   │                  #   importa los de programacion.viaticos)
+│   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/ monitores/
+│   │                  #   monitores/ = monitores+simulacros+colegios de simulacro+sus pagos
+├── financiera/        # ÁREA: urls.py + viaticos/ + pagos/ + monitores/ (SIN modelos propios,
+│   │                  #   importan los de programacion.*)
 ├── logistica/         # ÁREA: urls.py + inventario/ (label log_inventario; modelos y
 │   │                  #   servicios de dominio listos — tablas log_*; UI completa:
 │   │                  #   catálogos, existencias, movimientos, préstamos, dashboard
@@ -698,6 +699,98 @@ checkboxes de tipo y rango de fechas). Tests en
   (forzado en settings). Plantillas del apex (login, seleccion_area, sin_area)
   extienden **`base_apex.html`**, NO `base.html` (que referencia URLs del área).
 
+## Monitores y simulacros (sub-apps `programacion.monitores` + `financiera.monitores`)
+
+En eventos como **simulacros** (exámenes tipo Saber) no van profesores sino **monitores**
+(vigilan salones). Es un dominio paralelo al de clases/profesores, con su propio ciclo de
+pago **espejo** al de profesores pero **sin gate-por-informe**. Todo vive en la sub-app
+`programacion.monitores` (label `monitores`, dueña de los modelos) y su espejo de pago en
+financiera `financiera.monitores` (label `fin_monitores`, **sin modelos** — importa los de
+programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (bajo
+`monitores/`) y `financiera/urls.py`.
+
+**Tablas (todas `prog_`):**
+
+| Modelo | Tabla | | Modelo | Tabla |
+|---|---|---|---|---|
+| `Monitor` | `prog_monitores` | | `LoteMonitores` | `prog_monitores_pagos_lotes` |
+| `ColegioSimulacro` | `prog_simulacro_colegios` | | `PagoMonitor` | `prog_monitores_pagos` |
+| `Simulacro` | `prog_simulacros` | | `ExtraPagoMonitor` | `prog_monitores_pagos_extras` |
+| `AsignacionMonitor` | `prog_simulacros_monitores` | | `SoportePagoMonitor` | `prog_monitores_pagos_soportes` |
+
+- **`Monitor` (Configuración):** persona estilo `Profesor` simplificado — `nombre`,
+  `apellido`, `documento` (unique/blank, necesario para el export de pagos), `celular`,
+  `departamento`/`ciudad` (cascada `colombia_geo`), `banco`/`tipo_cuenta`/`cuenta_bancaria`
+  (reusa `Profesor.Banco`/`Profesor.TipoCuenta` vía alias de clase), `activo`. **Sin**
+  materias/documentos/historial. Vista `configuracion_monitores` (`/monitores/configuracion/`),
+  form `MonitorForm`, template espejo de `profesores.html`. Sidebar: Configuración, entre
+  Profesores y Libros.
+- **`ColegioSimulacro` (Configuración):** catálogo **independiente** de
+  `configuracion.Colegio` (los colegios de simulacro no son los del sistema; sin calendario
+  ni FK) — `nombre`, `codigo` (blank), `ciudad`, `departamento`, `activo`. Vista
+  `configuracion_colegios_simulacro` (`/monitores/colegios/`) con **carga masiva Excel**
+  (`.xlsx`, openpyxl `read_only`/`data_only`, mapea encabezados por nombre normalizado →
+  tolera orden/mayúsculas; columna obligatoria `nombre`; `bulk_create` con dedupe por nombre
+  normalizado → idempotente; reporta por `messages`; ≤5 MB) y **plantilla de ejemplo**
+  descargable (`colegios_simulacro_plantilla`, **POST** con CSRF → por eso el botón es un
+  `<form>` aparte). Sidebar: Configuración, tras Monitores.
+- **`Simulacro` + `AsignacionMonitor` (Operaciones):** `Simulacro` (`prog_simulacros`) tiene
+  FK `colegio`→`ColegioSimulacro` (**SET_NULL** + snapshot `colegio_nombre` congelado en
+  `save()`; property `nombre_colegio` = FK viva o snapshot), `fecha`, M2M `grados`→
+  `colegios.Grado` (nunca texto libre), `jornada` (`MANANA`/`TARDE`/`TODO_DIA`), `valor`
+  (PositiveIntegerField, COP **por cada monitor**: 2 monitores = 2 pagos de ese valor), M2M
+  `monitores`→`Monitor` **through `AsignacionMonitor`** (`prog_simulacros_monitores`: FK
+  simulacro CASCADE, FK monitor **PROTECT** para no perder rastro de pagos,
+  `unique_together(simulacro, monitor)`). Un simulacro tiene 0..N monitores. Vista
+  `simulacros_lista` en la **raíz** de la sub-app (`/monitores/`); los grados los maneja el
+  ModelForm, los monitores se sincronizan a mano (`_sync_monitores`, M2M con through no va en
+  ModelForm). Sidebar: Operaciones, tras Viáticos.
+- **Aviso de simulacros próximos sin monitor:** `programacion/monitores/avisos.py:
+  simulacros_proximos_sin_monitor(hoy=None)` (ventana `VENTANA_DIAS=7`, simulacros con
+  `fecha` entre hoy y hoy+7 y `asignaciones__isnull=True`) alimenta: **badge** (context
+  processor `monitores.context_processors.simulacros_sin_monitor` → `simulacros_sin_monitor_count`,
+  en el ítem "Simulacros"), **banner** en la lista, y **correo** (`notificar_simulacros_proximos`,
+  destinatario env `MONITORES_NOTIFICAR_A`, default en `core/settings.py`). Command
+  `avisar_simulacros_proximos` (en `management/commands/`) para scheduler diario — **ya está
+  programado en Railway Cron** (servicio aparte, start command
+  `python manage.py avisar_simulacros_proximos`).
+- **Pagos de monitores (espejo de profesores, fuente = simulacros):** modelos `LoteMonitores`
+  (`BORRADOR`/`ENVIADO`, unique-borrador-por-semana), `PagoMonitor` (FK lote SET_NULL
+  nullable, FK monitor/simulacro PROTECT, `valor` desnormalizado de `simulacro.valor`,
+  `excluida`, `fecha_pago`/`marcado_por`; **`unique_together(monitor, simulacro)`** — la
+  unidad de pago es la asignación, no el día), `ExtraPagoMonitor`, `SoportePagoMonitor`
+  (`upload_to` `pagos-monitores/…`). **Servicios propios** en `pagos_servicios.py` (NO tocan
+  `programacion/pagos`): `preparar_lote_semana_monitores`, `enviar_lote_monitores`,
+  `preparar_pendientes_monitores`. **DECISIÓN clave: la semana de monitores es lunes–domingo**
+  (no lunes–viernes como profesores) porque los simulacros ocurren en **fin de semana**.
+  **Sin gate-por-informe** (monitores no tienen informe → no hay pestaña "Sin informe").
+- **UI de pagos en programación** (`programacion/monitores/pagos_views.py`):
+  `construir_contexto_monitores(get, *, modo)` produce el **mismo shape** que
+  `construir_contexto_pagos` (reusa los partials `pagos/_*.html` y `_generar_excel_pagos`);
+  acepta `modo='financiera'`. Vistas `monitores_pagos_*` (lista/preparar/enviar/excluir/
+  extras/detalle/soporte_descargar) bajo `/monitores/pagos/`. Badge
+  `pagos_monitores_por_revisar`. Sidebar: el ítem **"Pagos"** de **Reportes** es un **submenu
+  anidado** (`#collapsePagosReportes`) con **Profesores** (`pagos_lista`) y **Monitores**
+  (`monitores_pagos_lista`); badge del padre = suma de ambos.
+- **UI de pagos en financiera** (`financiera/monitores/`): vistas `fin_monitores_pagos_*`
+  (lista solo ENVIADO partido por `fecha_pago`, marcar/desmarcar por `pago_id`,
+  subir/eliminar/descargar soporte con `validar_soporte`+`_responder_soporte`, exportar,
+  detalle) bajo `/monitores/pagos/`. Badge `pagos_monitores_pendientes`. Sidebar
+  `base_financiera.html`: ítem **"Monitores"** del desplegable Pagos, badge del padre =
+  profesores + monitores. **SIN** bloques `{% if messages %}` (financiera no muestra toasts).
+- **Acordeón del sidebar (Fase 8):** al abrir un grupo principal del menú se cierra el otro
+  abierto. Implementado en el JS de `base_chrome.html` (escucha `show.bs.collapse` solo en los
+  toggles **top-level** = `.sidebar-menu > .sidebar-section-toggle`, deja fuera los submenús
+  anidados Usuarios/Pagos por el selector `>`). Inerte en modo rail/flyout (no hay
+  `show.bs.collapse`); la persistencia en localStorage converge sola al cerrar (dispara
+  `hidden.bs.collapse`). Aplica a `base.html`, `base_financiera.html` y `base_logistica.html`.
+
+> **Bug evitado (vale para el futuro):** los badges-suma del padre usan `{% if A or B %}`
+> (NO `{% with X|add:Y %}`): un test de logística renderiza `base_financiera.html` sin los
+> context processors → `{% with %}` lanzaría `VariableDoesNotExist` al resolver el argumento
+> del filtro `add`; el `if` tolera vars indefinidas. Y los comentarios `{# … #}` deben ir en
+> **una sola línea** (un `{# #}` multilínea Django NO lo reconoce y lo renderiza literal).
+
 ## Cómo correr
 
 ```bash
@@ -705,7 +798,7 @@ checkboxes de tipo y rango de fechas). Tests en
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 587 tests OK
+python manage.py test                        # baseline: 668 tests OK
 python manage.py runserver
 ```
 
@@ -748,7 +841,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (587 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (668 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

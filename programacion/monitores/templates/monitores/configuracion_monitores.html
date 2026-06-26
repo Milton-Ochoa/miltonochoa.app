@@ -1,0 +1,473 @@
+{% extends 'base.html' %}
+{% block header_title %}Gestión de Monitores{% endblock %}
+{% block breadcrumbs %}
+<ol class="breadcrumb header-breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+    <li class="breadcrumb-item">Configuración</li>
+    <li class="breadcrumb-item active">Monitores</li>
+</ol>
+{% endblock %}
+
+{% block header_center %}
+<button class="btn btn-warning btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevoMonitor">
+    <i class="fas fa-plus me-1"></i> Nuevo Monitor
+</button>
+{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<style>
+  .section-title {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #6c757d; font-weight: 700; border-bottom: 1px solid #dee2e6;
+    padding-bottom: 3px; margin-bottom: 8px; margin-top: 12px;
+  }
+  .dato-label { font-size: 0.72rem; color: #6c757d; font-weight: 600; margin-bottom: 1px; }
+  .dato-valor { font-size: 0.88rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-monitores { table-layout: fixed; width: 100%; }
+    .tabla-monitores th, .tabla-monitores td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-monitores thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-monitores thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-monitores thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
+    .tabla-monitores tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-monitores tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .col-nombre  { width: 20%; }
+    .col-doc     { width: 13%; }
+    .col-depto   { width: 14%; }
+    .col-ciudad  { width: 14%; }
+    .col-cel     { width: 13%; }
+    .col-banco   { width: 12%; }
+    .col-estado  { width: 8%; text-align: center; }
+    .col-acc     { width: 6%; text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 tabla-monitores" id="tablaMon">
+        <thead class="table-dark">
+          <tr>
+            <th class="col-nombre">Nombre</th>
+            <th class="col-doc">Documento</th>
+            <th class="col-depto">Departamento</th>
+            <th class="col-ciudad">Ciudad</th>
+            <th class="col-cel">Celular</th>
+            <th class="col-banco">Banco</th>
+            <th class="col-estado">Estado</th>
+            <th class="col-acc">Acciones</th>
+          </tr>
+          <tr class="fila-filtros">
+            <th><input type="text" data-filtro="nombre"></th>
+            <th><input type="text" data-filtro="doc"></th>
+            <th><input type="text" data-filtro="depto"></th>
+            <th><input type="text" data-filtro="ciudad"></th>
+            <th><input type="text" data-filtro="cel"></th>
+            <th><input type="text" data-filtro="banco"></th>
+            <th><input type="text" data-filtro="estado" value="Activo"></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cuerpoTabla">
+          {% for m in monitores %}
+          <tr data-nombre="{{ m.nombre_corto|lower }}"
+              data-doc="{{ m.documento|default:''|lower }}"
+              data-depto="{{ m.departamento|default:''|lower }}"
+              data-ciudad="{{ m.ciudad|default:''|lower }}"
+              data-cel="{{ m.celular|default:''|lower }}"
+              data-banco="{{ m.banco|default:''|lower }}"
+              data-estado="{% if m.activo %}activo{% else %}inactivo{% endif %}">
+            <td class="fw-bold">{{ m.nombre_corto }}</td>
+            <td class="text-muted">{{ m.documento|default:"—" }}</td>
+            <td>{{ m.departamento|default:"—" }}</td>
+            <td>{{ m.ciudad|default:"—" }}</td>
+            <td>{{ m.celular|default:"—" }}</td>
+            <td>{{ m.banco|default:"—" }}</td>
+            <td class="text-center">
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="toggle_activo">
+                <input type="hidden" name="monitor_id" value="{{ m.id }}">
+                <button type="submit" class="btn btn-sm border-0 p-0">
+                  {% if m.activo %}
+                    <span class="badge bg-success">Activo</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactivo</span>
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+            <td class="text-center text-nowrap">
+              <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                      title="Gestionar"
+                      data-mon-id="{{ m.id }}"
+                      data-mon-nombre="{{ m.nombre|escapejs }}"
+                      data-mon-apellido="{{ m.apellido|default:''|escapejs }}"
+                      data-mon-doc="{{ m.documento|default:''|escapejs }}"
+                      data-mon-celular="{{ m.celular|default:''|escapejs }}"
+                      data-mon-departamento="{{ m.departamento|default:''|escapejs }}"
+                      data-mon-ciudad="{{ m.ciudad|default:''|escapejs }}"
+                      data-mon-banco="{{ m.banco|default:''|escapejs }}"
+                      data-mon-tipo-cuenta="{{ m.tipo_cuenta|default:''|escapejs }}"
+                      data-mon-cuenta="{{ m.cuenta_bancaria|default:''|escapejs }}"
+                      onclick="abrirGestionar(this)">
+                <i class="fas fa-cogs"></i>
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              <i class="fas fa-user-slash me-1"></i> No hay monitores registrados.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+      <small class="text-muted">Mostrando <span id="contadorVisibles">0</span> de {{ monitores|length }} monitores</small>
+      <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesMon"></ul></nav>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Nuevo Monitor ── #}
+<div class="modal fade" id="modalNuevoMonitor" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <form method="post" class="modal-content" id="formNuevo">
+      {% csrf_token %}
+      <input type="hidden" name="accion" value="add">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title fw-bold"><i class="fas fa-user-shield me-2"></i>Nuevo Monitor</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        {% include 'monitores/_form_monitor.html' %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-warning fw-bold">
+          <i class="fas fa-save me-1"></i> Guardar Monitor
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Modal Gestionar (Ver / Editar / Eliminar) ── #}
+<div class="modal fade" id="modalGestionar" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h5 class="modal-title" id="gestNombre">—</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <ul class="nav nav-tabs mb-3">
+          <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabVer">
+              <i class="fas fa-eye me-1"></i> Ver datos
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabEditar">
+              <i class="fas fa-edit me-1"></i> Editar
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+
+          {# ── Tab Ver ── #}
+          <div class="tab-pane fade show active" id="tabVer">
+            <p class="section-title">Datos Personales</p>
+            <div class="row g-2">
+              <div class="col-md-6"><div class="dato-label">Nombre(s)</div><div class="dato-valor fw-bold" id="ver_nombre">—</div></div>
+              <div class="col-md-6"><div class="dato-label">Apellido(s)</div><div class="dato-valor fw-bold" id="ver_apellido">—</div></div>
+              <div class="col-md-6"><div class="dato-label">Documento</div><div class="dato-valor" id="ver_doc">—</div></div>
+              <div class="col-md-6"><div class="dato-label">Celular</div><div class="dato-valor" id="ver_celular">—</div></div>
+            </div>
+
+            <p class="section-title">Ubicación</p>
+            <div class="row g-2">
+              <div class="col-md-6"><div class="dato-label">Departamento</div><div class="dato-valor" id="ver_departamento">—</div></div>
+              <div class="col-md-6"><div class="dato-label">Ciudad</div><div class="dato-valor" id="ver_ciudad">—</div></div>
+            </div>
+
+            <p class="section-title">Datos Bancarios</p>
+            <div class="row g-2">
+              <div class="col-md-4"><div class="dato-label">Banco</div><div class="dato-valor" id="ver_banco">—</div></div>
+              <div class="col-md-4"><div class="dato-label">Tipo de Cuenta</div><div class="dato-valor" id="ver_tipo_cuenta">—</div></div>
+              <div class="col-md-4"><div class="dato-label">Número de Cuenta</div><div class="dato-valor" id="ver_cuenta">—</div></div>
+            </div>
+
+            <div class="d-flex justify-content-end mt-3">
+              <form method="post" onsubmit="return confirm('¿Eliminar este monitor permanentemente?');">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="del">
+                <input type="hidden" name="monitor_id" id="del_id">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                  <i class="fas fa-trash me-1"></i> Eliminar monitor
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {# ── Tab Editar ── #}
+          <div class="tab-pane fade" id="tabEditar">
+            <form method="post" id="formEditar">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="edit">
+              <input type="hidden" name="monitor_id" id="edit_id">
+
+              <p class="section-title">Datos Personales</p>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Nombre(s) <span class="text-danger">*</span></label>
+                  <input type="text" name="nombre" id="edit_nombre" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Apellido(s)</label>
+                  <input type="text" name="apellido" id="edit_apellido" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Documento</label>
+                  <input type="text" name="documento" id="edit_doc" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Celular</label>
+                  <input type="text" name="celular" id="edit_celular" class="form-control form-control-sm">
+                </div>
+              </div>
+
+              <p class="section-title">Ubicación</p>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Departamento</label>
+                  <select name="departamento" id="edit_departamento" class="form-select form-select-sm select2-depto">
+                    <option value="">-- Seleccionar --</option>
+                    {% for d in departamentos %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Ciudad</label>
+                  <select name="ciudad" id="edit_ciudad" class="form-select form-select-sm select2-ciudad">
+                    <option value="">-- Seleccionar departamento --</option>
+                  </select>
+                </div>
+              </div>
+
+              <p class="section-title">Datos Bancarios</p>
+              <div class="row g-2">
+                <div class="col-md-4">
+                  <label class="form-label small fw-bold mb-1">Banco</label>
+                  <select name="banco" id="edit_banco" class="form-select form-select-sm">
+                    <option value="">--</option>
+                    {% for val, label in form_choices.banco %}
+                    <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small fw-bold mb-1">Tipo de Cuenta</label>
+                  <select name="tipo_cuenta" id="edit_tipo_cuenta" class="form-select form-select-sm">
+                    <option value="">--</option>
+                    {% for val, label in form_choices.tipo_cuenta %}
+                    <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small fw-bold mb-1">Número de Cuenta</label>
+                  <input type="text" name="cuenta_bancaria" id="edit_cuenta" class="form-control form-control-sm">
+                </div>
+              </div>
+
+              <div class="d-flex justify-content-end mt-3">
+                <button type="submit" class="btn btn-warning fw-bold">
+                  <i class="fas fa-save me-1"></i> Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>{# end tab-content #}
+      </div>{# end modal-body #}
+    </div>
+  </div>
+</div>
+
+{{ departamentos_json|json_script:"deptos-data" }}
+
+<script>
+const DEPTOS = JSON.parse(document.getElementById('deptos-data').textContent);
+const S2_OPTS = { theme: 'bootstrap-5', width: '100%', allowClear: true };
+
+function initSelect2InModal(modal) {
+  const $m = $(modal);
+  $m.find('.select2-depto').select2({ ...S2_OPTS, placeholder: 'Buscar departamento...', dropdownParent: $m });
+  $m.find('.select2-ciudad').select2({ ...S2_OPTS, placeholder: 'Buscar ciudad...', dropdownParent: $m });
+}
+
+function bindDeptoCiudad(deptoSel, ciudadSel) {
+  $(deptoSel).on('change', function() {
+    const depto = $(this).val();
+    const $ciudad = $(ciudadSel);
+    $ciudad.empty().append('<option value="">-- Seleccionar --</option>');
+    if (depto && DEPTOS[depto]) {
+      DEPTOS[depto].slice().sort().forEach(c => { $ciudad.append(new Option(c, c)); });
+    }
+    $ciudad.trigger('change.select2');
+  });
+}
+
+function cargarCiudades(deptoSel, ciudadSel, deptoVal, ciudadVal) {
+  const $depto = $(deptoSel), $ciudad = $(ciudadSel);
+  $depto.val(deptoVal).trigger('change.select2');
+  $ciudad.empty().append('<option value="">-- Seleccionar --</option>');
+  if (deptoVal && DEPTOS[deptoVal]) {
+    DEPTOS[deptoVal].slice().sort().forEach(c => {
+      $ciudad.append(new Option(c, c, c === ciudadVal, c === ciudadVal));
+    });
+  }
+  $ciudad.trigger('change.select2');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const modalNuevo = document.getElementById('modalNuevoMonitor');
+  modalNuevo.addEventListener('shown.bs.modal', function() {
+    initSelect2InModal(this);
+    bindDeptoCiudad('#formNuevo .select2-depto', '#formNuevo .select2-ciudad');
+  }, { once: true });
+
+  const modalGest = document.getElementById('modalGestionar');
+  modalGest.addEventListener('shown.bs.modal', function() {
+    initSelect2InModal(this);
+    bindDeptoCiudad('#edit_departamento', '#edit_ciudad');
+  }, { once: true });
+});
+
+// ── Filtrado + paginación inline (mismo patrón que profesores) ──
+(function () {
+    var POR_PAGINA = 20;
+    var pagina = 1;
+    var inputs = document.querySelectorAll('.fila-filtros [data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTabla tr[data-nombre]'));
+    var ctrl   = document.getElementById('paginaControlesMon');
+    var cont   = document.getElementById('contadorVisibles');
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = (inp.value || '').trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if (k === 'estado') {
+                    if ((tr.dataset[k] || '') !== q[k]) return false;
+                } else {
+                    if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+        cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link'; a.href = '#'; a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page; render();
+            });
+            li.appendChild(a); ctrl.appendChild(li);
+        }
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+    render();
+})();
+
+// ── Gestionar ──────────────────────────────────────────────
+function abrirGestionar(btn) {
+  const d = btn.dataset;
+  const nombreCompleto = (d.monNombre + ' ' + d.monApellido).trim();
+  document.getElementById('gestNombre').textContent = nombreCompleto;
+
+  const set = (id, val) => { document.getElementById(id).textContent = val || '—'; };
+  set('ver_nombre',       d.monNombre);
+  set('ver_apellido',     d.monApellido);
+  set('ver_doc',          d.monDoc);
+  set('ver_celular',      d.monCelular);
+  set('ver_departamento', d.monDepartamento);
+  set('ver_ciudad',       d.monCiudad);
+  set('ver_banco',        d.monBanco);
+  set('ver_tipo_cuenta',  d.monTipoCuenta);
+  set('ver_cuenta',       d.monCuenta);
+
+  document.getElementById('del_id').value          = d.monId;
+  document.getElementById('edit_id').value          = d.monId;
+  document.getElementById('edit_nombre').value      = d.monNombre;
+  document.getElementById('edit_apellido').value    = d.monApellido;
+  document.getElementById('edit_doc').value         = d.monDoc;
+  document.getElementById('edit_celular').value     = d.monCelular;
+  document.getElementById('edit_banco').value       = d.monBanco;
+  document.getElementById('edit_tipo_cuenta').value = d.monTipoCuenta;
+  document.getElementById('edit_cuenta').value      = d.monCuenta;
+
+  cargarCiudades('#edit_departamento', '#edit_ciudad', d.monDepartamento, d.monCiudad);
+
+  document.querySelector('[data-bs-target="#tabVer"]').click();
+  new bootstrap.Modal(document.getElementById('modalGestionar')).show();
+}
+</script>
+{% endblock %}

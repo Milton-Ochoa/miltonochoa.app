@@ -1,0 +1,66 @@
+{% comment %}Campos del formulario de monitor (Nuevo). Mismo layout que profesores pero
+solo los datos que pide el plan: personales, contacto y bancarios.{% endcomment %}
+<p class="section-title mt-0">Datos Personales</p>
+<div class="row g-2">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Nombre(s) <span class="text-danger">*</span></label>
+    <input type="text" name="nombre" class="form-control form-control-sm" required>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Apellido(s)</label>
+    <input type="text" name="apellido" class="form-control form-control-sm">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Documento</label>
+    <input type="text" name="documento" class="form-control form-control-sm">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Celular</label>
+    <input type="text" name="celular" class="form-control form-control-sm">
+  </div>
+</div>
+
+<p class="section-title">Ubicación</p>
+<div class="row g-2">
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Departamento</label>
+    <select name="departamento" class="form-select form-select-sm select2-depto">
+      <option value="">-- Seleccionar --</option>
+      {% for d in departamentos %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label small fw-bold mb-1">Ciudad</label>
+    <select name="ciudad" class="form-select form-select-sm select2-ciudad">
+      <option value="">-- Seleccionar departamento --</option>
+    </select>
+  </div>
+</div>
+
+<p class="section-title">Datos Bancarios</p>
+<div class="row g-2">
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Banco</label>
+    <select name="banco" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.banco %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Tipo de Cuenta</label>
+    <select name="tipo_cuenta" class="form-select form-select-sm">
+      <option value="">--</option>
+      {% for val, label in form_choices.tipo_cuenta %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label small fw-bold mb-1">Número de Cuenta</label>
+    <input type="text" name="cuenta_bancaria" class="form-control form-control-sm">
+  </div>
+</div>
