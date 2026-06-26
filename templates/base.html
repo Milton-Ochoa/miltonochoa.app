@@ -122,12 +122,24 @@
                 <a href="{% url 'configuracion_profesores' %}" class="{% if url_name == 'configuracion_profesores' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
                 </a>
-                <a href="{% url 'configuracion_monitores' %}" class="{% if url_name == 'configuracion_monitores' %}active{% endif %}">
-                    <i class="fas fa-user-shield" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
+                {# ── Submenu anidado: Simulacros → Monitores / Colegios ── #}
+                <a href="#collapseSimulacrosConfig" data-bs-toggle="collapse"
+                   class="d-flex justify-content-between align-items-center sidebar-section-toggle"
+                   data-section-key="simulacros_config"
+                   aria-expanded="{% if url_name == 'configuracion_monitores' or url_name == 'configuracion_colegios_simulacro' %}true{% else %}false{% endif %}">
+                    <span><i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i> Simulacros</span>
+                    <i class="fas fa-chevron-down" style="font-size: 0.7rem;"></i>
                 </a>
-                <a href="{% url 'configuracion_colegios_simulacro' %}" class="{% if url_name == 'configuracion_colegios_simulacro' %}active{% endif %}">
-                    <i class="fas fa-clipboard-list" style="width: 20px; text-align: center; margin-right: 8px;"></i> Colegios simulacro
-                </a>
+                <div class="collapse {% if url_name == 'configuracion_monitores' or url_name == 'configuracion_colegios_simulacro' %}show{% endif %}" id="collapseSimulacrosConfig">
+                    <div class="collapse-inner py-1">
+                        <a href="{% url 'configuracion_monitores' %}" class="{% if url_name == 'configuracion_monitores' %}active{% endif %}">
+                            <i class="fas fa-user-shield" style="width: 18px; text-align: center; margin-right: 8px;"></i> Monitores
+                        </a>
+                        <a href="{% url 'configuracion_colegios_simulacro' %}" class="{% if url_name == 'configuracion_colegios_simulacro' %}active{% endif %}">
+                            <i class="fas fa-school" style="width: 18px; text-align: center; margin-right: 8px;"></i> Colegios
+                        </a>
+                    </div>
+                </div>
                 <a href="{% url 'configuracion_libros' %}" class="{% if url_name == 'configuracion_libros' %}active{% endif %}">
                     <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Libros
                 </a>
