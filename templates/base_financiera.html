@@ -16,29 +16,21 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# ── Viáticos ── (badge = solicitudes ENVIADA, vía context processor viaticos_pendientes) #}
-        <a href="{% url 'fin_viaticos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}active{% endif %}">
-            <i class="fas fa-plane-departure icon-main text-warning"></i> Viáticos
-            {% if viaticos_pendientes_count %}
-            <span class="badge bg-danger nav-badge">{{ viaticos_pendientes_count }}</span>
-            {% endif %}
-        </a>
-
-        {# Pagos (desplegable): Profesores (funcional) + Proyección (solo lectura) + Monitores (funcional); badge = suma de pendientes (profesores + monitores) #}
+        {# Pagos (desplegable): Profesores + Monitores + Viáticos (funcionales) + Proyección (solo lectura); badge = suma de pendientes (profesores + monitores + viáticos) #}
         <a href="#collapsePagosFin" data-bs-toggle="collapse"
            class="nav-item justify-content-between sidebar-section-toggle"
            data-section-key="pagos_fin"
-           aria-expanded="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}true{% else %}false{% endif %}">
+           aria-expanded="{% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' or request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}true{% else %}false{% endif %}">
             <span>
                 <i class="fas fa-money-check-alt icon-main text-success"></i> Pagos
-                {# Suma de pendientes (profesores + monitores); el if tolera vars indefinidas (test que renderiza sin context processors). #}
-                {% if pagos_pendientes_count or pagos_monitores_pendientes_count %}
-                <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count|add:pagos_monitores_pendientes_count }}</span>
+                {# Suma de pendientes (profesores + monitores + viáticos); el if tolera vars indefinidas (test que renderiza sin context processors). #}
+                {% if pagos_pendientes_count or pagos_monitores_pendientes_count or viaticos_pendientes_count %}
+                <span class="badge bg-danger nav-badge">{{ pagos_pendientes_count|add:pagos_monitores_pendientes_count|add:viaticos_pendientes_count }}</span>
                 {% endif %}
             </span>
             <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
         </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}show{% endif %}" id="collapsePagosFin">
+        <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' or request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}show{% endif %}" id="collapsePagosFin">
             <div class="collapse-inner py-1 bg-dark">
                 <a href="{% url 'fin_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
@@ -46,14 +38,20 @@
                     <span class="badge bg-danger ms-auto">{{ pagos_pendientes_count }}</span>
                     {% endif %}
                 </a>
-                <a href="{% url 'fin_pagos_proyeccion' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_proyeccion' %}active{% endif %}">
-                    <i class="fas fa-chart-line" style="width: 20px; text-align: center; margin-right: 8px;"></i> Proyección
-                </a>
                 <a href="{% url 'fin_monitores_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}active{% endif %}">
                     <i class="fas fa-user-graduate" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
                     {% if pagos_monitores_pendientes_count %}
                     <span class="badge bg-danger ms-auto">{{ pagos_monitores_pendientes_count }}</span>
                     {% endif %}
+                </a>
+                <a href="{% url 'fin_viaticos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}active{% endif %}">
+                    <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
+                    {% if viaticos_pendientes_count %}
+                    <span class="badge bg-danger ms-auto">{{ viaticos_pendientes_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="{% url 'fin_pagos_proyeccion' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_proyeccion' %}active{% endif %}">
+                    <i class="fas fa-chart-line" style="width: 20px; text-align: center; margin-right: 8px;"></i> Proyección
                 </a>
             </div>
         </div>
