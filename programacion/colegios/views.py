@@ -23,6 +23,8 @@ from openpyxl.utils import get_column_letter
 
 from core.areas import es_personal_programacion
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, NombreLibro, Unidad, Materia
+from programacion.informes.models import Informe
+from programacion.pagos.models import PagoRealizado, LotePagos
 from .models import Bloque, Clase, Asignacion, Grado, HistorialCambio, CancelacionClase
 from .historial import registrar_cambio, aplicar_filtros_historial
 from .utils import extraer_numero_grado, ordenar_grados
@@ -395,6 +397,32 @@ def _recalcular_por_eliminacion(sel_col, clase):
     }]
 
 
+def _motivo_no_eliminable(clase):
+    """Devuelve un mensaje si la clase NO debe poder borrarse, o None si se puede.
+
+    Una clase con un informe ya diligenciado o con un pago ya procesado (enviado a
+    financiera o pagado) es un registro con rastro pedagógico/contable que no debe
+    desaparecer: borrarla dejaría informes huérfanos (CASCADE los borraría) o
+    descuadraría un pago ya tramitado. El borrado solo se permite mientras la clase
+    no haya generado ninguno de esos rastros.
+    """
+    if clase is None:
+        return None
+    if Informe.objects.filter(clase=clase).exists():
+        return 'No se puede eliminar: la clase ya tiene un informe diligenciado.'
+    # Pago "procesado" = enviado a financiera (lote ENVIADO) o ya pagado (fecha_pago).
+    # Un pago en BORRADOR es solo una preparación reversible y no bloquea.
+    if clase.profesor_id and PagoRealizado.objects.filter(
+        profesor_id=clase.profesor_id,
+        colegio_id=clase.colegio_id,
+        fecha=clase.fecha,
+    ).filter(
+        Q(lote__estado=LotePagos.Estado.ENVIADO) | Q(fecha_pago__isnull=False)
+    ).exists():
+        return 'No se puede eliminar: el pago de esta clase ya fue procesado.'
+    return None
+
+
 def _guardar_clase(request, sel_col):
     """
     Guarda (create/update/delete) una clase a partir del POST del modal de clase.
@@ -433,6 +461,10 @@ def _guardar_clase(request, sel_col):
         clase_a_eliminar = Clase.objects.filter(
             colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase
         ).first()
+        motivo = _motivo_no_eliminable(clase_a_eliminar)
+        if motivo:
+            messages.error(request, motivo)
+            return
         if clase_a_eliminar:
             registrar_cambio(request, 'eliminar', clase_a_eliminar, colegio=sel_col)
         Clase.objects.filter(
@@ -723,6 +755,13 @@ def ajax_guardar_clase(request, colegio_id):
             .filter(colegio=sel_col, bloque_id=bloque_id, fecha=fecha_clase)
             .first()
         )
+        motivo = _motivo_no_eliminable(clase_a_eliminar)
+        if motivo:
+            if is_htmx:
+                resp = HttpResponse(status=409)
+                resp['HX-Trigger'] = json.dumps({'showToast': {'msg': motivo, 'level': 'danger'}})
+                return resp
+            return JsonResponse({'error': motivo}, status=409)
         # Calcular el recálculo ANTES de borrar (necesita la materia/unidad de la clase):
         # eliminar una clase regular deja un hueco y las futuras de esa materia deben
         # renumerarse desde la unidad que ocupaba la borrada.

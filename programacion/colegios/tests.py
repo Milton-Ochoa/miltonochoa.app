@@ -775,6 +775,85 @@ class AjaxGuardarClaseHtmxTest(TestCase):
         trigger = json.loads(r.get('HX-Trigger', '{}'))
         self.assertNotIn('recalcular', trigger)
 
+    def test_eliminar_clase_con_informe_bloqueada(self):
+        # Una clase con informe diligenciado NO debe poder borrarse: el informe es
+        # rastro pedagógico y CASCADE lo eliminaría con la clase.
+        from programacion.informes.models import Informe
+        clase = Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        Informe.objects.create(
+            profesor=self.profesor, clase=clase,
+            colegio_nombre='Col HTMX', grado='11-1', fecha=date(2026, 5, 15),
+            materia='Física', tematica='U1', material='Libro',
+            actividades='Hizo cosas',
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(Clase.objects.filter(id=clase.id).exists())
+        trigger = json.loads(r.get('HX-Trigger', '{}'))
+        self.assertEqual(trigger.get('showToast', {}).get('level'), 'danger')
+        self.assertIn('informe', trigger['showToast']['msg'].lower())
+
+    def test_eliminar_clase_con_pago_enviado_bloqueada(self):
+        # Clase con un pago ya enviado a financiera (lote ENVIADO) no se puede borrar.
+        from programacion.pagos.models import PagoRealizado, LotePagos
+        clase = Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        lote = LotePagos.objects.create(
+            fecha_inicio=date(2026, 5, 11), fecha_fin=date(2026, 5, 15),
+            estado=LotePagos.Estado.ENVIADO,
+        )
+        PagoRealizado.objects.create(
+            lote=lote, profesor=self.profesor, colegio=self.colegio,
+            fecha=date(2026, 5, 15), horas=2, valor=10000,
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(Clase.objects.filter(id=clase.id).exists())
+        trigger = json.loads(r.get('HX-Trigger', '{}'))
+        self.assertIn('pago', trigger['showToast']['msg'].lower())
+
+    def test_eliminar_clase_con_pago_pagado_bloqueada(self):
+        # Clase con un pago ya pagado (fecha_pago) tampoco se puede borrar, aunque el
+        # pago no tenga lote (histórico).
+        from django.utils import timezone
+        from programacion.pagos.models import PagoRealizado
+        clase = Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        PagoRealizado.objects.create(
+            profesor=self.profesor, colegio=self.colegio,
+            fecha=date(2026, 5, 15), horas=2, valor=10000,
+            fecha_pago=timezone.now(),
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(Clase.objects.filter(id=clase.id).exists())
+
+    def test_eliminar_clase_con_pago_borrador_permitida(self):
+        # Un pago en BORRADOR es solo una preparación reversible: NO bloquea el borrado.
+        from programacion.pagos.models import PagoRealizado, LotePagos
+        clase = Clase.objects.create(
+            colegio=self.colegio, bloque=self.bloque, fecha=date(2026, 5, 15),
+            materia=self.materia, profesor=self.profesor, unidad='1',
+        )
+        lote = LotePagos.objects.create(
+            fecha_inicio=date(2026, 5, 11), fecha_fin=date(2026, 5, 15),
+            estado=LotePagos.Estado.BORRADOR,
+        )
+        PagoRealizado.objects.create(
+            lote=lote, profesor=self.profesor, colegio=self.colegio,
+            fecha=date(2026, 5, 15), horas=2, valor=10000,
+        )
+        r = self._post(extra_headers={'HTTP_HX_REQUEST': 'true'}, eliminar_clase='1')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Clase.objects.filter(id=clase.id).exists())
+
     def test_sin_permiso_devuelve_403(self):
         user_normal = User.objects.create_user('normal_htmx', password='pass')
         self.client.login(username='normal_htmx', password='pass')

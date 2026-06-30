@@ -134,6 +134,29 @@ class PrepararLoteTest(TestCase):
         preparar_lote_semana(self.inicio, self.fin)
         self.assertEqual(PagoRealizado.objects.filter(lote=lote).count(), 0)
 
+    def test_preparar_pendientes_materializa_clases_de_fin_de_semana(self):
+        # Regresión: con la semana lunes–viernes, las clases de sábado/domingo caían fuera
+        # de la ventana de su propia semana y NUNCA se materializaban → su informe no podía
+        # llegar a "por enviar". La semana completa (lunes–domingo) debe incluirlas.
+        from programacion.colegios.models import Clase
+        from programacion.pagos.views import preparar_pendientes
+        hoy = date.today()
+        # Sábado más reciente con fecha <= hoy (preparar_pendientes filtra fecha__lte=hoy).
+        sabado = hoy - timedelta(days=(hoy.weekday() + 2) % 7)
+        if sabado > hoy:
+            sabado -= timedelta(days=7)
+        clase_finde = Clase.objects.create(
+            colegio=self.ca, bloque=self.bloque, profesor=self.prof, fecha=sabado)
+        preparar_pendientes()
+        fila = PagoRealizado.objects.filter(
+            profesor=self.prof, colegio=self.ca, fecha=sabado).first()
+        self.assertIsNotNone(fila, 'La clase de fin de semana debe materializar su fila de pago')
+        self.assertEqual(fila.lote.estado, LotePagos.Estado.BORRADOR)
+        # El lote ancla la semana completa lunes–domingo que contiene el sábado.
+        lunes = sabado - timedelta(days=sabado.weekday())
+        self.assertEqual(fila.lote.fecha_inicio, lunes)
+        self.assertEqual(fila.lote.fecha_fin, lunes + timedelta(days=6))
+
     def test_lote_enviado_no_se_remateriliza(self):
         from programacion.pagos.views import preparar_lote_semana, enviar_lote
         _informe_de(self.clase)

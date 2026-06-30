@@ -1018,6 +1018,27 @@ Datos para JS: inyectados como constantes JSON desde Django.
             }
 
             if (!res || !res.ok) {
+                // Error "real" del servidor (4xx, p.ej. fecha fuera de periodo o clase
+                // no eliminable por tener informe/pago): trae el motivo en HX-Trigger →
+                // mostrarlo en vez del genérico "saturado" (que es para 5xx/red).
+                if (res && res.status < 500) {
+                    let motivoSrv = null;
+                    const th = res.headers.get('HX-Trigger');
+                    if (th) {
+                        try {
+                            const t = JSON.parse(th);
+                            if (t.showToast) motivoSrv = t.showToast;
+                        } catch (e) {}
+                    }
+                    if (motivoSrv) {
+                        if (typeof showBootstrapToast !== 'undefined') {
+                            showBootstrapToast(motivoSrv.msg, motivoSrv.level || 'danger');
+                        } else {
+                            alert(motivoSrv.msg);
+                        }
+                        return;
+                    }
+                }
                 const codigo = res ? res.status : 'sin conexión';
                 const msg = `No se pudo guardar (${codigo}). El servidor está saturado; ` +
                             `verifica si la clase quedó guardada y reintenta en unos segundos.`;
