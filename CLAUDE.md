@@ -580,7 +580,9 @@ checkboxes de tipo y rango de fechas). Tests en
     (por pagar / pagadas).
   - **`preparar_pendientes(user)`** materializa el backlog: prepara (idempotente) **todas** las semanas
     con clases hasta hoy (vía `preparar_lote_semana`, que obtiene/crea el **BORRADOR** de la semana,
-    la ancla en su lunes–viernes canónico, no pisa override/excluida ni resucita exclusiones, salta
+    la ancla en su **lunes–domingo** canónico —semana completa: hay profesores que dictan en fin de
+    semana y con lunes–viernes esas clases nunca se materializaban→ su informe no llegaba a "por
+    enviar"—, no pisa override/excluida ni resucita exclusiones, salta
     las filas congeladas en lotes ENVIADO y limpia autogeneradas de clases canceladas); al final
     borra los BORRADOR que quedaron sin filas.
   - **Programación** (`programacion.pagos.views`, gate `es_personal_programacion`, POST+redirect):
@@ -761,8 +763,9 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
   unidad de pago es la asignación, no el día), `ExtraPagoMonitor`, `SoportePagoMonitor`
   (`upload_to` `pagos-monitores/…`). **Servicios propios** en `pagos_servicios.py` (NO tocan
   `programacion/pagos`): `preparar_lote_semana_monitores`, `enviar_lote_monitores`,
-  `preparar_pendientes_monitores`. **DECISIÓN clave: la semana de monitores es lunes–domingo**
-  (no lunes–viernes como profesores) porque los simulacros ocurren en **fin de semana**.
+  `preparar_pendientes_monitores`. **La semana de monitores es lunes–domingo** porque los
+  simulacros ocurren en **fin de semana** (igual que profesores, que también se ancló a
+  lunes–domingo para no perder las clases de fin de semana).
   **Sin gate-por-informe** (monitores no tienen informe → no hay pestaña "Sin informe").
 - **UI de pagos en programación** (`programacion/monitores/pagos_views.py`):
   `construir_contexto_monitores(get, *, modo)` produce el **mismo shape** que

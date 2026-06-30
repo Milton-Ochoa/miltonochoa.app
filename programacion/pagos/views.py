@@ -210,7 +210,7 @@ def _claves_sin_informe(desde=None, hasta=None):
 
 
 def preparar_lote_semana(inicio, fin, user=None):
-    """Materializa (idempotente) el borrador de la semana canónica (lunes–viernes).
+    """Materializa (idempotente) el borrador de la semana canónica (lunes–domingo).
 
     Obtiene/crea el lote **BORRADOR** de la semana (puede convivir con N lotes ENVIADO
     de la misma semana: constraint parcial) y sincroniza sus filas con el cálculo desde
@@ -311,7 +311,11 @@ def preparar_pendientes(user=None):
               .values_list('fecha', flat=True).distinct())
     lunes_set = {f - timedelta(days=f.weekday()) for f in fechas}
     for lunes in lunes_set:
-        preparar_lote_semana(lunes, lunes + timedelta(days=4), user)
+        # Semana completa (lunes–domingo): hay profesores que dictan en fin de semana
+        # (refuerzos, simulacros, etc.). Con lunes–viernes esas clases caían fuera de la
+        # ventana de su propia semana y NUNCA se materializaban → su informe no podía
+        # llegar a "por enviar". Mismo criterio que monitores (`pagos_servicios`).
+        preparar_lote_semana(lunes, lunes + timedelta(days=6), user)
     # Borradores que quedaron vacíos (todo su contenido se envió o se canceló) no
     # aportan nada al backlog: fuera.
     LotePagos.objects.filter(

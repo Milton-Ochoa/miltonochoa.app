@@ -17,7 +17,9 @@ class LotePagos(models.Model):
 
     Flujo de una sola vía: `BORRADOR → ENVIADO` — **el envío es definitivo POR LOTE**
     (no existe "des-enviar" ni "devolver"). Financiera **solo ve** las filas de lotes
-    `ENVIADO`. La semana se ancla en su lunes–viernes canónico.
+    `ENVIADO`. La semana se ancla en su lunes–domingo canónico (semana completa: hay
+    profesores que dictan en fin de semana, y con lunes–viernes esas clases no se
+    materializaban).
 
     Pueden coexistir **N lotes ENVIADO por semana** (cada envío congela exactamente lo
     que se envió) pero **máximo un BORRADOR** (constraint parcial): al enviar, las
