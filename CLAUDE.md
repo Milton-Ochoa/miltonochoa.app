@@ -801,7 +801,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 668 tests OK
+python manage.py test                        # baseline: 677 tests OK
 python manage.py runserver
 ```
 
@@ -844,7 +844,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (668 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (677 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

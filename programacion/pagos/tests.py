@@ -7,7 +7,8 @@ financiera).
 """
 from datetime import date, timedelta
 
-from django.test import TestCase, Client
+from django.core import mail
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
 
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor
@@ -398,6 +399,24 @@ class RevisionProgramacionTest(TestCase):
         self.client.post('/pagos/enviar/', {'tab': 'pendiente'})
         r = self.client.post('/pagos/reabrir/', {'tab': 'pendiente'})
         self.assertEqual(r.status_code, 404)
+
+    @override_settings(PAGOS_NOTIFICAR_A='financiero@aamo.test')
+    def test_enviar_notifica_a_financiera_por_correo(self):
+        # Al enviar pagos a financiera se manda un correo (igual que los viáticos).
+        self._preparar()
+        self.client.post('/pagos/enviar/', {'tab': 'pendiente'})
+        self.assertEqual(len(mail.outbox), 1)
+        m = mail.outbox[0]
+        self.assertEqual(m.to, ['financiero@aamo.test'])
+        self.assertIn('pagos a profesores', m.subject.lower())
+
+    @override_settings(PAGOS_NOTIFICAR_A='financiero@aamo.test')
+    def test_enviar_sin_nada_enviable_no_manda_correo(self):
+        # Fila excluida → no hay nada que enviar → ningún correo.
+        pago = self._preparar()
+        self.client.post(f'/pagos/{pago.pk}/excluir/', {'tab': 'pendiente'})
+        self.client.post('/pagos/enviar/', {'tab': 'pendiente'})
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class BadgePagosProgramacionTest(TestCase):
