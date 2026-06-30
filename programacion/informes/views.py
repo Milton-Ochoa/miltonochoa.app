@@ -7,7 +7,6 @@ from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils import timezone
-from datetime import timedelta
 from .models import Informe
 from programacion.configuracion.models import Profesor
 from programacion.colegios.models import Clase, Asignacion
@@ -226,9 +225,10 @@ def lista_informes(request):
     Lista de informes + clases pendientes por documentar.
 
     Una fila representa o bien un Informe existente, o bien una Clase ya dictada
-    sin informe asociado (estado "Pendiente"). Solo se incluyen pendientes con
-    fecha <= ayer: las clases de hoy/futuro no se cuentan como pendientes porque
-    aún no se han dictado.
+    sin informe asociado (estado "Pendiente"). Una clase cuenta como pendiente en
+    cuanto **termina** (su `bloque.hora_fin` ya pasó), no al día siguiente: los días
+    pasados completos más las clases de hoy ya finalizadas. Las clases de hoy aún
+    en curso o futuras no se cuentan (todavía no se han dictado).
 
     Visibilidad por rol:
     - Superusuario: todos los informes y clases del sistema.
@@ -251,7 +251,13 @@ def lista_informes(request):
             'es_usuario_profesor': bool(perfil_profesor),
         })
 
-    ayer = timezone.localdate() - timedelta(days=1)
+    hoy   = timezone.localdate()
+    ahora = timezone.localtime().time()
+    # Una clase se vuelve "pendiente de informe" en cuanto TERMINA, no al día
+    # siguiente: cuentan los días ya pasados completos y, de hoy, las clases cuyo
+    # bloque ya finalizó (`hora_fin <= ahora`). Así una clase de 8–10 am aparece a
+    # las 10:01, no al día siguiente. (La caché de la lista da ~5 min de holgura.)
+    ya_dictada_clase = Q(fecha__lt=hoy) | Q(fecha=hoy, bloque__hora_fin__lte=ahora)
 
     # ── 1. Informes existentes ────────────────────────────────────────────────
     informes_qs = Informe.objects.all()
@@ -259,8 +265,14 @@ def lista_informes(request):
         informes_qs = informes_qs.filter(profesor=perfil_profesor.profesor)
     elif perfil_colegio:
         informes_qs = informes_qs.filter(colegio_nombre=perfil_colegio.colegio.nombre)
-    # Borradores futuros se ocultan (regla "no mostrar futuro como pendiente").
-    informes_qs = informes_qs.filter(Q(fecha__lte=ayer) | ~Q(actividades=''))
+    # Borradores futuros se ocultan (regla "no mostrar futuro como pendiente"). Un
+    # informe ya dictado pero vacío sigue la misma regla de hora de fin que las clases
+    # sin informe (vía su `clase__bloque`); los ya diligenciados se ven siempre.
+    informes_qs = informes_qs.filter(
+        Q(fecha__lt=hoy)
+        | Q(fecha=hoy, clase__bloque__hora_fin__lte=ahora)
+        | ~Q(actividades='')
+    )
 
     informes_data = informes_qs.values_list(
         'id', 'fecha', 'colegio_nombre', 'grado', 'materia',
@@ -292,9 +304,8 @@ def lista_informes(request):
 
     # ── 2. Clases pendientes (sin informe, ya dictadas) ──────────────────────
     clases_qs = Clase.objects.filter(
-        fecha__lte=ayer, informe__isnull=True,
-        cancelada=False, es_evento=False,
-    )
+        informe__isnull=True, cancelada=False, es_evento=False,
+    ).filter(ya_dictada_clase)
     if perfil_profesor:
         clases_qs = clases_qs.filter(profesor=perfil_profesor.profesor)
     elif perfil_colegio:

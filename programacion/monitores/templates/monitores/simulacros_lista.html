@@ -29,6 +29,9 @@
         font-size: 0.85rem; padding: 0.4rem 0.5rem;
     }
     .tabla-sim thead.table-dark th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    /* Esquinas superiores redondeadas (la cabecera oscura tapaba el radio de la tarjeta) */
+    .tabla-sim thead.table-dark tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius); }
+    .tabla-sim thead.table-dark tr:first-child th:last-child  { border-top-right-radius: var(--bs-border-radius); }
     .tabla-sim tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
     .tabla-sim tr.fila-filtros th input, .tabla-sim tr.fila-filtros th select {
         width: 100%; font-size: 0.78rem; padding: 2px 6px;

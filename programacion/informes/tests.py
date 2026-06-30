@@ -4,10 +4,11 @@ Modelo: Informe
 Vistas: obtener_informe, guardar_informe, lista_informes, eliminar_informe, detalle_informe
 """
 import json
+from unittest.mock import patch
 from django.core.cache import cache
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from programacion.configuracion.models import Colegio, ColegioAnio, Profesor, Materia
 from programacion.colegios.models import Bloque, Clase, ClasePersonalizada, Grado
@@ -305,6 +306,49 @@ class ListaInformesTest(TestCase):
         self.assertEqual(r.status_code, 200)
         for fila in r.context['filas']:
             self.assertEqual(fila['colegio_nombre'], self.colegio.nombre)
+
+
+# ── Pendiente al TERMINAR la clase (no al día siguiente) ──
+
+class ListaInformesHoraFinTest(TestCase):
+    """Una clase de hoy se vuelve pendiente en cuanto su bloque termina (hora_fin
+    pasada), no al día siguiente. Se mockea `timezone` de la vista para fijar el
+    'ahora' y evitar dependencia del reloj de pared."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        User.objects.create_superuser(username='admin_hf', password='pass')
+        self.client.login(username='admin_hf', password='pass')
+        self.profesor = Profesor.objects.create(nombre='Hora', apellido='Fin')
+        col = Colegio.objects.create(nombre='Col HF', departamento='Santander', ciudad='BGA')
+        self.colegio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
+
+    def _clase_hoy(self, hora_inicio, hora_fin):
+        grado, _ = Grado.objects.get_or_create(nombre='11-1')
+        materia, _ = Materia.objects.get_or_create(nombre='Lectura Crítica')
+        bloque = Bloque.objects.create(colegio=self.colegio, grado=grado,
+                                       hora_inicio=hora_inicio, hora_fin=hora_fin)
+        return Clase.objects.create(colegio=self.colegio, bloque=bloque,
+                                    fecha=date(2026, 3, 11), profesor=self.profesor,
+                                    materia=materia, unidad='1')
+
+    def _pendientes_con_ahora(self, fake_now):
+        with patch('programacion.informes.views.timezone') as tz:
+            tz.localdate.return_value = fake_now.date()
+            tz.localtime.return_value = fake_now
+            r = self.client.get('/informes/')
+        return [f for f in r.context['filas'] if f['informe_id'] is None]
+
+    def test_clase_de_hoy_terminada_aparece_pendiente(self):
+        self._clase_hoy(dt_time(8, 0), dt_time(10, 0))   # terminó a las 10:00
+        pendientes = self._pendientes_con_ahora(datetime(2026, 3, 11, 10, 1))
+        self.assertEqual(len(pendientes), 1)
+
+    def test_clase_de_hoy_en_curso_no_aparece_pendiente(self):
+        self._clase_hoy(dt_time(10, 0), dt_time(12, 0))  # termina a las 12:00
+        pendientes = self._pendientes_con_ahora(datetime(2026, 3, 11, 10, 1))
+        self.assertEqual(len(pendientes), 0)
 
 
 # ── Modal de diligenciamiento en la lista (portal del profesor) ──
