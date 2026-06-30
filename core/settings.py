@@ -294,6 +294,10 @@ VIATICOS_LEGALIZACION_NOTIFICAR_A = os.environ.get(
 MONITORES_NOTIFICAR_A = os.environ.get(
     'MONITORES_NOTIFICAR_A', 'programacion@aamocolombia.com')
 
+# Destinatario del aviso de pagos a profesores enviados de programación a financiera
+# (mismo patrón que los viáticos). Default = correo del área financiera.
+PAGOS_NOTIFICAR_A = os.environ.get('PAGOS_NOTIFICAR_A', 'financiero@aamocolombia.com')
+
 # ─────────────────────────────────────────────────────────────
 # ARCHIVOS ESTÁTICOS
 # ─────────────────────────────────────────────────────────────

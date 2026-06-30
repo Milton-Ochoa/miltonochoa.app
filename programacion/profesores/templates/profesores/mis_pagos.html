@@ -11,19 +11,18 @@
   Portal del profesor: estado de sus pagos por día de clases. SOLO estado y soporte —
   esta página NUNCA muestra montos en pesos (contrato con la vista: llegan dicts
   saneados sin valores). No agregar columnas de valor/total aquí.
+
+  Usa el mismo estilo de tabla que el resto del sistema (`pagos/_estilos_tabla.html`:
+  cabecera oscura, fila de filtros por columna, esquinas redondeadas) con paginación
+  client-side. Cada pestaña es una tabla independiente (JS genérico por `.wrap-mis-pagos`).
 {% endcomment %}
 
 {% block content %}
-<style>
-    .tabla-mis-pagos th, .tabla-mis-pagos td { font-size: 0.875rem; vertical-align: middle; }
-    .tabla-mis-pagos thead th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
-</style>
+{% include 'pagos/_estilos_tabla.html' %}
 
 <div class="container-fluid py-3">
-<div class="row justify-content-center">
-<div class="col-lg-9">
 
-    <ul class="nav nav-tabs mb-3" role="tablist">
+    <ul class="nav nav-tabs mb-3" id="tabsPagos" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabPendientes" type="button" role="tab">
                 Pendientes por pagar
@@ -42,9 +41,9 @@
 
         {# ── Pendientes por pagar ── #}
         <div class="tab-pane fade show active" id="tabPendientes" role="tabpanel">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm wrap-mis-pagos">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0 tabla-mis-pagos">
+                    <table class="table table-hover align-middle mb-0 tabla-pagos">
                         <thead class="table-dark">
                             <tr>
                                 <th>Fecha</th>
@@ -52,29 +51,41 @@
                                 <th class="text-center">Horas</th>
                                 <th class="text-center">Estado</th>
                             </tr>
+                            <tr class="fila-filtros">
+                                <th><input type="text" data-filtro="fecha" placeholder="Filtrar…"></th>
+                                <th><input type="text" data-filtro="colegio" placeholder="Filtrar…"></th>
+                                <th></th>
+                                <th></th>
+                            </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="cuerpo-tabla">
                             {% for f in pendientes %}
-                            <tr>
-                                <td>{{ f.fecha|date:"d/m/Y" }}</td>
+                            <tr class="fila-pago"
+                                data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+                                data-colegio="{{ f.colegio|lower }}">
+                                <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
                                 <td><strong>{{ f.colegio }}</strong></td>
                                 <td class="text-center">{{ f.horas|floatformat:"-2" }}</td>
                                 <td class="text-center"><span class="badge bg-warning text-dark">Pendiente</span></td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="4" class="text-center text-muted py-4">No tienes pagos pendientes.</td></tr>
+                            <tr class="fila-vacia"><td colspan="4" class="text-center text-muted py-4">No tienes pagos pendientes.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+                    <small class="text-muted">Mostrando <span class="contador-visibles">0</span> de {{ pendientes|length }}</small>
+                    <nav><ul class="pagination pagination-sm mb-0 controles-pagina"></ul></nav>
                 </div>
             </div>
         </div>
 
         {# ── Pagadas ── #}
         <div class="tab-pane fade" id="tabPagadas" role="tabpanel">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm wrap-mis-pagos">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0 tabla-mis-pagos">
+                    <table class="table table-hover align-middle mb-0 tabla-pagos">
                         <thead class="table-dark">
                             <tr>
                                 <th>Fecha</th>
@@ -83,11 +94,20 @@
                                 <th class="text-center">Estado</th>
                                 <th>Soporte de pago</th>
                             </tr>
+                            <tr class="fila-filtros">
+                                <th><input type="text" data-filtro="fecha" placeholder="Filtrar…"></th>
+                                <th><input type="text" data-filtro="colegio" placeholder="Filtrar…"></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                            </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="cuerpo-tabla">
                             {% for f in pagadas %}
-                            <tr>
-                                <td>{{ f.fecha|date:"d/m/Y" }}</td>
+                            <tr class="fila-pago"
+                                data-fecha="{{ f.fecha|date:'d/m/Y' }}"
+                                data-colegio="{{ f.colegio|lower }}">
+                                <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
                                 <td><strong>{{ f.colegio }}</strong></td>
                                 <td class="text-center">{{ f.horas|floatformat:"-2" }}</td>
                                 <td class="text-center">
@@ -114,10 +134,14 @@
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="5" class="text-center text-muted py-4">Aún no hay pagos registrados.</td></tr>
+                            <tr class="fila-vacia"><td colspan="5" class="text-center text-muted py-4">Aún no hay pagos registrados.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3 flex-wrap gap-2">
+                    <small class="text-muted">Mostrando <span class="contador-visibles">0</span> de {{ pagadas|length }}</small>
+                    <nav><ul class="pagination pagination-sm mb-0 controles-pagina"></ul></nav>
                 </div>
             </div>
         </div>
@@ -125,6 +149,90 @@
     </div>
 
 </div>
-</div>
-</div>
+
+<script>
+// Filtro por columna + paginación, autónomo por tabla (cada pestaña es una tabla).
+// Mismo patrón que pagos/_tabla_js.html pero acotado a cada `.wrap-mis-pagos` para
+// poder convivir dos tablas en la misma página (pendientes / pagadas).
+(function () {
+    var POR_PAGINA = 20;
+
+    document.querySelectorAll('.wrap-mis-pagos').forEach(function (wrap) {
+        var inputs = wrap.querySelectorAll('.fila-filtros input[data-filtro]');
+        var filas  = Array.from(wrap.querySelectorAll('tr.fila-pago'));
+        var ctrl   = wrap.querySelector('.controles-pagina');
+        var cont   = wrap.querySelector('.contador-visibles');
+        var pagina = 1;
+
+        function filtradas() {
+            var q = {};
+            inputs.forEach(function (inp) {
+                var val = inp.value.trim().toLowerCase();
+                if (val) q[inp.dataset.filtro] = val;
+            });
+            return filas.filter(function (tr) {
+                for (var k in q) {
+                    if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+                }
+                return true;
+            });
+        }
+
+        function render() {
+            var f = filtradas();
+            var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+            if (pagina > total) pagina = total;
+            var inicio = (pagina - 1) * POR_PAGINA;
+
+            filas.forEach(function (tr) { tr.style.display = 'none'; });
+            f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+            if (cont) cont.textContent = f.length;
+            renderControles(total);
+        }
+
+        function renderControles(total) {
+            if (!ctrl) return;
+            ctrl.innerHTML = '';
+            if (total <= 1) return;
+
+            function addLi(label, page, opts) {
+                var li = document.createElement('li');
+                li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+                var a = document.createElement('a');
+                a.className = 'page-link';
+                a.href = '#';
+                a.innerHTML = label;
+                a.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    if (opts && opts.disabled) return;
+                    pagina = page;
+                    render();
+                });
+                li.appendChild(a);
+                ctrl.appendChild(li);
+            }
+
+            addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+            for (var i = 1; i <= total; i++) {
+                if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                    addLi(i, i, { active: i === pagina });
+                } else if (Math.abs(i - pagina) === 3) {
+                    var li = document.createElement('li');
+                    li.className = 'page-item disabled';
+                    li.innerHTML = '<span class="page-link">…</span>';
+                    ctrl.appendChild(li);
+                }
+            }
+            addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+        }
+
+        inputs.forEach(function (inp) {
+            inp.addEventListener('input', function () { pagina = 1; render(); });
+        });
+
+        render();
+    });
+})();
+</script>
 {% endblock %}

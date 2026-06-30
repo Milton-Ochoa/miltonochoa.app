@@ -36,6 +36,7 @@ from openpyxl.utils import get_column_letter
 from programacion.colegios.models import Clase
 from programacion.configuracion.models import Profesor
 from programacion.pagos.models import ExtraPago, LotePagos, PagoRealizado, SoportePagoProfesor
+from programacion.pagos.notificaciones import notificar_pagos_enviados
 from programacion.viaticos.views import _responder_soporte
 
 
@@ -673,9 +674,12 @@ def pagos_enviar(request):
     lotes = LotePagos.objects.filter(id__in=lote_ids, estado=LotePagos.Estado.BORRADOR)
     # `enviar_lote` desacopla las no enviables (excluidas / sin informe) y devuelve False
     # si el lote quedó sin nada que enviar (sigue BORRADOR).
-    n = sum(1 for lote in lotes if enviar_lote(lote, request.user))
-    if n:
-        messages.success(request, f'Enviado a financiera ({n} semana(s)).')
+    enviados = [lote for lote in lotes if enviar_lote(lote, request.user)]
+    if enviados:
+        messages.success(request, f'Enviado a financiera ({len(enviados)} semana(s)).')
+        # Aviso por correo a financiera (best-effort, igual que viáticos): un fallo de
+        # correo no debe afectar el envío que ya quedó persistido.
+        notificar_pagos_enviados(enviados, request)
     else:
         messages.error(request, 'No hay pagos enviables. Las filas excluidas o con '
                                 'clases sin informe no se envían.')
