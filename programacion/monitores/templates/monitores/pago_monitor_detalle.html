@@ -26,7 +26,7 @@
             {% else %}<span class="badge bg-warning text-dark ms-2">Borrador</span>{% endif %}
         </h5>
         <a href="{% url 'monitores_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
-           class="btn btn-outline-secondary btn-sm">Volver</a>
+           class="btn btn-outline-secondary btn-sm" data-volver-lista="{% url 'monitores_pagos_lista' %}">Volver</a>
     </div>
 
     <div class="card shadow-sm mb-3">
@@ -77,4 +77,5 @@
 
 </div>
 </div>
+{% include 'pagos/_boton_volver.html' %}
 {% endblock %}

@@ -28,6 +28,34 @@
     var ctrl   = document.getElementById('paginaControlesPagos');
     var cont   = document.getElementById('contadorVisiblesPagos');
 
+    // ── Persistencia de filtros (round-trip lista → detalle → «Volver») ──
+    // El rango de fechas vive en el querystring de la lista; los filtros de columna son
+    // client-side y se perderían al recargar. Guardamos ambos (la URL de la lista + los
+    // valores de columna) en sessionStorage bajo una clave por lista, para: (a) restaurar
+    // los filtros de columna al volver, y (b) que el botón «Volver» del detalle regrese al
+    // MISMO filtro (no a la fecha de un solo día que traía hardcodeada). La clave usa
+    // `URL_PAGOS` (la ruta de la lista), que el detalle también conoce para leer la URL.
+    var NAV_KEY = (typeof URL_PAGOS !== 'undefined') ? ('pagosNav:' + URL_PAGOS) : null;
+
+    function leerNav() {
+        if (!NAV_KEY) return {};
+        try { return JSON.parse(sessionStorage.getItem(NAV_KEY) || '{}') || {}; }
+        catch (e) { return {}; }
+    }
+    function guardarNav() {
+        if (!NAV_KEY) return;
+        var cols = {};
+        inputs.forEach(function (inp) { if (inp.value.trim()) cols[inp.dataset.filtro] = inp.value; });
+        try {
+            sessionStorage.setItem(NAV_KEY, JSON.stringify({ url: location.href, cols: cols }));
+        } catch (e) {}
+    }
+    // Restaurar los filtros de columna guardados antes del primer render.
+    var _colsGuardadas = leerNav().cols || {};
+    inputs.forEach(function (inp) {
+        if (_colsGuardadas[inp.dataset.filtro] != null) inp.value = _colsGuardadas[inp.dataset.filtro];
+    });
+
     function filtradas() {
         var q = {};
         inputs.forEach(function (inp) {
@@ -92,9 +120,10 @@
     }
 
     inputs.forEach(function (inp) {
-        inp.addEventListener('input', function () { pagina = 1; render(); });
+        inp.addEventListener('input', function () { pagina = 1; render(); guardarNav(); });
     });
 
     render();
+    guardarNav();   // guarda la URL de la lista (con su rango de fechas) para el «Volver»
 })();
 </script>
