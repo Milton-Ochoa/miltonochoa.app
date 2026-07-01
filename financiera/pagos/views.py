@@ -123,7 +123,7 @@ def fin_pagos_detalle(request, pago_id):
     (subir/ver/descargar/eliminar). Espejo del detalle de viáticos en `PAGADA`."""
     pago = get_object_or_404(
         PagoRealizado.objects
-        .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote')
+        .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote', 'lote__enviado_por')
         .prefetch_related('soportes', 'soportes__subido_por'),
         pk=pago_id,
     )
