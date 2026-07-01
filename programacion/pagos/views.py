@@ -85,6 +85,7 @@ def _build_filas_pagos(fecha_inicio, fecha_fin):
             'bloque__colegio_id',
             'bloque__colegio__colegio__nombre',
             'bloque__colegio__colegio__codigo',
+            'bloque__colegio__colegio__departamento',
             'bloque__colegio__valor_hora',
             'bloque__hora_inicio',
             'bloque__hora_fin',
@@ -130,6 +131,7 @@ def _build_filas_pagos(fecha_inicio, fecha_fin):
             'banco':       banco,
             'colegio':     info['bloque__colegio__colegio__nombre'] or '',
             'codigo':      info['bloque__colegio__colegio__codigo'] or '',
+            'departamento': info['bloque__colegio__colegio__departamento'] or '',
             'horas':       horas,
             'valor_hora':  valor_hora,
             'valor_total': valor_total,
@@ -164,6 +166,7 @@ def _fila_desde_pago(p):
         'banco':        banco,
         'colegio':      p.colegio.colegio.nombre or '',
         'codigo':       p.colegio.colegio.codigo or '',
+        'departamento': p.colegio.colegio.departamento or '',
         'horas':        p.horas,
         'valor_hora':   p.colegio.valor_hora or 0,
         'valor_base':   valor_base,
@@ -752,7 +755,7 @@ def pagos_detalle(request, pago_id):
     los soportes adjuntos (ver/descargar, sin subir ni eliminar)."""
     pago = get_object_or_404(
         PagoRealizado.objects
-        .select_related('profesor', 'colegio__colegio', 'marcado_por')
+        .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote', 'lote__enviado_por')
         .prefetch_related('soportes', 'soportes__subido_por'),
         pk=pago_id,
     )

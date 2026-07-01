@@ -119,7 +119,7 @@ def fin_monitores_pago_detalle(request, pago_id):
     soportes (subir/ver/descargar/eliminar). Espejo del detalle de pagos de profesores."""
     pago = get_object_or_404(
         PagoMonitor.objects
-        .select_related('monitor', 'simulacro__colegio', 'marcado_por', 'lote')
+        .select_related('monitor', 'simulacro__colegio', 'marcado_por', 'lote', 'lote__enviado_por')
         .prefetch_related('extras', 'soportes', 'soportes__subido_por'),
         pk=pago_id,
     )

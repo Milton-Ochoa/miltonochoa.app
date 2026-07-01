@@ -13,13 +13,14 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="mb-0 text-secondary fw-bold">
             <i class="fas fa-money-check-alt me-1"></i> Pago #{{ pago.pk }}
-            <span class="badge bg-success ms-2">Pagado</span>
+            {% if pago.pagada %}<span class="badge bg-success ms-2">Pagado</span>
+            {% else %}<span class="badge bg-info text-dark ms-2">Enviado</span>{% endif %}
         </h5>
-        <a href="{% url 'fin_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
+        <a href="{% url 'fin_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab={% if pago.pagada %}realizado{% else %}pendiente{% endif %}"
            class="btn btn-outline-secondary btn-sm">Volver</a>
     </div>
 
-    {% include 'pagos/_detalle_datos.html' with mostrar_marcado=True %}
+    {% include 'pagos/_detalle_datos.html' %}
 
     {# ── Soporte de pago: subir, ver, descargar, borrar ── #}
     {% include 'viaticos/_soportes_card.html' with soportes=pago.soportes.all descargar_url='fin_pago_soporte_descargar' puede_gestionar=True eliminar_url='fin_pagos_eliminar_soporte' subir_url='fin_pagos_subir_soporte' subir_pk=pago.pk vacio_msg='Aún no se ha adjuntado ningún soporte.' %}

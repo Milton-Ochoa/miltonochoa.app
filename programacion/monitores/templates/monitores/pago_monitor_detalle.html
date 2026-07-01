@@ -38,6 +38,7 @@
                 <div class="col-md-2"><span class="text-muted small d-block">Cuenta</span>{{ pago.monitor.cuenta_bancaria|default:"—" }}</div>
                 <div class="col-md-2"><span class="text-muted small d-block">Banco</span>{{ pago.monitor.banco|default:"—" }}</div>
                 <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ pago.simulacro.nombre_colegio }}</strong></div>
+                <div class="col-md-3"><span class="text-muted small d-block">Departamento</span>{% if pago.simulacro.colegio_id %}{{ pago.simulacro.colegio.departamento|default:"—" }}{% else %}—{% endif %}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Fecha del simulacro</span>{{ pago.fecha|date:"d/m/Y" }}</div>
                 <div class="col-md-3"><span class="text-muted small d-block">Total</span><strong class="text-success">${{ pago.total|floatformat:"0" }}</strong></div>
             </div>
@@ -55,11 +56,17 @@
                 </tbody>
             </table>
 
-            {% if pago.pagada %}
+            {% if pago.lote.enviado or pago.pagada %}
             <hr>
             <div class="row g-3">
+                {% if pago.lote.enviado %}
+                <div class="col-md-4"><span class="text-muted small d-block">Enviado a financiera</span>{{ pago.lote.enviado_en|date:"d/m/Y H:i"|default:"—" }}</div>
+                <div class="col-md-4"><span class="text-muted small d-block">Enviado por</span>{% if pago.lote.enviado_por %}{{ pago.lote.enviado_por.get_full_name|default:pago.lote.enviado_por.username }}{% else %}—{% endif %}</div>
+                {% endif %}
+                {% if pago.pagada %}
                 <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>
                 <div class="col-md-4"><span class="text-muted small d-block">Por</span>{% if pago.marcado_por %}{{ pago.marcado_por.get_full_name|default:pago.marcado_por.username }}{% else %}—{% endif %}</div>
+                {% endif %}
             </div>
             {% endif %}
         </div>
