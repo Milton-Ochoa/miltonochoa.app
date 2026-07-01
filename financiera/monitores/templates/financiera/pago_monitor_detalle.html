@@ -17,7 +17,7 @@
             {% else %}<span class="badge bg-info text-dark ms-2">Enviado</span>{% endif %}
         </h5>
         <a href="{% url 'fin_monitores_pagos_lista' %}?semana={{ pago.fecha|date:'Y-m-d' }}&hasta={{ pago.fecha|date:'Y-m-d' }}&tab=realizado"
-           class="btn btn-outline-secondary btn-sm">Volver</a>
+           class="btn btn-outline-secondary btn-sm" data-volver-lista="{% url 'fin_monitores_pagos_lista' %}">Volver</a>
     </div>
 
     <div class="card shadow-sm mb-3">
@@ -66,4 +66,5 @@
     {# ── Soporte de pago: subir, ver, descargar, borrar ── #}
     {% include 'viaticos/_soportes_card.html' with soportes=pago.soportes.all descargar_url='fin_monitores_pago_soporte_descargar' puede_gestionar=True eliminar_url='fin_monitores_pago_eliminar_soporte' subir_url='fin_monitores_pago_subir_soporte' subir_pk=pago.pk vacio_msg='Aún no se ha adjuntado ningún soporte.' %}
 </div>
+{% include 'pagos/_boton_volver.html' %}
 {% endblock %}

@@ -1,0 +1,18 @@
+{% comment %}
+  Upgrader del botón «Volver» de los detalles de pago. Cada detalle deja su ancla con un
+  href de respaldo (un `{% url %}` a la lista) y el atributo `data-volver-lista="<ruta>"`
+  (la ruta de la lista, = `URL_PAGOS`). Este script reemplaza ese href por la URL exacta de
+  la lista que el usuario tenía (con su rango de fechas), guardada en sessionStorage por
+  `_tabla_js.html`. Así «Volver» regresa al MISMO filtro en vez de a la fecha de un solo día
+  hardcodeada. Si no hay estado guardado (entró directo al detalle), se queda con el respaldo.
+{% endcomment %}
+<script>
+(function () {
+    Array.prototype.forEach.call(document.querySelectorAll('a[data-volver-lista]'), function (a) {
+        try {
+            var st = JSON.parse(sessionStorage.getItem('pagosNav:' + a.getAttribute('data-volver-lista')) || 'null');
+            if (st && st.url) a.setAttribute('href', st.url);
+        } catch (e) {}
+    });
+})();
+</script>
