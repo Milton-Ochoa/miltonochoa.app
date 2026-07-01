@@ -186,8 +186,12 @@ def filas_monitores_por_tab(fecha_inicio, fecha_fin, tab, *, modo='programacion'
 @solo_personal
 def monitores_pagos_lista(request):
     """GET: página de pagos de monitores (backlog, tabs por enviar/enviados).
-    POST: descarga Excel del tab activo (rango opcional; vacío = todo el backlog)."""
+    POST: descarga Excel del tab activo (rango opcional; vacío = todo el backlog).
+
+    En GET materializa el backlog (idempotente) para que "Por enviar" muestre siempre
+    todo lo pendiente sin depender de un botón manual."""
     if request.method == 'GET':
+        preparar_pendientes_monitores(request.user)
         return render(request, 'monitores/pagos_monitores.html',
                       construir_contexto_monitores(request.GET, modo='programacion'))
 

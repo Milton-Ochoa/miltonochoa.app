@@ -601,8 +601,12 @@ def filas_pagos_por_tab(fecha_inicio, fecha_fin, tab, *, modo='programacion'):
 
 @user_passes_test(es_personal_programacion, login_url='login')
 def pagos_lista(request):
-    """GET: página de pagos (backlog, tabs por enviar/enviados). POST: descarga Excel."""
+    """GET: página de pagos (backlog, tabs por enviar/enviados). POST: descarga Excel.
+
+    En GET materializa el backlog (idempotente) para que "Por enviar" muestre siempre
+    todo lo pendiente con informe completado sin depender de un botón manual."""
     if request.method == 'GET':
+        preparar_pendientes(request.user)
         return render(request, 'pagos/pagos.html',
                       construir_contexto_pagos(request.GET, modo='programacion'))
 

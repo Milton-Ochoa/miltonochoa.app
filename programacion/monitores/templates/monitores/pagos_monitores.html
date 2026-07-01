@@ -17,10 +17,22 @@
 {% endcomment %}
 
 {% block header_center %}
-<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarPagos"
-        {% if not filas %}disabled{% endif %}>
-    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
-</button>
+<div class="d-flex gap-2">
+  <button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarPagos"
+          {% if not filas %}disabled{% endif %}>
+      <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+  </button>
+  <form method="post" action="{% url 'monitores_pagos_enviar' %}" class="m-0"
+        onsubmit="return confirm('¿Enviar a financiera todo lo visible? El envío es definitivo.');">
+    {% csrf_token %}
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="hidden" name="semana" value="{{ fecha_inicio }}">
+    <input type="hidden" name="hasta" value="{{ fecha_fin }}">
+    <button class="btn btn-primary btn-sm fw-bold" {% if not puede_enviar %}disabled{% endif %}>
+      <i class="fas fa-paper-plane me-1"></i>Enviar a financiera{% if total_por_enviar %} ({{ total_por_enviar }}){% endif %}
+    </button>
+  </form>
+</div>
 {% endblock %}
 
 {% block content %}
@@ -28,35 +40,6 @@
 {{ detalles_pagos|json_script:"pagos-data" }}
 
 <div class="container-fluid py-3">
-
-  {# ── Barra de acciones del backlog ── #}
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <div class="text-muted small">
-      <i class="fas fa-layer-group me-1"></i>
-      Revisa los pagos de monitores pendientes por enviar; cuando estén listos, envíalos a financiera.
-    </div>
-    <div class="d-flex gap-2">
-      <form method="post" action="{% url 'monitores_pagos_preparar' %}" class="m-0">
-        {% csrf_token %}
-        <input type="hidden" name="tab" value="{{ tab }}">
-        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
-        <button class="btn btn-outline-secondary btn-sm" title="Materializar/actualizar los pendientes desde los simulacros">
-          <i class="fas fa-sync me-1"></i>Preparar pendientes
-        </button>
-      </form>
-      <form method="post" action="{% url 'monitores_pagos_enviar' %}" class="m-0"
-            onsubmit="return confirm('¿Enviar a financiera todo lo visible? El envío es definitivo.');">
-        {% csrf_token %}
-        <input type="hidden" name="tab" value="{{ tab }}">
-        <input type="hidden" name="semana" value="{{ fecha_inicio }}">
-        <input type="hidden" name="hasta" value="{{ fecha_fin }}">
-        <button class="btn btn-success btn-sm fw-bold" {% if not puede_enviar %}disabled{% endif %}>
-          <i class="fas fa-paper-plane me-1"></i>Enviar a financiera{% if total_por_enviar %} ({{ total_por_enviar }}){% endif %}
-        </button>
-      </form>
-    </div>
-  </div>
 
   {# ── Tabla estilo viáticos: cabecera con pestañas + filtro de fechas ── #}
   <div class="card shadow-sm">
@@ -161,7 +144,7 @@
             <td colspan="{% if tab == 'realizado' %}11{% else %}10{% endif %}" class="text-center text-muted py-4">
               <i class="fas fa-info-circle me-1"></i>
               {% if tab == 'realizado' %}No hay pagos enviados{% if filtro_aplicado %} en el rango{% endif %}.
-              {% else %}No hay pagos pendientes por enviar{% if filtro_aplicado %} en el rango{% endif %}. Usa “Preparar pendientes”.{% endif %}
+              {% else %}No hay pagos pendientes por enviar{% if filtro_aplicado %} en el rango{% endif %}.{% endif %}
             </td>
           </tr>
           {% endfor %}

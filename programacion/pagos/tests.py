@@ -442,13 +442,13 @@ class BadgePagosProgramacionTest(TestCase):
         _informe_de(clase)   # enviable: el badge debe apagarse tras un envío real
 
     def test_badge_pendiente_y_se_apaga_al_enviar(self):
-        from programacion.pagos.views import preparar_lote_semana, enviar_lote
-        # Antes de preparar no hay filas materializadas → 0.
-        r = self.client.get('/pagos/')
-        self.assertEqual(r.context['pagos_por_revisar_count'], 0)
-        lote = preparar_lote_semana(self.lunes, self.lunes + timedelta(days=4))
+        from programacion.pagos.views import enviar_lote
+        from programacion.pagos.models import LotePagos
+        # El GET materializa el backlog automáticamente (ya no hay botón "Preparar
+        # pendientes") → la fila enviable aparece sin acción manual.
         r = self.client.get('/pagos/')
         self.assertEqual(r.context['pagos_por_revisar_count'], 1)  # BORRADOR por enviar
+        lote = LotePagos.objects.get(estado=LotePagos.Estado.BORRADOR)
         enviar_lote(lote, None)
         r = self.client.get('/pagos/')
         self.assertEqual(r.context['pagos_por_revisar_count'], 0)  # ya enviado
