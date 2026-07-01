@@ -70,6 +70,7 @@ def _fila_desde_pago_monitor(p):
         'banco':        banco,
         'colegio':      p.simulacro.nombre_colegio or '',
         'codigo':       (p.simulacro.colegio.codigo or '') if p.simulacro.colegio_id else '',
+        'departamento': (p.simulacro.colegio.departamento or '') if p.simulacro.colegio_id else '',
         'horas':        '',     # monitores no manejan horas
         'valor_hora':   0,
         'valor_base':   valor_base,
@@ -330,7 +331,7 @@ def monitores_pago_detalle(request, pago_id):
     los soportes adjuntos (ver/descargar, sin subir ni eliminar — eso es de financiera)."""
     pago = get_object_or_404(
         PagoMonitor.objects
-        .select_related('monitor', 'simulacro__colegio', 'marcado_por', 'lote')
+        .select_related('monitor', 'simulacro__colegio', 'marcado_por', 'lote', 'lote__enviado_por')
         .prefetch_related('extras', 'soportes', 'soportes__subido_por'),
         pk=pago_id,
     )

@@ -38,6 +38,7 @@
             <th>Banco</th>
             <th>Colegio</th>
             <th>Código</th>
+            <th>Departamento</th>
             <th class="text-end">Valor</th>
             {% if tab == 'realizado' %}
             <th>Pagado</th>
@@ -54,6 +55,7 @@
             <th><input type="text" data-filtro="banco"></th>
             <th><input type="text" data-filtro="colegio"></th>
             <th><input type="text" data-filtro="codigo"></th>
+            <th><input type="text" data-filtro="departamento"></th>
             <th></th>
             {% if tab == 'realizado' %}
             <th></th><th></th>
@@ -71,7 +73,8 @@
               data-tipo="{{ f.tipo_cuenta|lower }}"
               data-banco="{{ f.banco|lower }}"
               data-colegio="{{ f.colegio|lower }}"
-              data-codigo="{{ f.codigo|lower }}">
+              data-codigo="{{ f.codigo|lower }}"
+              data-departamento="{{ f.departamento|lower }}">
             <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
             <td><strong>{{ f.docente }}</strong></td>
             <td>{{ f.documento }}</td>
@@ -80,6 +83,7 @@
             <td>{{ f.banco }}</td>
             <td>{{ f.colegio }}</td>
             <td>{{ f.codigo }}</td>
+            <td>{{ f.departamento }}</td>
             <td class="text-end fw-bold">
               {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
@@ -87,8 +91,8 @@
             <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
             <td class="text-muted small">{{ f.marcado_por }}</td>
             <td class="text-center text-nowrap">
-              <a href="{% url 'fin_pagos_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver / gestionar soporte">
-                <i class="fas fa-eye"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
+              <a href="{% url 'fin_pagos_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver información y soporte">
+                <i class="fas fa-info-circle"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
               </a>
               <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" title="Desmarcar pago"
                       onclick="abrirDesmarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}')">
@@ -96,7 +100,10 @@
               </button>
             </td>
             {% else %}
-            <td class="text-center">
+            <td class="text-center text-nowrap">
+              <a href="{% url 'fin_pagos_detalle' f.pago_id %}" class="btn btn-outline-info btn-sm py-0 px-2" title="Ver información del pago">
+                <i class="fas fa-info-circle"></i>{% if f.n_soportes %} <span class="badge bg-success">{{ f.n_soportes }}</span>{% endif %}
+              </a>
               <button type="button" class="btn btn-outline-success btn-sm py-0 px-2" title="Marcar como pagado"
                       onclick="abrirMarcar('{{ f.pago_id }}','{{ f.docente|escapejs }}','{{ f.colegio|escapejs }}','{{ f.fecha|date:'d/m/Y' }}','{{ f.valor_total|unlocalize }}')">
                 <i class="fas fa-check"></i>
@@ -106,7 +113,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="{% if tab == 'realizado' %}12{% else %}10{% endif %}" class="text-center text-muted py-4">
+            <td colspan="{% if tab == 'realizado' %}13{% else %}11{% endif %}" class="text-center text-muted py-4">
               <i class="fas fa-info-circle me-1"></i>
               {% if tab == 'realizado' %}No hay pagos realizados en este período.{% else %}No hay pagos pendientes en este período.{% endif %}
             </td>

@@ -29,7 +29,7 @@
            class="btn btn-outline-secondary btn-sm">Volver</a>
     </div>
 
-    {% include 'pagos/_detalle_datos.html' with con_icono_editado=True mostrar_marcado=pago.pagada %}
+    {% include 'pagos/_detalle_datos.html' with con_icono_editado=True %}
 
     {# ── Soporte de pago: ver/descargar (solo lectura) ── #}
     {% include 'viaticos/_soportes_card.html' with soportes=pago.soportes.all descargar_url='pago_soporte_descargar' vacio_msg='Aún no se ha adjuntado ningún soporte. Financiera lo sube desde su área.' %}

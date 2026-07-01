@@ -3,8 +3,8 @@ Tarjeta "Datos" del detalle de un PagoRealizado (compartida programación ↔ fi
 datos bancarios del docente, colegio/periodo, desglose (base + extras) y marcado.
 Parámetros (include ... with):
   - con_icono_editado: True → muestra el lápiz cuando el valor base fue editado.
-  - mostrar_marcado:   condición para la sección "Marcado como pagado"
-                       (programación pasa pago.pagada; financiera True).
+El bloque de trazabilidad (enviado a financiera / marcado como pagado) se muestra según
+el estado real del pago (lote enviado y/o fecha_pago), sin depender de parámetros.
 {% endcomment %}
 <div class="card shadow-sm mb-3">
     <div class="card-header bg-dark text-white fw-bold">Datos</div>
@@ -16,6 +16,7 @@ Parámetros (include ... with):
             <div class="col-md-2"><span class="text-muted small d-block">Banco</span>{{ pago.profesor.banco|default:"—" }}</div>
             <div class="col-md-6"><span class="text-muted small d-block">Colegio</span><strong>{{ pago.colegio.colegio.nombre }}</strong></div>
             <div class="col-md-3"><span class="text-muted small d-block">Código</span>{{ pago.colegio.colegio.codigo|default:"—" }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Departamento</span>{{ pago.colegio.colegio.departamento|default:"—" }}</div>
             <div class="col-md-3"><span class="text-muted small d-block">Periodo</span>{{ pago.colegio.periodo_label }}</div>
             <div class="col-md-3"><span class="text-muted small d-block">Fecha de la clase</span>{{ pago.fecha|date:"d/m/Y" }}</div>
             <div class="col-md-3"><span class="text-muted small d-block">Horas</span>{{ pago.horas|floatformat:"-2" }}</div>
@@ -36,11 +37,17 @@ Parámetros (include ... with):
             </tbody>
         </table>
 
-        {% if mostrar_marcado %}
+        {% if pago.lote.enviado or pago.pagada %}
         <hr>
         <div class="row g-3">
+            {% if pago.lote.enviado %}
+            <div class="col-md-4"><span class="text-muted small d-block">Enviado a financiera</span>{{ pago.lote.enviado_en|date:"d/m/Y H:i"|default:"—" }}</div>
+            <div class="col-md-4"><span class="text-muted small d-block">Enviado por</span>{% if pago.lote.enviado_por %}{{ pago.lote.enviado_por.get_full_name|default:pago.lote.enviado_por.username }}{% else %}—{% endif %}</div>
+            {% endif %}
+            {% if pago.pagada %}
             <div class="col-md-4"><span class="text-muted small d-block">Marcado como pagado</span>{{ pago.fecha_pago|date:"d/m/Y H:i" }}</div>
             <div class="col-md-4"><span class="text-muted small d-block">Por</span>{% if pago.marcado_por %}{{ pago.marcado_por.get_full_name|default:pago.marcado_por.username }}{% else %}—{% endif %}</div>
+            {% endif %}
         </div>
         {% endif %}
     </div>
