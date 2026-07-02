@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import ErrorCliente
+from .models import ErrorCliente, ModuloUsuario
+
+
+@admin.register(ModuloUsuario)
+class ModuloUsuarioAdmin(admin.ModelAdmin):
+    """Overrides de permisos por módulo. Editable a mano para pruebas antes de la UI del
+    panel (FASE 5); la fuente de verdad del alta/baja sigue siendo el catálogo + la
+    resolución (`usuarios/permisos.py`)."""
+    list_display   = ('user', 'area', 'modulo', 'nivel', 'actualizado_por', 'actualizado_en')
+    list_filter    = ('area', 'nivel')
+    search_fields  = ('user__username',)
+    autocomplete_fields = ('user', 'actualizado_por')
 
 
 @admin.register(ErrorCliente)
