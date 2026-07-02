@@ -233,6 +233,7 @@ Registro actual (modelo → tabla):
 | `Bloque` | `prog_bloques` | | `CancelacionClase` | `prog_clases_cancelaciones` |
 | | | | `PerfilEmpleado` | `usuarios_empleados` |
 | | | | `ErrorCliente` | `usuarios_errores_cliente` |
+| | | | `ModuloUsuario` | `usuarios_modulos` |
 | `Asignacion` | `prog_asignaciones` | | `SolicitudViatico` | `prog_viaticos` |
 | `Clase` | `prog_clases` | | `GastoViatico` | `prog_viaticos_gastos` |
 | | | | `SoportePago` | `prog_viaticos_soportes` |
@@ -245,6 +246,33 @@ Registro actual (modelo → tabla):
   `prog_alertas_auditoria_colegios_implicados`. No requiere operación manual.
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
+
+## Permisos granulares por módulo (en construcción — FASE 2 de 6 lista)
+
+Capa de permisos **por módulo** que refina el control binario por área (grupo `area:*` =
+todo el área). Objetivo: por usuario, **quitar** un módulo, ponerlo en **solo lectura** o
+**agregar** un módulo de otra área (acceso cruzado sin dar el área completa). Diseño e
+hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
+
+- **Catálogo** (`core/modulos.py`, datos puros): `MODULOS[area]` = tupla de `Modulo`
+  (`slug`, `nombre`, `prefijos` de URL, `posts_lectura`). `NUCLEO[area]` = rutas
+  transversales no gateables (la landing `/` la cubre `es_raiz`). `EXENTAS` = rutas
+  exentas del gate en toda área (cambio de clave/reset). Helpers: `modulo_de_path(area,
+  path)` (**longest-prefix**; `None` = núcleo/no catalogado), `slugs_de_area`,
+  `modulo_por_slug`. **`posts_lectura` se compara por IGUALDAD EXACTA, no por prefijo:**
+  en programación los exports de pagos/monitores son POST a la RAÍZ de la lista del módulo
+  (`/pagos/`, `/monitores/pagos/`), prefijo de sus rutas de escritura → un match por
+  prefijo abriría las escrituras en modo LECTURA.
+- **Modelo** `ModuloUsuario` (tabla `usuarios_modulos`): overrides **sparse** (sin filas =
+  comportamiento histórico). Cada fila fija el nivel (`SIN`/`LEC`/`COM`) de un módulo del
+  catálogo para un área. `UniqueConstraint(user, area, modulo)`. Registrado en `/admin/`.
+- **Resolución** (`usuarios/permisos.py`): `resolver_acceso_area(user, area)` → `(acceso,
+  {slug: nivel})` combinando base por grupo (grupo → todo COM; sin grupo → todo SIN) con
+  los overrides; superusuario = todo COM; `acceso = any(nivel != SIN)`. `tiene_overrides_en`
+  para los predicados de `core.areas`. Los perfiles colegio/profesor NUNCA pasan por aquí.
+- **Estado:** FASE 2 (modelo + catálogo + resolución) lista e **inerte** — nada la consume
+  en runtime aún. El enforcement en el middleware, los menús granulares y la UI del panel
+  llegan en fases posteriores.
 
 ## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
 

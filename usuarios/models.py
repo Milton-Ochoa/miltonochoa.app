@@ -62,6 +62,42 @@ class PerfilEmpleado(models.Model):
         return f"{self.user.username} (empleado)"
 
 
+class ModuloUsuario(models.Model):
+    """Override de acceso de un usuario a un **módulo** de un área (permisos granulares).
+
+    Solo se guardan overrides (tabla **sparse**): sin filas, el comportamiento es el
+    histórico (grupo `area:<area>` → todo el área COMPLETO; sin grupo → sin acceso). Cada
+    fila pisa el nivel base de UN módulo del catálogo (`core/modulos.py`) para UN área,
+    permitiendo: quitar un módulo (SIN_ACCESO), ponerlo en solo lectura (LECTURA), o dar
+    acceso cruzado a un módulo de otra área sin otorgar el área completa (COMPLETO sobre
+    una base sin grupo). La resolución vive en `usuarios/permisos.py`.
+    """
+    class Nivel(models.TextChoices):
+        SIN_ACCESO = 'SIN', 'Sin acceso'
+        LECTURA    = 'LEC', 'Solo lectura'
+        COMPLETO   = 'COM', 'Completo'
+
+    user   = models.ForeignKey(User, on_delete=models.CASCADE, related_name='modulos_override')
+    area   = models.CharField(max_length=20)   # slug de core.areas.AREAS
+    modulo = models.CharField(max_length=40)   # slug del catálogo core/modulos.py
+    nivel  = models.CharField(max_length=3, choices=Nivel.choices)
+    actualizado_por = models.ForeignKey(User, null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name='+')
+    actualizado_en  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table            = 'usuarios_modulos'
+        verbose_name        = "Override de módulo"
+        verbose_name_plural = "Overrides de módulo"
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'area', 'modulo'],
+                                    name='unique_modulo_por_usuario'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} · {self.area}/{self.modulo} = {self.get_nivel_display()}"
+
+
 class ErrorCliente(models.Model):
     """
     Diagnóstico casero: registro de errores ocurridos en el NAVEGADOR (JS, promesas
