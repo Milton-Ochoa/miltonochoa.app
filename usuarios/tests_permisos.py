@@ -1,15 +1,17 @@
-"""Tests de la FASE 2 de permisos granulares por módulo (inerte).
+"""Tests de permisos granulares por módulo.
 
-Cubren la resolución (`usuarios/permisos.py`), el catálogo (`core/modulos.py`) y su
-sanidad. NO tocan runtime todavía (el enforcement es FASE 3).
+FASE 2 (inerte): resolución (`usuarios/permisos.py`), catálogo (`core/modulos.py`) y
+sanidad. FASE 3: enforcement en el middleware + acceso cruzado (predicados de
+`core.areas`), ejercido con `Client(HTTP_HOST='<area>.testserver')`.
 """
-from django.test import TestCase
+from django.test import TestCase, Client
 from django.contrib.auth.models import User, Group
 
 from core.areas import (AREAS, GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA,
-                        GRUPO_STAFF_PROGRAMACION)
+                        GRUPO_STAFF_PROGRAMACION, areas_del_usuario,
+                        es_personal_financiera, es_personal_programacion)
 from core import modulos as cat
-from usuarios.models import ModuloUsuario
+from usuarios.models import ModuloUsuario, PerfilEmpleado
 from usuarios.permisos import COM, LEC, SIN, resolver_acceso_area, tiene_overrides_en
 
 
@@ -144,3 +146,93 @@ class CatalogoSanidadTest(TestCase):
                          (ModuloUsuario.Nivel.SIN_ACCESO,
                           ModuloUsuario.Nivel.LECTURA,
                           ModuloUsuario.Nivel.COMPLETO))
+
+
+# ── Enforcement en el middleware (FASE 3) ─────────────────────────
+# Se ejerce contra el área financiera (la más simple: sin perfiles colegio/profesor).
+
+class EnforcementFinancieraTest(TestCase):
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='financiera.testserver')
+        self.g_fin = Group.objects.get_or_create(name=GRUPO_STAFF_FINANCIERA)[0]
+        self.user = User.objects.create_user('fin_mw', password='x')
+        self.user.groups.add(self.g_fin)
+        self.client.login(username='fin_mw', password='x')
+
+    def test_retro_grupo_sin_overrides_accede(self):
+        # Sin overrides, el grupo se comporta igual que hoy: acceso pleno al módulo.
+        self.assertEqual(self.client.get('/viaticos/').status_code, 200)
+
+    def test_sin_acceso_redirige_a_landing(self):
+        ModuloUsuario.objects.create(user=self.user, area='financiera',
+                                     modulo='viaticos', nivel=SIN)
+        r = self.client.get('/viaticos/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r['Location'], '/')          # landing (fin_home), bucle-safe
+
+    def test_lectura_get_ok_post_bloqueado_html(self):
+        ModuloUsuario.objects.create(user=self.user, area='financiera',
+                                     modulo='viaticos', nivel=LEC)
+        self.assertEqual(self.client.get('/viaticos/').status_code, 200)
+        # POST de escritura (navegación normal, sin Sec-Fetch-Mode) → página 403 HTML.
+        r = self.client.post('/viaticos/1/aprobar/')
+        self.assertEqual(r.status_code, 403)
+        self.assertContains(r, 'solo lectura', status_code=403)
+
+    def test_lectura_post_ajax_devuelve_json_403(self):
+        ModuloUsuario.objects.create(user=self.user, area='financiera',
+                                     modulo='viaticos', nivel=LEC)
+        r = self.client.post('/viaticos/1/aprobar/', HTTP_SEC_FETCH_MODE='cors')
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(r.json()['ok'])
+        self.assertIn('solo lectura', r.json()['error'])
+
+    def test_lectura_permite_export_post(self):
+        # El export (POST de lectura) sí pasa en modo LECTURA (posts_lectura, exacto).
+        ModuloUsuario.objects.create(user=self.user, area='financiera',
+                                     modulo='viaticos', nivel=LEC)
+        r = self.client.post('/viaticos/exportar/', {'estados': ['APROBADA']})
+        self.assertNotEqual(r.status_code, 403)
+
+    def test_cambio_password_precede_al_gate(self):
+        # Un empleado con clave pendiente va a cambiar-password ANTES de cualquier gate.
+        PerfilEmpleado.objects.create(user=self.user, debe_cambiar_password=True)
+        ModuloUsuario.objects.create(user=self.user, area='financiera',
+                                     modulo='viaticos', nivel=SIN)
+        r = self.client.get('/viaticos/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('cambiar-password', r['Location'])
+
+
+class AccesoCruzadoTest(TestCase):
+    """Usuario de financiera con un override de programación: entra a programación
+    solo por su módulo cruzado; el resto del área queda bloqueado."""
+
+    def setUp(self):
+        self.g_fin = Group.objects.get_or_create(name=GRUPO_STAFF_FINANCIERA)[0]
+        self.user = User.objects.create_user('cruzado_mw', password='x')
+        self.user.groups.add(self.g_fin)
+        ModuloUsuario.objects.create(user=self.user, area='programacion',
+                                     modulo='informes', nivel=COM)
+
+    def test_entra_a_su_modulo_cruzado(self):
+        c = Client(HTTP_HOST='programacion.testserver')
+        c.login(username='cruzado_mw', password='x')
+        self.assertEqual(c.get('/informes/').status_code, 200)
+
+    def test_bloqueado_en_modulo_no_cruzado(self):
+        c = Client(HTTP_HOST='programacion.testserver')
+        c.login(username='cruzado_mw', password='x')
+        r = c.get('/colegios/')                       # colegios sigue SIN → landing
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r['Location'], '/')
+
+    def test_areas_del_usuario_ofrece_ambas(self):
+        slugs = {a['slug'] for a in areas_del_usuario(self.user)}
+        self.assertEqual(slugs, {'financiera', 'programacion'})
+
+    def test_predicados_reconocen_el_override(self):
+        # Los ~112 decoradores de vista dejan pasar al usuario cruzado.
+        self.assertTrue(es_personal_programacion(self.user))
+        self.assertTrue(es_personal_financiera(self.user))

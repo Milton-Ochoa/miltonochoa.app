@@ -247,7 +247,7 @@ Registro actual (modelo → tabla):
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
 
-## Permisos granulares por módulo (en construcción — FASE 2 de 6 lista)
+## Permisos granulares por módulo (en construcción — FASE 3 de 6 lista)
 
 Capa de permisos **por módulo** que refina el control binario por área (grupo `area:*` =
 todo el área). Objetivo: por usuario, **quitar** un módulo, ponerlo en **solo lectura** o
@@ -270,9 +270,27 @@ hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
   {slug: nivel})` combinando base por grupo (grupo → todo COM; sin grupo → todo SIN) con
   los overrides; superusuario = todo COM; `acceso = any(nivel != SIN)`. `tiene_overrides_en`
   para los predicados de `core.areas`. Los perfiles colegio/profesor NUNCA pasan por aquí.
-- **Estado:** FASE 2 (modelo + catálogo + resolución) lista e **inerte** — nada la consume
-  en runtime aún. El enforcement en el middleware, los menús granulares y la UI del panel
-  llegan en fases posteriores.
+- **Enforcement (FASE 3, en runtime):** `ControlAccesoMiddleware` (`usuarios/middleware.py`)
+  resuelve `resolver_acceso_area` en las ramas de área (financiera/logística/programación-staff)
+  y aplica `_gate_modulo(request, area, path, modulos)` **por request** (sin caché → seguro
+  con el SSO; los cambios de permiso aplican al siguiente request). El gate deja pasar
+  `EXENTAS` (cambio de clave/reset) y el núcleo (landing `/` + `NUCLEO[area]`), y para el
+  módulo de la ruta: **COMPLETO** pasa; **LECTURA** pasa GET/HEAD/OPTIONS y los `posts_lectura`
+  (exports), y bloquea cualquier otra escritura con `_bloqueo_escritura` (403 JSON si
+  `Sec-Fetch-Mode` es fetch/XHR → el JS de área muestra `data.error`; si no, página
+  `templates/core/403_modulo.html`, **standalone, sin `messages`**); **SIN acceso** → redirect
+  a la landing del área (bucle-safe). Una ruta **no catalogada** cuenta como núcleo →
+  retrocompatible: sin overrides todo queda COM y el gate es inerte. El middleware fija
+  `request.modulos` (dict slug→nivel) y `request.modulos_permitidos` (set de slugs con nivel
+  != SIN) para los menús (FASE 4). Superusuario, staff de grupo y **acceso cruzado por
+  overrides** se unifican en una sola rama por área (la resolución les da COM / solo sus
+  módulos cruzados). Ramas colegio/profesor **intactas** (`request.modulos_permitidos = set()`).
+- **Acceso cruzado** (`core/areas.py`): los predicados `es_personal_*` y `areas_del_usuario`
+  reconocen `tiene_overrides_en(user, area)` (además del grupo) → los ~112 decoradores de
+  vista dejan pasar al usuario cruzado y el selector del apex le ofrece el área extra; el
+  middleware recorta por módulo dentro de ella.
+- **Estado:** FASE 3 lista. Faltan los menús granulares (FASE 4, condicionar cada ítem del
+  sidebar con `request.modulos_permitidos`) y la UI del panel (FASE 5).
 
 ## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
 
@@ -721,10 +739,13 @@ checkboxes de tipo y rango de fechas). Tests en
   login vale para todos los subdominios.
 - `usuarios/middleware.py` (`ControlAcceso`) **solo actúa dentro de un área**
   (`request.area`); en el apex deja pasar (decoradores). **Ramifica por `request.area`:**
-  `financiera` → superusuario/grupo `area:financiera` pasan (set `es_personal_financiera`),
-  el resto va al selector de área del apex (sin logout); `programacion` mantiene la lógica
-  original (superusuario / staff / perfiles colegio-profesor, con prefijos `/colegios/`,
-  `/informes/`, `/profesores/`). Sus `reverse` internos pasan `urlconf=request.urlconf`.
+  `financiera`/`logistica` → superusuario/grupo (o acceso cruzado por overrides) pasan (set
+  `es_personal_financiera`/`_logistica`), el resto va al selector de área del apex (sin
+  logout); `programacion` unifica superusuario / staff / cruzado y luego perfiles
+  colegio-profesor (prefijos `/colegios/`, `/informes/`, `/profesores/`). Sus `reverse`
+  internos pasan `urlconf=request.urlconf`. **Enforcement granular por módulo (FASE 3):**
+  cada rama de área resuelve `resolver_acceso_area` y aplica `_gate_modulo` — ver la sección
+  _Permisos granulares por módulo_.
 - `BASE_DOMAIN` (env): prod `miltonochoa.app`, dev `lvh.me`, tests `testserver`
   (forzado en settings). Plantillas del apex (login, seleccion_area, sin_area)
   extienden **`base_apex.html`**, NO `base.html` (que referencia URLs del área).
@@ -829,7 +850,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 677 tests OK
+python manage.py test                        # baseline: 707 tests OK
 python manage.py runserver
 ```
 
@@ -872,7 +893,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (677 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (707 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
