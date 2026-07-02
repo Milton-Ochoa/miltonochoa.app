@@ -53,35 +53,38 @@ def panel_admin(request):
     Reúne el acceso a todas las áreas registradas (URL absoluta a la landing de cada
     subdominio) y la gestión de usuarios de etiqueta (CRUD vía AJAX en usuarios.views).
     Solo superusuarios; los usuarios de etiqueta van directo a su área, no aquí.
+
+    Una sola sección por área, generada por un loop sobre GRUPOS_ETIQUETA (imports
+    diferidos para no acoplar el apex a usuarios.views en tiempo de módulo): el template
+    itera `usuarios_por_area` e incluye el mismo parcial por área. Los superusuarios se
+    excluyen aunque estén metidos en un grupo de etiqueta (no se gestionan aquí).
     """
     from core.areas import AREAS
     from django.contrib.auth.models import User
+    from usuarios.views import GRUPOS_ETIQUETA
 
     areas_ctx = [
         {'nombre': a['nombre'], 'slug': a['slug'],
          'url': url_landing_area(a['slug'], request)}
         for a in AREAS.values()
     ]
-    usuarios_etiqueta = (
-        User.objects
-        .filter(groups__name='area:programacion')
-        .order_by('username')
-    )
-    usuarios_etiqueta_financiera = (
-        User.objects
-        .filter(groups__name='area:financiera')
-        .order_by('username')
-    )
-    usuarios_etiqueta_logistica = (
-        User.objects
-        .filter(groups__name='area:logistica')
-        .order_by('username')
-    )
+    usuarios_por_area = [
+        {
+            'slug': slug,
+            'nombre': AREAS[slug]['nombre'],
+            'grupo': grupo,
+            'usuarios': (
+                User.objects
+                .filter(groups__name=grupo, is_superuser=False)
+                .select_related('perfil_empleado')
+                .order_by('username')
+            ),
+        }
+        for slug, grupo in GRUPOS_ETIQUETA.items()
+    ]
     return render(request, 'core/panel_admin.html', {
         'areas': areas_ctx,
-        'usuarios_etiqueta': usuarios_etiqueta,
-        'usuarios_etiqueta_financiera': usuarios_etiqueta_financiera,
-        'usuarios_etiqueta_logistica': usuarios_etiqueta_logistica,
+        'usuarios_por_area': usuarios_por_area,
     })
 
 
