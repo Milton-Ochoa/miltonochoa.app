@@ -1,11 +1,12 @@
 from urllib.parse import urlencode
 
-from django.shortcuts import redirect
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.contrib.auth import logout
 
-from core.areas import url_apex, GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
+from core.areas import AREAS, url_apex
 
 # '/usuarios/telemetria/': el capturador de errores del navegador debe poder reportar desde
 # cualquier rol (incluidos colegio/profesor, restringidos a sus prefijos) y aun sin sesión.
@@ -61,6 +62,49 @@ class ControlAccesoMiddleware:
             return None
         return redirect(destino)
 
+    def _bloqueo_escritura(self, request):
+        """Respuesta 403 para una escritura sobre un módulo en modo LECTURA.
+
+        Fetch/XHR (Sec-Fetch-Mode presente y ≠ 'navigate') → JSON, para que el JS de
+        área existente muestre `data.error`; navegación normal → página 403 standalone.
+        NUNCA usa `messages` (financiera prohíbe toasts; la página es autónoma).
+        """
+        if request.headers.get('Sec-Fetch-Mode') not in (None, 'navigate'):
+            return JsonResponse(
+                {'ok': False, 'error': 'Tu acceso a este módulo es de solo lectura.'},
+                status=403)
+        return render(request, 'core/403_modulo.html', status=403)
+
+    def _gate_modulo(self, request, area, path, modulos):
+        """Enforcement granular por módulo dentro de un área.
+
+        `modulos` = {slug: nivel} ya resuelto (base por grupo + overrides). Devuelve la
+        respuesta de bloqueo (redirect/403) o None si la petición puede seguir. Las
+        exenciones y el núcleo pasan siempre; una ruta no catalogada se trata como núcleo
+        (retrocompatible: sin overrides todo queda COMPLETO y esto es inerte).
+        """
+        from core.modulos import EXENTAS, NUCLEO, es_raiz, modulo_de_path
+        from usuarios.permisos import COM, LEC, SIN
+
+        if any(path.startswith(e) for e in EXENTAS):
+            return None
+        if es_raiz(path) or any(path.startswith(n) for n in NUCLEO.get(area, ())):
+            return None
+        mod = modulo_de_path(area, path)
+        if mod is None:                     # no catalogado → núcleo/infra
+            return None
+        nivel = modulos.get(mod.slug, SIN)
+        if nivel == COM:
+            return None
+        if nivel == LEC:
+            if request.method in ('GET', 'HEAD', 'OPTIONS'):
+                return None
+            if path in mod.posts_lectura:   # exports (POST de lectura), igualdad EXACTA
+                return None
+            return self._bloqueo_escritura(request)
+        # SIN acceso al módulo → de vuelta a la landing del área (bucle-safe: es núcleo).
+        return redirect(reverse(AREAS[area]['landing'], urlconf=request.urlconf))
+
     def __call__(self, request):
         # Apex: las vistas se protegen con decoradores. Este control es por área.
         if getattr(request, 'area', None) is None:
@@ -87,46 +131,48 @@ class ControlAccesoMiddleware:
             return redir_cambio
 
         # Banderas por defecto para las plantillas (cada rama de área sube la suya a True).
+        request.es_personal_programacion = False
         request.es_personal_financiera = False
         request.es_personal_logistica = False
+        request.modulos = {}
+        request.modulos_permitidos = set()
 
-        # ── Área financiera ──
-        # Acceso por grupo 'area:financiera' (o superusuario). El subdominio no tiene
-        # perfiles de colegio/profesor: cualquier otro autenticado se manda al selector
-        # de área del apex (no se le hace logout: puede tener acceso a otra área).
-        if request.area == 'financiera':
-            if request.user.is_superuser or request.user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists():
-                request.perfil_colegio  = None
-                request.perfil_profesor = None
-                request.es_personal_programacion = False
-                request.es_personal_financiera = True
-                return self.get_response(request)
-            return redirect(url_apex('seleccion_area', request))
+        from usuarios.permisos import SIN, resolver_acceso_area
 
-        # ── Área logistica ── (espejo de financiera: grupo 'area:logistica' o superusuario)
-        if request.area == 'logistica':
-            if request.user.is_superuser or request.user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists():
-                request.perfil_colegio  = None
-                request.perfil_profesor = None
-                request.es_personal_programacion = False
-                request.es_personal_logistica = True
-                return self.get_response(request)
-            return redirect(url_apex('seleccion_area', request))
-
-        # ── Área programacion (comportamiento original) ──
-        if request.user.is_superuser:
+        # ── Áreas financiera / logistica ──
+        # Acceso por grupo 'area:<area>' (o superusuario) o por overrides cruzados. El
+        # subdominio no tiene perfiles de colegio/profesor: cualquier otro autenticado se
+        # manda al selector de área del apex (no se le hace logout: puede tener otra área).
+        if request.area in ('financiera', 'logistica'):
+            acceso, modulos = resolver_acceso_area(request.user, request.area)
+            if not acceso:
+                return redirect(url_apex('seleccion_area', request))
             request.perfil_colegio  = None
             request.perfil_profesor = None
-            request.es_personal_programacion = True
+            setattr(request, f'es_personal_{request.area}', True)
+            request.modulos = modulos
+            request.modulos_permitidos = {s for s, n in modulos.items() if n != SIN}
+            bloqueo = self._gate_modulo(request, request.area, path, modulos)
+            if bloqueo is not None:
+                return bloqueo
             return self.get_response(request)
 
-        # Staff del área (grupo 'area:programacion'): acceso pleno al área, igual que un
-        # superusuario, pero sin ser admin. Va antes de los perfiles colegio/profesor para
-        # que un usuario "solo etiqueta" (sin perfil) no caiga en el logout final.
-        if request.user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists():
+        # ── Área programacion ──
+        # Superusuario, staff (grupo 'area:programacion') y acceso cruzado por overrides se
+        # unifican: la resolución devuelve todo COMPLETO al superuser/grupo y solo los
+        # módulos cruzados al usuario con overrides. Va antes de los perfiles colegio/
+        # profesor para que un usuario "solo etiqueta/override" (sin perfil) no caiga en el
+        # logout final; el gate por módulo recorta dentro del área.
+        acceso, modulos = resolver_acceso_area(request.user, 'programacion')
+        if acceso:
             request.perfil_colegio  = None
             request.perfil_profesor = None
             request.es_personal_programacion = True
+            request.modulos = modulos
+            request.modulos_permitidos = {s for s, n in modulos.items() if n != SIN}
+            bloqueo = self._gate_modulo(request, 'programacion', path, modulos)
+            if bloqueo is not None:
+                return bloqueo
             return self.get_response(request)
 
         try:
