@@ -15,14 +15,18 @@ from django.views.decorators.http import require_GET, require_POST
 import json
 import logging
 
-from .models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado, ErrorCliente
+from .models import UsuarioColegio, UsuarioProfesor, PerfilEmpleado, ErrorCliente, ModuloUsuario
 from .ratelimit import rate_limit
+from .permisos import SIN, LEC, COM
 from programacion.configuracion.models import Colegio, Profesor
 from core.areas import (
     AREAS, url_apex, url_en_area, host_apex, host_de_area,
     GRUPO_STAFF_PROGRAMACION, GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA,
     es_personal_programacion,
 )
+from core.modulos import MODULOS, modulo_por_slug
+
+_NIVELES_VALIDOS = {SIN, LEC, COM}
 
 # Áreas cuyos usuarios de etiqueta se gestionan desde el panel del apex: slug → grupo.
 # El grupo basta para que el login lleve al usuario a su subdominio (sin perfil ni is_staff).
@@ -415,6 +419,93 @@ def ajax_resetear_password_area(request):
         'Contraseña reseteada (etiqueta): usuario=%s (por %s desde %s)',
         user.username, request.user.username, request.META.get('REMOTE_ADDR'),
     )
+    return JsonResponse({'ok': True, 'username': user.username})
+
+
+# ── Permisos granulares por módulo (overrides ModuloUsuario) ─────────────────
+# El panel del apex pinta y guarda, por usuario de etiqueta, el acceso a cada módulo de
+# cada área (SIN_ACCESO / LECTURA / COMPLETO). Regla **sparse**: solo se persisten
+# overrides; un nivel igual al por defecto del área (COMPLETO si pertenece al grupo, si no
+# SIN_ACCESO) borra la fila. La resolución en runtime vive en usuarios/permisos.py.
+
+@user_passes_test(solo_admin, login_url='login')
+@require_GET
+def ajax_permisos_usuario(request):
+    """Matriz de permisos por módulo de un usuario de etiqueta (para pintar el modal).
+
+    Por cada área: el nivel por defecto es COMPLETO si el usuario pertenece a su grupo, si
+    no SIN_ACCESO. Cada módulo trae su nivel efectivo (override si existe, si no el default)
+    y si ese nivel proviene de un override explícito.
+    """
+    user = _get_usuario_etiqueta(request.GET.get('user_id'))
+    if not user:
+        return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
+
+    areas = []
+    for slug, grupo in GRUPOS_ETIQUETA.items():
+        de_su_grupo = user.groups.filter(name=grupo).exists()
+        nivel_default = COM if de_su_grupo else SIN
+        overrides = {ov.modulo: ov.nivel
+                     for ov in ModuloUsuario.objects.filter(user=user, area=slug)}
+        modulos = [
+            {'slug': m.slug, 'nombre': m.nombre, 'nivel_default': nivel_default,
+             'nivel': overrides.get(m.slug, nivel_default),
+             'es_override': m.slug in overrides}
+            for m in MODULOS.get(slug, ())
+        ]
+        areas.append({'slug': slug, 'nombre': AREAS[slug]['nombre'],
+                      'de_su_grupo': de_su_grupo, 'modulos': modulos})
+    return JsonResponse({'ok': True, 'username': user.username, 'areas': areas})
+
+
+@user_passes_test(solo_admin, login_url='login')
+@require_POST
+def ajax_guardar_permisos_usuario(request):
+    """Guarda la matriz COMPLETA de permisos por módulo de un usuario de etiqueta.
+
+    `permisos` llega como JSON string (lista de {area, modulo, nivel}). Regla sparse (única
+    fuente, en el server): por cada entrada, si el nivel elegido == el por defecto del área
+    se borra el override; si no, `update_or_create`. Valida area/modulo/nivel contra el
+    catálogo antes de escribir nada (todo o nada).
+    """
+    user = _get_usuario_etiqueta(request.POST.get('user_id'))
+    if not user:
+        return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
+
+    try:
+        permisos = json.loads(request.POST.get('permisos') or '')
+        if not isinstance(permisos, list):
+            raise ValueError
+    except (ValueError, TypeError):
+        return JsonResponse({'ok': False, 'error': 'Datos inválidos.'}, status=400)
+
+    # Nivel por defecto por área (depende de la pertenencia al grupo del área).
+    default_por_area = {
+        slug: (COM if user.groups.filter(name=grupo).exists() else SIN)
+        for slug, grupo in GRUPOS_ETIQUETA.items()
+    }
+
+    limpios = []
+    for p in permisos:
+        if not isinstance(p, dict):
+            return JsonResponse({'ok': False, 'error': 'Datos inválidos.'}, status=400)
+        area, modulo, nivel = p.get('area'), p.get('modulo'), p.get('nivel')
+        if (area not in default_por_area or modulo_por_slug(area, modulo) is None
+                or nivel not in _NIVELES_VALIDOS):
+            return JsonResponse({'ok': False, 'error': 'Permiso inválido.'}, status=400)
+        limpios.append((area, modulo, nivel))
+
+    with transaction.atomic():
+        for area, modulo, nivel in limpios:
+            if nivel == default_por_area[area]:
+                ModuloUsuario.objects.filter(user=user, area=area, modulo=modulo).delete()
+            else:
+                ModuloUsuario.objects.update_or_create(
+                    user=user, area=area, modulo=modulo,
+                    defaults={'nivel': nivel, 'actualizado_por': request.user})
+
+    logger.info('Permisos de módulo actualizados: usuario=%s (por %s)',
+                user.username, request.user.username)
     return JsonResponse({'ok': True, 'username': user.username})
 
 

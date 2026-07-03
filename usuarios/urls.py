@@ -47,6 +47,10 @@ urlpatterns = [
     path('ajax/area/eliminar/', views.ajax_eliminar_usuario_area,  name='ajax_eliminar_usuario_area'),
     path('ajax/area/resetear/', views.ajax_resetear_password_area, name='ajax_resetear_password_area'),
 
+    # Permisos granulares por módulo (modal del panel del apex).
+    path('ajax/area/permisos/',         views.ajax_permisos_usuario,         name='ajax_permisos_usuario'),
+    path('ajax/area/permisos/guardar/', views.ajax_guardar_permisos_usuario, name='ajax_guardar_permisos_usuario'),
+
     # Telemetría: capturador casero de errores del navegador (base_chrome.html → /admin/).
     path('telemetria/error/', views.telemetria_error_cliente, name='telemetria_error_cliente'),
 ]

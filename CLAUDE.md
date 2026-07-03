@@ -247,7 +247,7 @@ Registro actual (modelo → tabla):
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
 
-## Permisos granulares por módulo (en construcción — FASE 4 de 6 lista)
+## Permisos granulares por módulo (en construcción — FASE 5 de 6 lista)
 
 Capa de permisos **por módulo** que refina el control binario por área (grupo `area:*` =
 todo el área). Objetivo: por usuario, **quitar** un módulo, ponerlo en **solo lectura** o
@@ -301,8 +301,24 @@ hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
   bajo `colegios`. En logística **Terceros** va bajo `catalogos`. Las ramas `{% else %}` de
   perfil colegio/profesor quedan **intactas** (no dependen de `mp`). Si `mp` es indefinido
   (request sin rama de área), resuelve a `''` y `'slug' in ''` = `False` → no truena.
-- **Estado:** FASE 4 lista. Falta la UI de permisos del panel (FASE 5, modal + AJAX) y el
-  cierre (FASE 6).
+- **UI de permisos en el panel (FASE 5):** el panel del apex (`panel_admin`, solo superusuario)
+  edita los overrides de cada usuario de etiqueta con un modal AJAX. Dos endpoints en
+  `usuarios/views.py` (gate `solo_admin` + `_get_usuario_etiqueta`, que excluye superusuarios y
+  no-etiqueta): `ajax_permisos_usuario` (GET `/usuarios/ajax/area/permisos/?user_id=`) devuelve la
+  matriz por área (`de_su_grupo` + por módulo `nivel`/`nivel_default`/`es_override`), y
+  `ajax_guardar_permisos_usuario` (POST `/usuarios/ajax/area/permisos/guardar/`, body `user_id` +
+  `permisos` = JSON string con la matriz COMPLETA de `{area, modulo, nivel}`). **La regla sparse
+  vive SOLO en el server:** valida area/modulo/nivel contra el catálogo (todo o nada) y, en
+  `transaction.atomic`, borra el override si el nivel elegido == el por defecto del área (COM si
+  pertenece al grupo, si no SIN) o hace `update_or_create` (con `actualizado_por`) en otro caso —
+  así un COM sobre un área ajena (default SIN) persiste como acceso cruzado. `panel_admin` anota
+  `n_overrides=Count('modulos_override', distinct=True)` → el parcial `_tabla_usuarios_area.html`
+  muestra un badge "Personalizado" y un botón "Permisos" por fila; el modal `modalPermisos`
+  (pestañas por área, btn-group de 3 niveles por módulo con marca "(por defecto)") se pinta por JS
+  desde el GET y envía la matriz completa. Tests en `usuarios/tests_permisos.py`
+  (`PanelPermisosAjaxTest`), incluida la integración endpoint→middleware.
+- **Estado:** FASE 5 lista. Falta la verificación con el usuario, docs y release dev → main
+  (FASE 6).
 
 ## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
 
