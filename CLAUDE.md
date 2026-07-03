@@ -247,7 +247,7 @@ Registro actual (modelo → tabla):
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
 
-## Permisos granulares por módulo (en construcción — FASE 3 de 6 lista)
+## Permisos granulares por módulo (en construcción — FASE 4 de 6 lista)
 
 Capa de permisos **por módulo** que refina el control binario por área (grupo `area:*` =
 todo el área). Objetivo: por usuario, **quitar** un módulo, ponerlo en **solo lectura** o
@@ -289,8 +289,20 @@ hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
   reconocen `tiene_overrides_en(user, area)` (además del grupo) → los ~112 decoradores de
   vista dejan pasar al usuario cruzado y el selector del apex le ofrece el área extra; el
   middleware recorta por módulo dentro de ella.
-- **Estado:** FASE 3 lista. Faltan los menús granulares (FASE 4, condicionar cada ítem del
-  sidebar con `request.modulos_permitidos`) y la UI del panel (FASE 5).
+- **Menús granulares (FASE 4):** cada ítem de los 3 sidebars (`base.html`,
+  `base_financiera.html`, `base_logistica.html`) se condiciona con
+  `{% if 'slug' in mp %}`, donde `mp = request.modulos_permitidos` (envuelto una vez con
+  `{% with mp=request.modulos_permitidos %}` dentro de cada rama `es_personal_<area>`). La
+  cabecera de cada sección colapsable = **unión** de los slugs de sus hijos. Ítems de
+  **núcleo** (Inicio, General) NO se gatean (siempre visibles). En **LECTURA** el módulo SÍ
+  aparece (`mp` incluye todo nivel != SIN). Mapeos no obvios: en programación el submenú
+  **Simulacros de Configuración** (`configuracion_monitores`/`configuracion_colegios_simulacro`,
+  rutas `/monitores/…`) va bajo `monitores`, NO `configuracion`; **Cancelaciones** (`/reportes/`)
+  bajo `colegios`. En logística **Terceros** va bajo `catalogos`. Las ramas `{% else %}` de
+  perfil colegio/profesor quedan **intactas** (no dependen de `mp`). Si `mp` es indefinido
+  (request sin rama de área), resuelve a `''` y `'slug' in ''` = `False` → no truena.
+- **Estado:** FASE 4 lista. Falta la UI de permisos del panel (FASE 5, modal + AJAX) y el
+  cierre (FASE 6).
 
 ## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
 
@@ -891,6 +903,11 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 ## Al contribuir
 
+- **Comentarios en plantillas Django — REGLA DE ORO (no volver a romper):** un comentario
+  `{# … #}` **debe caber en UNA sola línea**. Django NO reconoce `{# #}` multilínea y lo
+  **renderiza literal** en el navegador (el usuario lo ha reportado más de una vez). Para
+  comentarios de **varias líneas** usar SIEMPRE `{% comment %} … {% endcomment %}`. Antes de
+  cerrar cualquier cambio en `.html`, revisa que no quede ningún `{# #}` partido en dos líneas.
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
 - Ejecuta `python manage.py test` y compara con el baseline (707 OK).
