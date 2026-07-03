@@ -5,7 +5,7 @@
 
   {# ── Acceso a áreas ── #}
   <h1 class="h4 mb-3"><i class="fas fa-th-large me-2 text-secondary"></i>Áreas</h1>
-  <div class="row g-3 mb-5">
+  <div class="row g-3 mb-4">
     {% for area in areas %}
     <div class="col-12 col-sm-6 col-md-4">
       <a href="{{ area.url }}" class="card text-decoration-none h-100">
@@ -18,144 +18,17 @@
     {% endfor %}
   </div>
 
-  {# ── Usuarios de etiqueta (programación) ── #}
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="h5 mb-0"><i class="fas fa-users me-2 text-secondary"></i>Usuarios — Programación</h2>
-    <button class="btn btn-primary btn-sm fw-bold" onclick="abrirCrearArea('programacion')">
-      <i class="fas fa-plus me-1"></i> Nuevo usuario
-    </button>
-  </div>
-  <p class="text-muted small">
-    Estos usuarios entran directamente a <strong>programación</strong> al iniciar sesión,
-    con acceso completo al área (no son administradores).
-  </p>
-
-  <div class="table-responsive">
-    <table class="table table-sm align-middle">
-      <thead class="table-dark">
-        <tr><th>Usuario</th><th>Correo</th><th class="text-end" style="width:180px;">Acciones</th></tr>
-      </thead>
-      <tbody>
-        {% for u in usuarios_etiqueta %}
-        <tr id="fila-area-{{ u.id }}">
-          <td class="fw-semibold">{{ u.username }}</td>
-          <td class="text-muted small">{{ u.email|default:"—" }}</td>
-          <td class="text-end">
-            <button class="btn btn-outline-warning btn-sm" title="Editar correo"
-                    onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
-              <i class="fas fa-envelope"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
-                    onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-key"></i>
-            </button>
-            <button class="btn btn-outline-danger btn-sm" title="Eliminar"
-                    onclick="eliminarArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-trash"></i>
-            </button>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="3" class="text-center text-muted py-4">Aún no hay usuarios de programación.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <p class="text-muted small mt-4">
+  <p class="text-muted small mb-0">
     <i class="fas fa-info-circle me-1"></i>
     Los usuarios de <strong>colegio</strong> y <strong>profesor</strong> se gestionan dentro del área:
     <a href="{{ areas.0.url }}usuarios/colegios/">Colegios</a> ·
     <a href="{{ areas.0.url }}usuarios/profesores/">Profesores</a>.
   </p>
 
-  {# ── Usuarios de etiqueta (financiera) ── #}
-  <div class="d-flex justify-content-between align-items-center mb-3 mt-5">
-    <h2 class="h5 mb-0"><i class="fas fa-users me-2 text-secondary"></i>Usuarios — Financiera</h2>
-    <button class="btn btn-primary btn-sm fw-bold" onclick="abrirCrearArea('financiera')">
-      <i class="fas fa-plus me-1"></i> Nuevo usuario
-    </button>
-  </div>
-  <p class="text-muted small">
-    Estos usuarios entran directamente a <strong>financiera</strong> al iniciar sesión,
-    con acceso completo al área (no son administradores).
-  </p>
-
-  <div class="table-responsive">
-    <table class="table table-sm align-middle">
-      <thead class="table-dark">
-        <tr><th>Usuario</th><th>Correo</th><th class="text-end" style="width:180px;">Acciones</th></tr>
-      </thead>
-      <tbody>
-        {% for u in usuarios_etiqueta_financiera %}
-        <tr id="fila-area-{{ u.id }}">
-          <td class="fw-semibold">{{ u.username }}</td>
-          <td class="text-muted small">{{ u.email|default:"—" }}</td>
-          <td class="text-end">
-            <button class="btn btn-outline-warning btn-sm" title="Editar correo"
-                    onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
-              <i class="fas fa-envelope"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
-                    onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-key"></i>
-            </button>
-            <button class="btn btn-outline-danger btn-sm" title="Eliminar"
-                    onclick="eliminarArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-trash"></i>
-            </button>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="3" class="text-center text-muted py-4">Aún no hay usuarios de financiera.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {# ── Usuarios de etiqueta (logística) ── #}
-  <div class="d-flex justify-content-between align-items-center mb-3 mt-5">
-    <h2 class="h5 mb-0"><i class="fas fa-users me-2 text-secondary"></i>Usuarios — Logística</h2>
-    <button class="btn btn-primary btn-sm fw-bold" onclick="abrirCrearArea('logistica')">
-      <i class="fas fa-plus me-1"></i> Nuevo usuario
-    </button>
-  </div>
-  <p class="text-muted small">
-    Estos usuarios entran directamente a <strong>logística</strong> al iniciar sesión,
-    con acceso completo al área (no son administradores).
-  </p>
-
-  <div class="table-responsive">
-    <table class="table table-sm align-middle">
-      <thead class="table-dark">
-        <tr><th>Usuario</th><th>Correo</th><th class="text-end" style="width:180px;">Acciones</th></tr>
-      </thead>
-      <tbody>
-        {% for u in usuarios_etiqueta_logistica %}
-        <tr id="fila-area-{{ u.id }}">
-          <td class="fw-semibold">{{ u.username }}</td>
-          <td class="text-muted small">{{ u.email|default:"—" }}</td>
-          <td class="text-end">
-            <button class="btn btn-outline-warning btn-sm" title="Editar correo"
-                    onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
-              <i class="fas fa-envelope"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
-                    onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-key"></i>
-            </button>
-            <button class="btn btn-outline-danger btn-sm" title="Eliminar"
-                    onclick="eliminarArea({{ u.id }}, '{{ u.username|escapejs }}')">
-              <i class="fas fa-trash"></i>
-            </button>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="3" class="text-center text-muted py-4">Aún no hay usuarios de logística.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {# ── Usuarios de etiqueta: una sección por área desde el mismo parcial ── #}
+  {% for area in usuarios_por_area %}
+    {% include 'core/_tabla_usuarios_area.html' with area=area %}
+  {% endfor %}
 </div>
 
 
@@ -253,9 +126,46 @@
   </div>
 </div>
 
+<!-- MODAL: Permisos por módulo -->
+<div class="modal fade" id="modalPermisos" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-sliders-h me-2"></i>Permisos — <span id="permisos_username"></span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="permisos_user_id">
+        <p class="text-muted small mb-3">
+          Ajusta el acceso módulo a módulo. <strong>Sin acceso</strong> lo oculta del menú;
+          <strong>Solo lectura</strong> deja ver y exportar pero no modificar;
+          <strong>Completo</strong> da acceso total. El nivel marcado <em>(por defecto)</em> es
+          el que hereda por su grupo; solo se guardan las excepciones.
+        </p>
+        <ul class="nav nav-tabs" id="permisosTabs" role="tablist"></ul>
+        <div class="tab-content pt-3" id="permisosPanes"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="submitPermisos()"><i class="fas fa-save me-1"></i>Guardar permisos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 const CSRF = '{{ csrf_token }}';
+// URLs de los endpoints AJAX resueltas por nombre (el panel vive en el apex, que
+// incluye usuarios.urls) — nada de rutas hardcodeadas.
+const URLS = {
+    crear:    "{% url 'ajax_crear_usuario_area' %}",
+    editar:   "{% url 'ajax_editar_usuario_area' %}",
+    resetear: "{% url 'ajax_resetear_password_area' %}",
+    eliminar: "{% url 'ajax_eliminar_usuario_area' %}",
+    permisos:        "{% url 'ajax_permisos_usuario' %}",
+    permisosGuardar: "{% url 'ajax_guardar_permisos_usuario' %}",
+};
 
 function _post(url, datos) {
     const body = new FormData();
@@ -290,7 +200,7 @@ function submitCrearArea() {
     if (!username) { alert('Escribe un nombre de usuario.'); return; }
     if (!email) { alert('Escribe el correo.'); return; }
     if (!password.trim()) { alert('Escribe la contraseña genérica.'); return; }
-    _post('/usuarios/ajax/area/crear/', { username, email, password, area: _areaCrear })
+    _post(URLS.crear, { username, email, password, area: _areaCrear })
         .then(data => {
             if (data.ok) location.reload();
             else alert(data.error || 'Error al crear el usuario.');
@@ -309,7 +219,7 @@ function submitEditarArea() {
     const user_id = document.getElementById('editar_area_user_id').value;
     const email = document.getElementById('editar_area_email').value.trim();
     if (!email) { alert('Escribe el correo.'); return; }
-    _post('/usuarios/ajax/area/editar/', { user_id, email })
+    _post(URLS.editar, { user_id, email })
         .then(data => {
             if (data.ok) location.reload();
             else alert(data.error || 'Error al editar.');
@@ -328,7 +238,7 @@ function submitResetArea() {
     const user_id = document.getElementById('reset_area_user_id').value;
     const password = document.getElementById('reset_area_password').value;
     if (!password.trim()) { alert('Escribe la nueva contraseña.'); return; }
-    _post('/usuarios/ajax/area/resetear/', { user_id, password })
+    _post(URLS.resetear, { user_id, password })
         .then(data => {
             if (data.ok) location.reload();
             else alert(data.error || 'Error al resetear.');
@@ -338,10 +248,111 @@ function submitResetArea() {
 
 function eliminarArea(userId, username) {
     if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
-    _post('/usuarios/ajax/area/eliminar/', { user_id: userId })
+    _post(URLS.eliminar, { user_id: userId })
         .then(data => {
             if (data.ok) location.reload();
             else alert(data.error || 'Error al eliminar.');
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+// ── Permisos por módulo ──────────────────────────────────────────────────────
+const _NIVEL_LABELS = { SIN: 'Sin acceso', LEC: 'Solo lectura', COM: 'Completo' };
+const _NIVEL_ORDEN = ['SIN', 'LEC', 'COM'];
+const _NIVEL_COLOR = { SIN: 'danger', LEC: 'warning', COM: 'success' };
+
+function abrirPermisos(userId) {
+    fetch(URLS.permisos + '?user_id=' + encodeURIComponent(userId), { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { alert(data.error || 'No se pudieron cargar los permisos.'); return; }
+            document.getElementById('permisos_user_id').value = userId;
+            document.getElementById('permisos_username').textContent = data.username;
+            _pintarPermisos(data.areas);
+            new bootstrap.Modal(document.getElementById('modalPermisos')).show();
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function _filaModulo(areaSlug, mod) {
+    const row = document.createElement('div');
+    row.className = 'd-flex justify-content-between align-items-center border-bottom py-2 flex-wrap gap-2';
+    row.dataset.area = areaSlug;
+    row.dataset.modulo = mod.slug;
+
+    const label = document.createElement('div');
+    label.className = 'fw-semibold';
+    label.textContent = mod.nombre;
+    row.appendChild(label);
+
+    const grupo = document.createElement('div');
+    grupo.className = 'btn-group btn-group-sm';
+    grupo.setAttribute('role', 'group');
+    const radioName = 'perm-' + areaSlug + '-' + mod.slug;
+    _NIVEL_ORDEN.forEach(nivel => {
+        const id = radioName + '-' + nivel;
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.className = 'btn-check';
+        input.name = radioName;
+        input.id = id;
+        input.value = nivel;
+        input.checked = (mod.nivel === nivel);
+        const lbl = document.createElement('label');
+        lbl.className = 'btn btn-outline-' + _NIVEL_COLOR[nivel];
+        lbl.setAttribute('for', id);
+        lbl.textContent = _NIVEL_LABELS[nivel] + (nivel === mod.nivel_default ? ' (por defecto)' : '');
+        grupo.appendChild(input);
+        grupo.appendChild(lbl);
+    });
+    row.appendChild(grupo);
+    return row;
+}
+
+function _pintarPermisos(areas) {
+    const tabs = document.getElementById('permisosTabs');
+    const panes = document.getElementById('permisosPanes');
+    tabs.innerHTML = '';
+    panes.innerHTML = '';
+    areas.forEach((area, i) => {
+        const paneId = 'perm-pane-' + area.slug;
+        const li = document.createElement('li');
+        li.className = 'nav-item';
+        const btn = document.createElement('button');
+        btn.className = 'nav-link' + (i === 0 ? ' active' : '');
+        btn.type = 'button';
+        btn.setAttribute('data-bs-toggle', 'tab');
+        btn.setAttribute('data-bs-target', '#' + paneId);
+        btn.textContent = area.nombre + (area.de_su_grupo ? '' : ' *');
+        li.appendChild(btn);
+        tabs.appendChild(li);
+
+        const pane = document.createElement('div');
+        pane.className = 'tab-pane fade' + (i === 0 ? ' show active' : '');
+        pane.id = paneId;
+        if (!area.de_su_grupo) {
+            const nota = document.createElement('p');
+            nota.className = 'small text-muted';
+            nota.innerHTML = 'No pertenece a esta área. Dale <strong>Completo</strong> o ' +
+                '<strong>Solo lectura</strong> a un módulo para concederle acceso cruzado.';
+            pane.appendChild(nota);
+        }
+        area.modulos.forEach(mod => pane.appendChild(_filaModulo(area.slug, mod)));
+        panes.appendChild(pane);
+    });
+}
+
+function submitPermisos() {
+    const user_id = document.getElementById('permisos_user_id').value;
+    const permisos = [];
+    document.querySelectorAll('#permisosPanes [data-modulo]').forEach(row => {
+        const sel = row.querySelector('input.btn-check:checked');
+        if (sel) permisos.push({ area: row.dataset.area, modulo: row.dataset.modulo, nivel: sel.value });
+    });
+    _post(URLS.permisosGuardar, { user_id, permisos: JSON.stringify(permisos) })
+        .then(data => {
+            if (data.ok) location.reload();
+            else alert(data.error || 'No se pudieron guardar los permisos.');
         })
         .catch(() => alert('Error de conexión.'));
 }

@@ -1,0 +1,77 @@
+{% comment %}
+  Sección de usuarios de etiqueta de UN área. Contexto esperado (elemento de
+  `usuarios_por_area`): area.slug · area.nombre · area.usuarios (queryset,
+  is_superuser excluidos). El JS de acciones (crear/editar/resetear/eliminar) vive
+  una sola vez en panel_admin.html; aquí solo se generan los botones que lo invocan.
+  Estado por usuario: "Clave pendiente" si el empleado aún no eligió su clave,
+  "Activa" si ya lo hizo, "—" para usuarios legacy sin PerfilEmpleado.
+  (Comentario {% comment %}, NO {# #} multilínea: Django no reconoce ese último y lo
+  renderizaría literal en el navegador.)
+{% endcomment %}
+<div class="d-flex justify-content-between align-items-center mb-3 mt-5">
+  <h2 class="h5 mb-0"><i class="fas fa-users me-2 text-secondary"></i>Usuarios — {{ area.nombre }}</h2>
+  <button class="btn btn-primary btn-sm fw-bold" onclick="abrirCrearArea('{{ area.slug }}')">
+    <i class="fas fa-plus me-1"></i> Nuevo usuario
+  </button>
+</div>
+<p class="text-muted small">
+  Estos usuarios entran directamente a <strong>{{ area.nombre|lower }}</strong> al iniciar sesión,
+  con acceso completo al área (no son administradores).
+</p>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Usuario</th>
+        <th>Correo</th>
+        <th style="width:150px;">Estado</th>
+        <th>Último ingreso</th>
+        <th class="text-end" style="width:220px;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in area.usuarios %}
+      <tr id="fila-area-{{ area.slug }}-{{ u.id }}">
+        <td class="fw-semibold">{{ u.username }}</td>
+        <td class="text-muted small">{{ u.email|default:"—" }}</td>
+        <td>
+          {% if u.perfil_empleado %}
+            {% if u.perfil_empleado.debe_cambiar_password %}
+              <span class="badge bg-warning text-dark"><i class="fas fa-key me-1"></i>Clave pendiente</span>
+            {% else %}
+              <span class="badge bg-success"><i class="fas fa-check me-1"></i>Activa</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+          {% if u.n_overrides %}
+            <span class="badge bg-info text-dark ms-1" title="Tiene permisos personalizados por módulo"><i class="fas fa-sliders-h me-1"></i>Personalizado</span>
+          {% endif %}
+        </td>
+        <td class="text-muted small">{{ u.last_login|date:"Y-m-d H:i"|default:"nunca" }}</td>
+        <td class="text-end">
+          <button class="btn btn-outline-primary btn-sm" title="Permisos por módulo"
+                  onclick="abrirPermisos({{ u.id }})">
+            <i class="fas fa-sliders-h"></i>
+          </button>
+          <button class="btn btn-outline-warning btn-sm" title="Editar correo"
+                  onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
+            <i class="fas fa-envelope"></i>
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" title="Resetear contraseña"
+                  onclick="resetearArea({{ u.id }}, '{{ u.username|escapejs }}')">
+            <i class="fas fa-key"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-sm" title="Eliminar"
+                  onclick="eliminarArea({{ u.id }}, '{{ u.username|escapejs }}')">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="text-center text-muted py-4">Aún no hay usuarios de {{ area.nombre|lower }}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

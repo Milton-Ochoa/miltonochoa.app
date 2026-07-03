@@ -237,6 +237,34 @@ class PanelAdminTest(TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn('/usuarios/login/', r['Location'])
 
+    def test_panel_lista_las_tres_areas_data_driven(self):
+        """El contexto trae una sección por área (loop sobre GRUPOS_ETIQUETA)."""
+        self.client.login(username='admin', password='adminpass')
+        r = self.client.get('/panel/')
+        secciones = r.context['usuarios_por_area']
+        slugs = [s['slug'] for s in secciones]
+        self.assertEqual(slugs, ['programacion', 'financiera', 'logistica'])
+
+    def test_panel_muestra_estado_clave_pendiente(self):
+        """Un empleado con debe_cambiar_password=True aparece como 'Clave pendiente'."""
+        empleado = User.objects.create_user(username='emp_prog', password='x')
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        empleado.groups.add(grupo)
+        PerfilEmpleado.objects.create(user=empleado, debe_cambiar_password=True)
+        self.client.login(username='admin', password='adminpass')
+        r = self.client.get('/panel/')
+        self.assertContains(r, 'Clave pendiente')
+
+    def test_panel_excluye_superusuario_metido_en_grupo(self):
+        """Un superusuario dentro de un grupo de etiqueta NO se lista (no se gestiona aquí)."""
+        otro_admin = User.objects.create_superuser(username='admin2', password='x')
+        grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        otro_admin.groups.add(grupo)
+        self.client.login(username='admin', password='adminpass')
+        r = self.client.get('/panel/')
+        seccion_prog = next(s for s in r.context['usuarios_por_area'] if s['slug'] == 'programacion')
+        self.assertNotIn(otro_admin, list(seccion_prog['usuarios']))
+
 
 # ── Usuarios de etiqueta (grupo area:programacion) ────────────
 

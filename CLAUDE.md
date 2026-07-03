@@ -233,6 +233,7 @@ Registro actual (modelo → tabla):
 | `Bloque` | `prog_bloques` | | `CancelacionClase` | `prog_clases_cancelaciones` |
 | | | | `PerfilEmpleado` | `usuarios_empleados` |
 | | | | `ErrorCliente` | `usuarios_errores_cliente` |
+| | | | `ModuloUsuario` | `usuarios_modulos` |
 | `Asignacion` | `prog_asignaciones` | | `SolicitudViatico` | `prog_viaticos` |
 | `Clase` | `prog_clases` | | `GastoViatico` | `prog_viaticos_gastos` |
 | | | | `SoportePago` | `prog_viaticos_soportes` |
@@ -245,6 +246,79 @@ Registro actual (modelo → tabla):
   `prog_alertas_auditoria_colegios_implicados`. No requiere operación manual.
 - Cambiar un `db_table` genera un `AlterModelTable` que ejecuta `ALTER TABLE …
   RENAME` (renombra, **no** borra: conserva los datos en SQLite y PostgreSQL).
+
+## Permisos granulares por módulo (en construcción — FASE 5 de 6 lista)
+
+Capa de permisos **por módulo** que refina el control binario por área (grupo `area:*` =
+todo el área). Objetivo: por usuario, **quitar** un módulo, ponerlo en **solo lectura** o
+**agregar** un módulo de otra área (acceso cruzado sin dar el área completa). Diseño e
+hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
+
+- **Catálogo** (`core/modulos.py`, datos puros): `MODULOS[area]` = tupla de `Modulo`
+  (`slug`, `nombre`, `prefijos` de URL, `posts_lectura`). `NUCLEO[area]` = rutas
+  transversales no gateables (la landing `/` la cubre `es_raiz`). `EXENTAS` = rutas
+  exentas del gate en toda área (cambio de clave/reset). Helpers: `modulo_de_path(area,
+  path)` (**longest-prefix**; `None` = núcleo/no catalogado), `slugs_de_area`,
+  `modulo_por_slug`. **`posts_lectura` se compara por IGUALDAD EXACTA, no por prefijo:**
+  en programación los exports de pagos/monitores son POST a la RAÍZ de la lista del módulo
+  (`/pagos/`, `/monitores/pagos/`), prefijo de sus rutas de escritura → un match por
+  prefijo abriría las escrituras en modo LECTURA.
+- **Modelo** `ModuloUsuario` (tabla `usuarios_modulos`): overrides **sparse** (sin filas =
+  comportamiento histórico). Cada fila fija el nivel (`SIN`/`LEC`/`COM`) de un módulo del
+  catálogo para un área. `UniqueConstraint(user, area, modulo)`. Registrado en `/admin/`.
+- **Resolución** (`usuarios/permisos.py`): `resolver_acceso_area(user, area)` → `(acceso,
+  {slug: nivel})` combinando base por grupo (grupo → todo COM; sin grupo → todo SIN) con
+  los overrides; superusuario = todo COM; `acceso = any(nivel != SIN)`. `tiene_overrides_en`
+  para los predicados de `core.areas`. Los perfiles colegio/profesor NUNCA pasan por aquí.
+- **Enforcement (FASE 3, en runtime):** `ControlAccesoMiddleware` (`usuarios/middleware.py`)
+  resuelve `resolver_acceso_area` en las ramas de área (financiera/logística/programación-staff)
+  y aplica `_gate_modulo(request, area, path, modulos)` **por request** (sin caché → seguro
+  con el SSO; los cambios de permiso aplican al siguiente request). El gate deja pasar
+  `EXENTAS` (cambio de clave/reset) y el núcleo (landing `/` + `NUCLEO[area]`), y para el
+  módulo de la ruta: **COMPLETO** pasa; **LECTURA** pasa GET/HEAD/OPTIONS y los `posts_lectura`
+  (exports), y bloquea cualquier otra escritura con `_bloqueo_escritura` (403 JSON si
+  `Sec-Fetch-Mode` es fetch/XHR → el JS de área muestra `data.error`; si no, página
+  `templates/core/403_modulo.html`, **standalone, sin `messages`**); **SIN acceso** → redirect
+  a la landing del área (bucle-safe). Una ruta **no catalogada** cuenta como núcleo →
+  retrocompatible: sin overrides todo queda COM y el gate es inerte. El middleware fija
+  `request.modulos` (dict slug→nivel) y `request.modulos_permitidos` (set de slugs con nivel
+  != SIN) para los menús (FASE 4). Superusuario, staff de grupo y **acceso cruzado por
+  overrides** se unifican en una sola rama por área (la resolución les da COM / solo sus
+  módulos cruzados). Ramas colegio/profesor **intactas** (`request.modulos_permitidos = set()`).
+- **Acceso cruzado** (`core/areas.py`): los predicados `es_personal_*` y `areas_del_usuario`
+  reconocen `tiene_overrides_en(user, area)` (además del grupo) → los ~112 decoradores de
+  vista dejan pasar al usuario cruzado y el selector del apex le ofrece el área extra; el
+  middleware recorta por módulo dentro de ella.
+- **Menús granulares (FASE 4):** cada ítem de los 3 sidebars (`base.html`,
+  `base_financiera.html`, `base_logistica.html`) se condiciona con
+  `{% if 'slug' in mp %}`, donde `mp = request.modulos_permitidos` (envuelto una vez con
+  `{% with mp=request.modulos_permitidos %}` dentro de cada rama `es_personal_<area>`). La
+  cabecera de cada sección colapsable = **unión** de los slugs de sus hijos. Ítems de
+  **núcleo** (Inicio, General) NO se gatean (siempre visibles). En **LECTURA** el módulo SÍ
+  aparece (`mp` incluye todo nivel != SIN). Mapeos no obvios: en programación el submenú
+  **Simulacros de Configuración** (`configuracion_monitores`/`configuracion_colegios_simulacro`,
+  rutas `/monitores/…`) va bajo `monitores`, NO `configuracion`; **Cancelaciones** (`/reportes/`)
+  bajo `colegios`. En logística **Terceros** va bajo `catalogos`. Las ramas `{% else %}` de
+  perfil colegio/profesor quedan **intactas** (no dependen de `mp`). Si `mp` es indefinido
+  (request sin rama de área), resuelve a `''` y `'slug' in ''` = `False` → no truena.
+- **UI de permisos en el panel (FASE 5):** el panel del apex (`panel_admin`, solo superusuario)
+  edita los overrides de cada usuario de etiqueta con un modal AJAX. Dos endpoints en
+  `usuarios/views.py` (gate `solo_admin` + `_get_usuario_etiqueta`, que excluye superusuarios y
+  no-etiqueta): `ajax_permisos_usuario` (GET `/usuarios/ajax/area/permisos/?user_id=`) devuelve la
+  matriz por área (`de_su_grupo` + por módulo `nivel`/`nivel_default`/`es_override`), y
+  `ajax_guardar_permisos_usuario` (POST `/usuarios/ajax/area/permisos/guardar/`, body `user_id` +
+  `permisos` = JSON string con la matriz COMPLETA de `{area, modulo, nivel}`). **La regla sparse
+  vive SOLO en el server:** valida area/modulo/nivel contra el catálogo (todo o nada) y, en
+  `transaction.atomic`, borra el override si el nivel elegido == el por defecto del área (COM si
+  pertenece al grupo, si no SIN) o hace `update_or_create` (con `actualizado_por`) en otro caso —
+  así un COM sobre un área ajena (default SIN) persiste como acceso cruzado. `panel_admin` anota
+  `n_overrides=Count('modulos_override', distinct=True)` → el parcial `_tabla_usuarios_area.html`
+  muestra un badge "Personalizado" y un botón "Permisos" por fila; el modal `modalPermisos`
+  (pestañas por área, btn-group de 3 niveles por módulo con marca "(por defecto)") se pinta por JS
+  desde el GET y envía la matriz completa. Tests en `usuarios/tests_permisos.py`
+  (`PanelPermisosAjaxTest`), incluida la integración endpoint→middleware.
+- **Estado:** FASE 5 lista. Falta la verificación con el usuario, docs y release dev → main
+  (FASE 6).
 
 ## Inventario de logística (sub-app `logistica.inventario`, label `log_inventario`)
 
@@ -693,10 +767,13 @@ checkboxes de tipo y rango de fechas). Tests en
   login vale para todos los subdominios.
 - `usuarios/middleware.py` (`ControlAcceso`) **solo actúa dentro de un área**
   (`request.area`); en el apex deja pasar (decoradores). **Ramifica por `request.area`:**
-  `financiera` → superusuario/grupo `area:financiera` pasan (set `es_personal_financiera`),
-  el resto va al selector de área del apex (sin logout); `programacion` mantiene la lógica
-  original (superusuario / staff / perfiles colegio-profesor, con prefijos `/colegios/`,
-  `/informes/`, `/profesores/`). Sus `reverse` internos pasan `urlconf=request.urlconf`.
+  `financiera`/`logistica` → superusuario/grupo (o acceso cruzado por overrides) pasan (set
+  `es_personal_financiera`/`_logistica`), el resto va al selector de área del apex (sin
+  logout); `programacion` unifica superusuario / staff / cruzado y luego perfiles
+  colegio-profesor (prefijos `/colegios/`, `/informes/`, `/profesores/`). Sus `reverse`
+  internos pasan `urlconf=request.urlconf`. **Enforcement granular por módulo (FASE 3):**
+  cada rama de área resuelve `resolver_acceso_area` y aplica `_gate_modulo` — ver la sección
+  _Permisos granulares por módulo_.
 - `BASE_DOMAIN` (env): prod `miltonochoa.app`, dev `lvh.me`, tests `testserver`
   (forzado en settings). Plantillas del apex (login, seleccion_area, sin_area)
   extienden **`base_apex.html`**, NO `base.html` (que referencia URLs del área).
@@ -801,7 +878,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 677 tests OK
+python manage.py test                        # baseline: 727 tests OK
 python manage.py runserver
 ```
 
@@ -842,9 +919,14 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 
 ## Al contribuir
 
+- **Comentarios en plantillas Django — REGLA DE ORO (no volver a romper):** un comentario
+  `{# … #}` **debe caber en UNA sola línea**. Django NO reconoce `{# #}` multilínea y lo
+  **renderiza literal** en el navegador (el usuario lo ha reportado más de una vez). Para
+  comentarios de **varias líneas** usar SIEMPRE `{% comment %} … {% endcomment %}`. Antes de
+  cerrar cualquier cambio en `.html`, revisa que no quede ningún `{# #}` partido en dos líneas.
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (677 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (727 OK).
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).

@@ -56,41 +56,50 @@ GRUPO_STAFF_FINANCIERA = 'area:financiera'
 GRUPO_STAFF_LOGISTICA = 'area:logistica'
 
 
+def _es_personal_area(user, grupo, area_slug) -> bool:
+    """Superusuario, miembro del grupo del área, o usuario con acceso cruzado por
+    overrides (al menos un módulo del área en nivel != SIN).
+
+    El override cruzado hace que los ~112 decoradores de vista (`es_personal_*`) dejen
+    pasar al usuario; el middleware recorta luego por módulo. Se evalúa el grupo primero
+    para cortocircuitar y evitar la query de overrides en el caso común.
+    """
+    if user.is_superuser:
+        return True
+    if not user.is_authenticated:
+        return False
+    if user.groups.filter(name=grupo).exists():
+        return True
+    from usuarios.permisos import tiene_overrides_en  # import diferido: evita circular
+    return tiene_overrides_en(user, area_slug)
+
+
 def es_personal_programacion(user) -> bool:
-    """Superusuario o miembro del grupo staff del área programación.
+    """Superusuario, miembro del grupo staff, o acceso cruzado por overrides.
 
     Predicado único para los gates de página del área: permite abrir todas las
     vistas a la vez (configuración, exportar, vista general, etc.) cambiando un
     solo punto. Las acciones destructivas/admin siguen gated a `is_superuser`.
     """
-    return bool(user.is_superuser or (
-        user.is_authenticated
-        and user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists()
-    ))
+    return _es_personal_area(user, GRUPO_STAFF_PROGRAMACION, 'programacion')
 
 
 def es_personal_financiera(user) -> bool:
-    """Superusuario o miembro del grupo de acceso al área financiera.
+    """Superusuario, grupo de acceso financiera, o acceso cruzado por overrides.
 
     Espejo de `es_personal_programacion` para el subdominio financiera; gate único
     de sus vistas (Inicio, gestión de viáticos).
     """
-    return bool(user.is_superuser or (
-        user.is_authenticated
-        and user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists()
-    ))
+    return _es_personal_area(user, GRUPO_STAFF_FINANCIERA, 'financiera')
 
 
 def es_personal_logistica(user) -> bool:
-    """Superusuario o miembro del grupo de acceso al área logística.
+    """Superusuario, grupo de acceso logística, o acceso cruzado por overrides.
 
     Espejo de `es_personal_financiera` para el subdominio logistica; gate único
     de sus vistas (inventario).
     """
-    return bool(user.is_superuser or (
-        user.is_authenticated
-        and user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists()
-    ))
+    return _es_personal_area(user, GRUPO_STAFF_LOGISTICA, 'logistica')
 
 
 def _puerto(request) -> str:
@@ -144,17 +153,21 @@ def areas_del_usuario(user):
         return list(AREAS.values())
 
     from usuarios.models import UsuarioColegio, UsuarioProfesor  # import diferido: evita circular
+    from usuarios.permisos import tiene_overrides_en
 
     areas = []
     tiene_programacion = (
         user.groups.filter(name=GRUPO_STAFF_PROGRAMACION).exists()
         or UsuarioColegio.objects.filter(user=user).exists()
         or UsuarioProfesor.objects.filter(user=user).exists()
+        or tiene_overrides_en(user, 'programacion')
     )
     if tiene_programacion:
         areas.append(AREAS['programacion'])
-    if user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists():
+    if (user.groups.filter(name=GRUPO_STAFF_FINANCIERA).exists()
+            or tiene_overrides_en(user, 'financiera')):
         areas.append(AREAS['financiera'])
-    if user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists():
+    if (user.groups.filter(name=GRUPO_STAFF_LOGISTICA).exists()
+            or tiene_overrides_en(user, 'logistica')):
         areas.append(AREAS['logistica'])
     return areas
