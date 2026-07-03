@@ -11,12 +11,18 @@
 
 {% block sidebar_menu %}
         {% if request.es_personal_financiera %}
-        {# ── Inicio ── #}
+        {% comment %}
+           `mp` = módulos permitidos (slugs con nivel != SIN); gatea cada ítem (FASE 4).
+           Indefinido resuelve a '' → `'slug' in ''` = False, sin romper.
+        {% endcomment %}
+        {% with mp=request.modulos_permitidos %}
+        {# ── Inicio ── (núcleo: siempre visible) #}
         <a href="{% url 'fin_home' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_home' %}active{% endif %}">
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# Pagos (desplegable): Profesores + Monitores + Viáticos (funcionales) + Proyección (solo lectura); badge = suma de pendientes (profesores + monitores + viáticos) #}
+        {# Pagos (desplegable): Profesores + Monitores + Viáticos (funcionales) + Proyección (solo lectura); badge = suma de pendientes (profesores + monitores + viáticos). Cabecera = unión de los módulos. #}
+        {% if 'pagos' in mp or 'monitores' in mp or 'viaticos' in mp or 'proyeccion' in mp %}
         <a href="#collapsePagosFin" data-bs-toggle="collapse"
            class="nav-item justify-content-between sidebar-section-toggle"
            data-section-key="pagos_fin"
@@ -32,28 +38,38 @@
         </a>
         <div class="collapse {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' or request.resolver_match.url_name == 'fin_pagos_proyeccion' or request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' or request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}show{% endif %}" id="collapsePagosFin">
             <div class="collapse-inner py-1 bg-dark">
+                {% if 'pagos' in mp %}
                 <a href="{% url 'fin_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_pagos_lista' or request.resolver_match.url_name == 'fin_pagos_detalle' %}active{% endif %}">
                     <i class="fas fa-chalkboard-teacher" style="width: 20px; text-align: center; margin-right: 8px;"></i> Profesores
                     {% if pagos_pendientes_count %}
                     <span class="badge bg-danger ms-auto">{{ pagos_pendientes_count }}</span>
                     {% endif %}
                 </a>
+                {% endif %}
+                {% if 'monitores' in mp %}
                 <a href="{% url 'fin_monitores_pagos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_monitores_pagos_lista' or request.resolver_match.url_name == 'fin_monitores_pago_detalle' %}active{% endif %}">
                     <i class="fas fa-user-graduate" style="width: 20px; text-align: center; margin-right: 8px;"></i> Monitores
                     {% if pagos_monitores_pendientes_count %}
                     <span class="badge bg-danger ms-auto">{{ pagos_monitores_pendientes_count }}</span>
                     {% endif %}
                 </a>
+                {% endif %}
+                {% if 'viaticos' in mp %}
                 <a href="{% url 'fin_viaticos_lista' %}" class="d-flex align-items-center {% if request.resolver_match.url_name == 'fin_viaticos_lista' or request.resolver_match.url_name == 'fin_viaticos_detalle' or request.resolver_match.url_name == 'fin_viaticos_editar' %}active{% endif %}">
                     <i class="fas fa-plane-departure" style="width: 20px; text-align: center; margin-right: 8px;"></i> Viáticos
                     {% if viaticos_pendientes_count %}
                     <span class="badge bg-danger ms-auto">{{ viaticos_pendientes_count }}</span>
                     {% endif %}
                 </a>
+                {% endif %}
+                {% if 'proyeccion' in mp %}
                 <a href="{% url 'fin_pagos_proyeccion' %}" class="{% if request.resolver_match.url_name == 'fin_pagos_proyeccion' %}active{% endif %}">
                     <i class="fas fa-chart-line" style="width: 20px; text-align: center; margin-right: 8px;"></i> Proyección
                 </a>
+                {% endif %}
             </div>
         </div>
+        {% endif %}
+        {% endwith %}
         {% endif %}
 {% endblock %}
