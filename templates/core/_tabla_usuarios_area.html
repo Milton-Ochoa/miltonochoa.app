@@ -27,7 +27,7 @@
         <th>Correo</th>
         <th style="width:150px;">Estado</th>
         <th>Último ingreso</th>
-        <th class="text-end" style="width:180px;">Acciones</th>
+        <th class="text-end" style="width:220px;">Acciones</th>
       </tr>
     </thead>
     <tbody>
@@ -45,9 +45,16 @@
           {% else %}
             <span class="text-muted">—</span>
           {% endif %}
+          {% if u.n_overrides %}
+            <span class="badge bg-info text-dark ms-1" title="Tiene permisos personalizados por módulo"><i class="fas fa-sliders-h me-1"></i>Personalizado</span>
+          {% endif %}
         </td>
         <td class="text-muted small">{{ u.last_login|date:"Y-m-d H:i"|default:"nunca" }}</td>
         <td class="text-end">
+          <button class="btn btn-outline-primary btn-sm" title="Permisos por módulo"
+                  onclick="abrirPermisos({{ u.id }})">
+            <i class="fas fa-sliders-h"></i>
+          </button>
           <button class="btn btn-outline-warning btn-sm" title="Editar correo"
                   onclick="editarArea({{ u.id }}, '{{ u.username|escapejs }}', '{{ u.email|escapejs }}')">
             <i class="fas fa-envelope"></i>

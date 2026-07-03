@@ -4,6 +4,8 @@ FASE 2 (inerte): resolución (`usuarios/permisos.py`), catálogo (`core/modulos.
 sanidad. FASE 3: enforcement en el middleware + acceso cruzado (predicados de
 `core.areas`), ejercido con `Client(HTTP_HOST='<area>.testserver')`.
 """
+import json
+
 from django.test import TestCase, Client
 from django.contrib.auth.models import User, Group
 
@@ -236,3 +238,119 @@ class AccesoCruzadoTest(TestCase):
         # Los ~112 decoradores de vista dejan pasar al usuario cruzado.
         self.assertTrue(es_personal_programacion(self.user))
         self.assertTrue(es_personal_financiera(self.user))
+
+
+# ── UI de permisos en el panel del apex (FASE 5) ──────────────────
+# Endpoints AJAX GET/POST bajo /usuarios/ajax/area/permisos/. Se ejercen desde el apex
+# (host por defecto testserver), donde el superusuario administra los usuarios de etiqueta.
+
+class PanelPermisosAjaxTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()  # apex
+        self.admin = User.objects.create_superuser('admin_perm', 'a@x.com', 'x')
+        self.client.login(username='admin_perm', password='x')
+        self.g_fin = Group.objects.get_or_create(name=GRUPO_STAFF_FINANCIERA)[0]
+        self.empleado = User.objects.create_user('emp_fin', password='x')
+        self.empleado.groups.add(self.g_fin)
+
+    def test_get_estructura_y_defaults(self):
+        r = self.client.get('/usuarios/ajax/area/permisos/', {'user_id': self.empleado.id})
+        data = r.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['username'], 'emp_fin')
+        areas = {a['slug']: a for a in data['areas']}
+        self.assertEqual(set(areas), {'programacion', 'financiera', 'logistica'})
+        # De su grupo (financiera): default COMPLETO en todos los módulos.
+        fin = areas['financiera']
+        self.assertTrue(fin['de_su_grupo'])
+        self.assertTrue(all(m['nivel_default'] == COM for m in fin['modulos']))
+        self.assertTrue(all(m['nivel'] == COM and not m['es_override'] for m in fin['modulos']))
+        # Fuera de su grupo (programacion): default SIN_ACCESO.
+        prog = areas['programacion']
+        self.assertFalse(prog['de_su_grupo'])
+        self.assertTrue(all(m['nivel_default'] == SIN for m in prog['modulos']))
+
+    def test_get_refleja_override_existente(self):
+        ModuloUsuario.objects.create(user=self.empleado, area='financiera',
+                                     modulo='viaticos', nivel=LEC)
+        r = self.client.get('/usuarios/ajax/area/permisos/', {'user_id': self.empleado.id})
+        fin = next(a for a in r.json()['areas'] if a['slug'] == 'financiera')
+        viaticos = next(m for m in fin['modulos'] if m['slug'] == 'viaticos')
+        self.assertEqual(viaticos['nivel'], LEC)
+        self.assertTrue(viaticos['es_override'])
+
+    def test_get_usuario_superusuario_400(self):
+        r = self.client.get('/usuarios/ajax/area/permisos/', {'user_id': self.admin.id})
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(r.json()['ok'])
+
+    def test_post_crea_override(self):
+        permisos = [{'area': 'financiera', 'modulo': 'viaticos', 'nivel': LEC}]
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        self.assertTrue(r.json()['ok'])
+        ov = ModuloUsuario.objects.get(user=self.empleado, area='financiera', modulo='viaticos')
+        self.assertEqual(ov.nivel, LEC)
+        self.assertEqual(ov.actualizado_por, self.admin)
+
+    def test_post_nivel_por_defecto_borra_override(self):
+        # Regla sparse: guardar el nivel por defecto (COM para su grupo) borra la fila.
+        ModuloUsuario.objects.create(user=self.empleado, area='financiera',
+                                     modulo='viaticos', nivel=SIN)
+        permisos = [{'area': 'financiera', 'modulo': 'viaticos', 'nivel': COM}]
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        self.assertTrue(r.json()['ok'])
+        self.assertFalse(ModuloUsuario.objects.filter(
+            user=self.empleado, area='financiera', modulo='viaticos').exists())
+
+    def test_post_cruzado_com_fuera_del_grupo_persiste(self):
+        # COMPLETO en un área ajena (default SIN) NO es el default → se persiste (acceso cruzado).
+        permisos = [{'area': 'programacion', 'modulo': 'informes', 'nivel': COM}]
+        self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                         {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        self.assertTrue(ModuloUsuario.objects.filter(
+            user=self.empleado, area='programacion', modulo='informes', nivel=COM).exists())
+
+    def test_post_modulo_invalido_400_sin_escribir(self):
+        permisos = [{'area': 'financiera', 'modulo': 'no_existe', 'nivel': LEC}]
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(ModuloUsuario.objects.filter(user=self.empleado).exists())
+
+    def test_post_nivel_invalido_400(self):
+        permisos = [{'area': 'financiera', 'modulo': 'viaticos', 'nivel': 'XXX'}]
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_permisos_no_json_400(self):
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.empleado.id, 'permisos': 'no-es-json'})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_usuario_superusuario_400(self):
+        permisos = [{'area': 'financiera', 'modulo': 'viaticos', 'nivel': LEC}]
+        r = self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                             {'user_id': self.admin.id, 'permisos': json.dumps(permisos)})
+        self.assertEqual(r.status_code, 400)
+
+    def test_no_superusuario_redirige(self):
+        c = Client()
+        c.login(username='emp_fin', password='x')  # etiqueta, no admin
+        r = c.get('/usuarios/ajax/area/permisos/', {'user_id': self.empleado.id})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+
+    def test_integracion_lec_por_endpoint_bloquea_en_middleware(self):
+        # Guardar LEC en viáticos por el panel y verificar que el middleware bloquea el POST.
+        permisos = [{'area': 'financiera', 'modulo': 'viaticos', 'nivel': LEC}]
+        self.client.post('/usuarios/ajax/area/permisos/guardar/',
+                         {'user_id': self.empleado.id, 'permisos': json.dumps(permisos)})
+        area_client = Client(HTTP_HOST='financiera.testserver')
+        area_client.login(username='emp_fin', password='x')
+        self.assertEqual(area_client.get('/viaticos/').status_code, 200)      # lectura OK
+        r = area_client.post('/viaticos/1/aprobar/', HTTP_SEC_FETCH_MODE='cors')
+        self.assertEqual(r.status_code, 403)                                   # escritura bloqueada

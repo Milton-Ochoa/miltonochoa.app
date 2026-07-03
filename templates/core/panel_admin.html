@@ -126,6 +126,33 @@
   </div>
 </div>
 
+<!-- MODAL: Permisos por módulo -->
+<div class="modal fade" id="modalPermisos" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title"><i class="fas fa-sliders-h me-2"></i>Permisos — <span id="permisos_username"></span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="permisos_user_id">
+        <p class="text-muted small mb-3">
+          Ajusta el acceso módulo a módulo. <strong>Sin acceso</strong> lo oculta del menú;
+          <strong>Solo lectura</strong> deja ver y exportar pero no modificar;
+          <strong>Completo</strong> da acceso total. El nivel marcado <em>(por defecto)</em> es
+          el que hereda por su grupo; solo se guardan las excepciones.
+        </p>
+        <ul class="nav nav-tabs" id="permisosTabs" role="tablist"></ul>
+        <div class="tab-content pt-3" id="permisosPanes"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="submitPermisos()"><i class="fas fa-save me-1"></i>Guardar permisos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 const CSRF = '{{ csrf_token }}';
@@ -136,6 +163,8 @@ const URLS = {
     editar:   "{% url 'ajax_editar_usuario_area' %}",
     resetear: "{% url 'ajax_resetear_password_area' %}",
     eliminar: "{% url 'ajax_eliminar_usuario_area' %}",
+    permisos:        "{% url 'ajax_permisos_usuario' %}",
+    permisosGuardar: "{% url 'ajax_guardar_permisos_usuario' %}",
 };
 
 function _post(url, datos) {
@@ -223,6 +252,107 @@ function eliminarArea(userId, username) {
         .then(data => {
             if (data.ok) location.reload();
             else alert(data.error || 'Error al eliminar.');
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+// ── Permisos por módulo ──────────────────────────────────────────────────────
+const _NIVEL_LABELS = { SIN: 'Sin acceso', LEC: 'Solo lectura', COM: 'Completo' };
+const _NIVEL_ORDEN = ['SIN', 'LEC', 'COM'];
+const _NIVEL_COLOR = { SIN: 'danger', LEC: 'warning', COM: 'success' };
+
+function abrirPermisos(userId) {
+    fetch(URLS.permisos + '?user_id=' + encodeURIComponent(userId), { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { alert(data.error || 'No se pudieron cargar los permisos.'); return; }
+            document.getElementById('permisos_user_id').value = userId;
+            document.getElementById('permisos_username').textContent = data.username;
+            _pintarPermisos(data.areas);
+            new bootstrap.Modal(document.getElementById('modalPermisos')).show();
+        })
+        .catch(() => alert('Error de conexión.'));
+}
+
+function _filaModulo(areaSlug, mod) {
+    const row = document.createElement('div');
+    row.className = 'd-flex justify-content-between align-items-center border-bottom py-2 flex-wrap gap-2';
+    row.dataset.area = areaSlug;
+    row.dataset.modulo = mod.slug;
+
+    const label = document.createElement('div');
+    label.className = 'fw-semibold';
+    label.textContent = mod.nombre;
+    row.appendChild(label);
+
+    const grupo = document.createElement('div');
+    grupo.className = 'btn-group btn-group-sm';
+    grupo.setAttribute('role', 'group');
+    const radioName = 'perm-' + areaSlug + '-' + mod.slug;
+    _NIVEL_ORDEN.forEach(nivel => {
+        const id = radioName + '-' + nivel;
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.className = 'btn-check';
+        input.name = radioName;
+        input.id = id;
+        input.value = nivel;
+        input.checked = (mod.nivel === nivel);
+        const lbl = document.createElement('label');
+        lbl.className = 'btn btn-outline-' + _NIVEL_COLOR[nivel];
+        lbl.setAttribute('for', id);
+        lbl.textContent = _NIVEL_LABELS[nivel] + (nivel === mod.nivel_default ? ' (por defecto)' : '');
+        grupo.appendChild(input);
+        grupo.appendChild(lbl);
+    });
+    row.appendChild(grupo);
+    return row;
+}
+
+function _pintarPermisos(areas) {
+    const tabs = document.getElementById('permisosTabs');
+    const panes = document.getElementById('permisosPanes');
+    tabs.innerHTML = '';
+    panes.innerHTML = '';
+    areas.forEach((area, i) => {
+        const paneId = 'perm-pane-' + area.slug;
+        const li = document.createElement('li');
+        li.className = 'nav-item';
+        const btn = document.createElement('button');
+        btn.className = 'nav-link' + (i === 0 ? ' active' : '');
+        btn.type = 'button';
+        btn.setAttribute('data-bs-toggle', 'tab');
+        btn.setAttribute('data-bs-target', '#' + paneId);
+        btn.textContent = area.nombre + (area.de_su_grupo ? '' : ' *');
+        li.appendChild(btn);
+        tabs.appendChild(li);
+
+        const pane = document.createElement('div');
+        pane.className = 'tab-pane fade' + (i === 0 ? ' show active' : '');
+        pane.id = paneId;
+        if (!area.de_su_grupo) {
+            const nota = document.createElement('p');
+            nota.className = 'small text-muted';
+            nota.innerHTML = 'No pertenece a esta área. Dale <strong>Completo</strong> o ' +
+                '<strong>Solo lectura</strong> a un módulo para concederle acceso cruzado.';
+            pane.appendChild(nota);
+        }
+        area.modulos.forEach(mod => pane.appendChild(_filaModulo(area.slug, mod)));
+        panes.appendChild(pane);
+    });
+}
+
+function submitPermisos() {
+    const user_id = document.getElementById('permisos_user_id').value;
+    const permisos = [];
+    document.querySelectorAll('#permisosPanes [data-modulo]').forEach(row => {
+        const sel = row.querySelector('input.btn-check:checked');
+        if (sel) permisos.push({ area: row.dataset.area, modulo: row.dataset.modulo, nivel: sel.value });
+    });
+    _post(URLS.permisosGuardar, { user_id, permisos: JSON.stringify(permisos) })
+        .then(data => {
+            if (data.ok) location.reload();
+            else alert(data.error || 'No se pudieron guardar los permisos.');
         })
         .catch(() => alert('Error de conexión.'));
 }

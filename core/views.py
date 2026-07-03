@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
-from django.db.models import Q
+from django.db.models import Q, Count
 from datetime import date
 from collections import defaultdict
 
@@ -77,6 +77,7 @@ def panel_admin(request):
                 User.objects
                 .filter(groups__name=grupo, is_superuser=False)
                 .select_related('perfil_empleado')
+                .annotate(n_overrides=Count('modulos_override', distinct=True))
                 .order_by('username')
             ),
         }
