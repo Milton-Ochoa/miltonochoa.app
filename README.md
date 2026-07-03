@@ -475,8 +475,9 @@ resuelve las áreas del usuario y redirige al **subdominio** del área. La sesi�
 comparte en `.miltonochoa.app` (**SSO**).
 
 **Panel del superusuario.** El superusuario no entra al área directamente, sino al **panel**
-(`miltonochoa.app/panel/`): acceso a todas las áreas y gestión de los **usuarios de etiqueta**
-(alta/reset/baja). Los usuarios de colegio/profesor se gestionan dentro del área.
+(`miltonochoa.app/panel/`): acceso a todas las áreas, gestión de los **usuarios de etiqueta**
+(alta/reset/baja/correo) y edición de sus **permisos por módulo** (ver abajo). Los usuarios
+de colegio/profesor se gestionan dentro del área.
 
 | Rol | Vinculación | Rutas permitidas (en `programacion.miltonochoa.app`) |
 |-----|-------------|------------------------------------------------------|
@@ -487,6 +488,28 @@ comparte en `.miltonochoa.app` (**SSO**).
 
 > El **staff de área financiera** (grupo `area:financiera`) accede a `financiera.miltonochoa.app`
 > y el **staff de área logística** (grupo `area:logistica`) a `logistica.miltonochoa.app`.
+
+### Permisos granulares por módulo
+
+Sobre el acceso binario por área (el grupo `area:*` da **todo** el área), el superusuario
+puede **refinar por usuario y por módulo** desde el panel del apex (botón **Permisos** por
+fila). Cada módulo de un área (Colegios, Pagos, Viáticos, Existencias, Préstamos…) se pone en
+uno de tres niveles:
+
+| Nivel | Efecto |
+|-------|--------|
+| **Completo** | Acceso total al módulo (ver + escribir). |
+| **Solo lectura** | Ve listas y **exporta** (los exports a Excel son POST de lectura), pero cualquier escritura devuelve **403**. |
+| **Sin acceso** | El módulo desaparece del menú y navegar a su ruta redirige a la landing del área. |
+
+- **Acceso cruzado:** dar **Completo/Solo lectura** a un módulo de *otra* área concede acceso
+  a ese módulo sin otorgar el área entera; el selector del apex ofrece ambas áreas y el menú
+  recorta al módulo concedido.
+- **Overrides sparse:** solo se guardan las excepciones (modelo `ModuloUsuario`). Sin overrides,
+  el comportamiento es el histórico (grupo → todo el área); volver un módulo a su nivel por
+  defecto borra la fila. El enforcement vive en `usuarios/middleware.py` (gate por prefijo de
+  URL, por request) y el catálogo de módulos en `core/modulos.py`.
+- Los perfiles **colegio/profesor no pasan** por esta capa (su scope sigue fijo).
 
 **Contraseñas (dos flujos):**
 - **Colegios/profesores:** el staff asigna la contraseña a mano al crear y al resetear.
@@ -623,7 +646,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 668 tests OK.**
+**Baseline actual: 727 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -777,7 +800,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 668 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 727 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
