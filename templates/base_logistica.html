@@ -21,86 +21,114 @@
             <i class="fas fa-home icon-main"></i> Inicio
         </a>
 
-        {# ── Artículos ── #}
-        {% if 'articulos' in mp %}
-        <a href="{% url 'log_items_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_items_lista' %}active{% endif %}">
-            <i class="fas fa-box icon-main text-warning"></i> Artículos
-        </a>
-        {% endif %}
-
-        {# ── Existencias ── (badge = artículos bajo mínimo, vía context processor alertas_inventario) #}
-        {% if 'stock' in mp %}
-        <a href="{% url 'log_stock' %}" class="nav-item {% if request.resolver_match.url_name == 'log_stock' %}active{% endif %}">
-            <i class="fas fa-warehouse icon-main text-info"></i> Existencias
-            {% if inv_bajo_minimo_count %}
-            <span class="badge bg-danger nav-badge">{{ inv_bajo_minimo_count }}</span>
+        {% comment %}
+           ── INVENTARIO (colapsable) ── Todo el menú de logística (salvo Inicio) vive
+           dentro de este único grupo. Cabecera = unión de los módulos hijos; los antiguos
+           ítems de nivel superior (Artículos, Existencias, Terceros, Préstamos) son ahora
+           sub-ítems y Catálogos/Movimientos quedan como submenús anidados (patrón base.html).
+           Badge de la cabecera = alertas agregadas (bajo mínimo + préstamos vencidos).
+        {% endcomment %}
+        {% if 'articulos' in mp or 'stock' in mp or 'catalogos' in mp or 'movimientos' in mp or 'prestamos' in mp %}
+        {% with u=request.resolver_match.url_name %}
+        <a href="#collapseInventario" data-bs-toggle="collapse"
+           class="nav-item justify-content-between sidebar-section-toggle"
+           data-section-key="inventario"
+           aria-expanded="{% if u == 'log_items_lista' or u == 'log_stock' or u == 'log_terceros' or u == 'log_bodegas' or u == 'log_categorias' or u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' or u == 'log_prestamos_lista' or u == 'log_prestamos_nuevo' or u == 'log_prestamos_detalle' %}true{% else %}false{% endif %}">
+            <span><i class="fas fa-boxes-stacked icon-main text-warning"></i> Inventario</span>
+            {% if inv_bajo_minimo_count or inv_prestamos_vencidos_count %}
+            <span class="badge bg-danger" style="font-size:0.7rem; padding:2px 6px;">{{ inv_bajo_minimo_count|add:inv_prestamos_vencidos_count }}</span>
+            {% else %}
+            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
             {% endif %}
         </a>
-        {% endif %}
-
-        {# ── Terceros ── (módulo catalogos) #}
-        {% if 'catalogos' in mp %}
-        <a href="{% url 'log_terceros' %}" class="nav-item {% if request.resolver_match.url_name == 'log_terceros' %}active{% endif %}">
-            <i class="fas fa-address-book icon-main text-danger"></i> Terceros
-        </a>
-
-        {# Catálogos (desplegable): bodegas + categorías #}
-        <a href="#collapseCatalogosLog" data-bs-toggle="collapse"
-           class="nav-item justify-content-between sidebar-section-toggle"
-           data-section-key="catalogos_log"
-           aria-expanded="{% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}true{% else %}false{% endif %}">
-            <span><i class="fas fa-tags icon-main text-secondary"></i> Catálogos</span>
-            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
-        </a>
-        <div class="collapse {% if request.resolver_match.url_name == 'log_bodegas' or request.resolver_match.url_name == 'log_categorias' %}show{% endif %}" id="collapseCatalogosLog">
+        <div class="collapse {% if u == 'log_items_lista' or u == 'log_stock' or u == 'log_terceros' or u == 'log_bodegas' or u == 'log_categorias' or u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' or u == 'log_prestamos_lista' or u == 'log_prestamos_nuevo' or u == 'log_prestamos_detalle' %}show{% endif %}" id="collapseInventario">
             <div class="collapse-inner py-1 bg-dark">
-                <a href="{% url 'log_bodegas' %}" class="{% if request.resolver_match.url_name == 'log_bodegas' %}active{% endif %}">
-                    <i class="fas fa-warehouse" style="width: 20px; text-align: center; margin-right: 8px;"></i> Bodegas
-                </a>
-                <a href="{% url 'log_categorias' %}" class="{% if request.resolver_match.url_name == 'log_categorias' %}active{% endif %}">
-                    <i class="fas fa-tag" style="width: 20px; text-align: center; margin-right: 8px;"></i> Categorías
-                </a>
-            </div>
-        </div>
-        {% endif %}
 
-        {# Movimientos (desplegable): entradas, salidas, traslados + ledger #}
-        {% if 'movimientos' in mp %}
-        {% with u=request.resolver_match.url_name %}
-        <a href="#collapseMovsLog" data-bs-toggle="collapse"
-           class="nav-item justify-content-between sidebar-section-toggle"
-           data-section-key="movimientos_log"
-           aria-expanded="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}true{% else %}false{% endif %}">
-            <span><i class="fas fa-right-left icon-main text-success"></i> Movimientos</span>
-            <i class="fas fa-chevron-down" style="font-size: 0.8rem;"></i>
-        </a>
-        <div class="collapse {% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}show{% endif %}" id="collapseMovsLog">
-            <div class="collapse-inner py-1 bg-dark">
-                <a href="{% url 'log_entradas_lista' %}" class="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' %}active{% endif %}">
-                    <i class="fas fa-arrow-down" style="width: 20px; text-align: center; margin-right: 8px;"></i> Entradas
+                {# ── Artículos ── #}
+                {% if 'articulos' in mp %}
+                <a href="{% url 'log_items_lista' %}" class="{% if u == 'log_items_lista' %}active{% endif %}">
+                    <i class="fas fa-box" style="width: 20px; text-align: center; margin-right: 8px;"></i> Artículos
                 </a>
-                <a href="{% url 'log_salidas_lista' %}" class="{% if u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' %}active{% endif %}">
-                    <i class="fas fa-arrow-up" style="width: 20px; text-align: center; margin-right: 8px;"></i> Salidas
+                {% endif %}
+
+                {# ── Existencias ── (badge = artículos bajo mínimo, vía context processor alertas_inventario) #}
+                {% if 'stock' in mp %}
+                <a href="{% url 'log_stock' %}" class="d-flex align-items-center {% if u == 'log_stock' %}active{% endif %}">
+                    <i class="fas fa-warehouse" style="width: 20px; text-align: center; margin-right: 8px;"></i>
+                    <span>Existencias</span>
+                    {% if inv_bajo_minimo_count %}
+                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ inv_bajo_minimo_count }}</span>
+                    {% endif %}
                 </a>
-                <a href="{% url 'log_traslados_lista' %}" class="{% if u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' %}active{% endif %}">
-                    <i class="fas fa-right-left" style="width: 20px; text-align: center; margin-right: 8px;"></i> Traslados
+                {% endif %}
+
+                {# ── Terceros ── (módulo catalogos) #}
+                {% if 'catalogos' in mp %}
+                <a href="{% url 'log_terceros' %}" class="{% if u == 'log_terceros' %}active{% endif %}">
+                    <i class="fas fa-address-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Terceros
                 </a>
-                <a href="{% url 'log_movimientos' %}" class="{% if u == 'log_movimientos' %}active{% endif %}">
-                    <i class="fas fa-book" style="width: 20px; text-align: center; margin-right: 8px;"></i> Kardex global
+
+                {# ── Submenu anidado: Catálogos → Bodegas / Categorías ── #}
+                <a href="#collapseCatalogosLog" data-bs-toggle="collapse"
+                   class="d-flex justify-content-between align-items-center sidebar-section-toggle"
+                   data-section-key="catalogos_log"
+                   aria-expanded="{% if u == 'log_bodegas' or u == 'log_categorias' %}true{% else %}false{% endif %}">
+                    <span><i class="fas fa-tags" style="width: 20px; text-align: center; margin-right: 8px;"></i> Catálogos</span>
+                    <i class="fas fa-chevron-down" style="font-size: 0.7rem;"></i>
                 </a>
+                <div class="collapse {% if u == 'log_bodegas' or u == 'log_categorias' %}show{% endif %}" id="collapseCatalogosLog">
+                    <div class="collapse-inner py-1">
+                        <a href="{% url 'log_bodegas' %}" class="{% if u == 'log_bodegas' %}active{% endif %}">
+                            <i class="fas fa-warehouse" style="width: 18px; text-align: center; margin-right: 8px;"></i> Bodegas
+                        </a>
+                        <a href="{% url 'log_categorias' %}" class="{% if u == 'log_categorias' %}active{% endif %}">
+                            <i class="fas fa-tag" style="width: 18px; text-align: center; margin-right: 8px;"></i> Categorías
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# ── Submenu anidado: Movimientos → entradas, salidas, traslados + ledger ── #}
+                {% if 'movimientos' in mp %}
+                <a href="#collapseMovsLog" data-bs-toggle="collapse"
+                   class="d-flex justify-content-between align-items-center sidebar-section-toggle"
+                   data-section-key="movimientos_log"
+                   aria-expanded="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}true{% else %}false{% endif %}">
+                    <span><i class="fas fa-right-left" style="width: 20px; text-align: center; margin-right: 8px;"></i> Movimientos</span>
+                    <i class="fas fa-chevron-down" style="font-size: 0.7rem;"></i>
+                </a>
+                <div class="collapse {% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' or u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' or u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' or u == 'log_movimientos' %}show{% endif %}" id="collapseMovsLog">
+                    <div class="collapse-inner py-1">
+                        <a href="{% url 'log_entradas_lista' %}" class="{% if u == 'log_entradas_lista' or u == 'log_entradas_nueva' or u == 'log_entradas_detalle' %}active{% endif %}">
+                            <i class="fas fa-arrow-down" style="width: 18px; text-align: center; margin-right: 8px;"></i> Entradas
+                        </a>
+                        <a href="{% url 'log_salidas_lista' %}" class="{% if u == 'log_salidas_lista' or u == 'log_salidas_nueva' or u == 'log_salidas_detalle' %}active{% endif %}">
+                            <i class="fas fa-arrow-up" style="width: 18px; text-align: center; margin-right: 8px;"></i> Salidas
+                        </a>
+                        <a href="{% url 'log_traslados_lista' %}" class="{% if u == 'log_traslados_lista' or u == 'log_traslados_nuevo' or u == 'log_traslados_detalle' %}active{% endif %}">
+                            <i class="fas fa-right-left" style="width: 18px; text-align: center; margin-right: 8px;"></i> Traslados
+                        </a>
+                        <a href="{% url 'log_movimientos' %}" class="{% if u == 'log_movimientos' %}active{% endif %}">
+                            <i class="fas fa-book" style="width: 18px; text-align: center; margin-right: 8px;"></i> Kardex global
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# ── Préstamos (bidireccionales) ── (badge = vencidos en ambas direcciones) #}
+                {% if 'prestamos' in mp %}
+                <a href="{% url 'log_prestamos_lista' %}" class="d-flex align-items-center {% if u == 'log_prestamos_lista' or u == 'log_prestamos_nuevo' or u == 'log_prestamos_detalle' %}active{% endif %}">
+                    <i class="fas fa-handshake" style="width: 20px; text-align: center; margin-right: 8px;"></i>
+                    <span>Préstamos</span>
+                    {% if inv_prestamos_vencidos_count %}
+                    <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ inv_prestamos_vencidos_count }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+
             </div>
         </div>
         {% endwith %}
-        {% endif %}
-
-        {# ── Préstamos (bidireccionales) ── (badge = vencidos en ambas direcciones) #}
-        {% if 'prestamos' in mp %}
-        <a href="{% url 'log_prestamos_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_prestamos_lista' or request.resolver_match.url_name == 'log_prestamos_nuevo' or request.resolver_match.url_name == 'log_prestamos_detalle' %}active{% endif %}">
-            <i class="fas fa-handshake icon-main text-primary"></i> Préstamos
-            {% if inv_prestamos_vencidos_count %}
-            <span class="badge bg-danger nav-badge">{{ inv_prestamos_vencidos_count }}</span>
-            {% endif %}
-        </a>
         {% endif %}
         {% endwith %}
         {% endif %}
