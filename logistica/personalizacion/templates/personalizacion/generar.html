@@ -1,0 +1,75 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Generar personalización{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_personalizacion_lista' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i> Plantillas
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-7 col-xl-6">
+            <div class="card shadow-sm">
+                <div class="card-header py-2 px-3">
+                    <span class="fw-bold"><i class="fas fa-wand-magic-sparkles me-1 text-primary"></i> Generar PDF</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        Elige una plantilla, escribe el colegio y sube el Excel de estudiantes
+                        (columnas <strong>Nombres</strong>, <strong>Grado</strong>, <strong>Usuario</strong>).
+                        Se descargará un PDF con una hoja por estudiante.
+                    </p>
+                    <form method="post" action="{% url 'log_personalizacion_generar' %}" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label mb-1" for="{{ form.plantilla.id_for_label }}">Plantilla *</label>
+                            {{ form.plantilla }}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label mb-1" for="{{ form.colegio.id_for_label }}">Colegio *</label>
+                            {{ form.colegio }}
+                        </div>
+                        {# Solo visible para plantillas PENSAR (lo controla el JS por data-tipo). #}
+                        <div class="mb-3 d-none" id="grupoNumeroPrueba">
+                            <label class="form-label mb-1" for="{{ form.numero_prueba.id_for_label }}">Número de prueba *</label>
+                            {{ form.numero_prueba }}
+                            <small class="text-muted d-block mt-1">Un número de 1 o 2 dígitos (ej. 42). Se divide en decena y unidad.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label mb-1" for="{{ form.excel.id_for_label }}">Excel de estudiantes *</label>
+                            {{ form.excel }}
+                            <small class="text-muted d-block mt-1">Formato .xlsx con las columnas Nombres, Grado y Usuario.</small>
+                        </div>
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary btn-sm fw-bold">
+                                <i class="fas fa-file-pdf me-1"></i> Generar PDF
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Muestra "Número de prueba" solo cuando la plantilla seleccionada es PENSAR
+    // (cada <option> lleva data-tipo, puesto por el widget PlantillaSelect).
+    (function () {
+        var select = document.getElementById('{{ form.plantilla.id_for_label }}');
+        var grupo = document.getElementById('grupoNumeroPrueba');
+        if (!select || !grupo) return;
+
+        function actualizar() {
+            var opt = select.options[select.selectedIndex];
+            var tipo = opt ? opt.getAttribute('data-tipo') : '';
+            grupo.classList.toggle('d-none', tipo !== 'PENSAR');
+        }
+
+        select.addEventListener('change', actualizar);
+        actualizar();  // estado inicial (por si el form vuelve con una plantilla ya elegida)
+    })();
+</script>
+{% endblock %}

@@ -1,19 +1,23 @@
 """Vistas de personalización.
 
-Fase 2 (CRUD de plantillas): lista + subir + eliminar + descargar. La
-generación del PDF (Fase 3) se añade después. Todas gated con `@solo_logistica`
-(el middleware ya bloquea el subdominio; el decorador es la segunda barrera).
-Las escrituras son POST-redirect con feedback por `messages` (toasts; logística
-sí los muestra).
+Fase 2 (CRUD de plantillas): lista + subir + eliminar + descargar. Fase 3
+(generación): `generar` produce el PDF final rellenando la plantilla con los
+estudiantes del Excel. Todas gated con `@solo_logistica` (el middleware ya
+bloquea el subdominio; el decorador es la segunda barrera). Las escrituras son
+POST-redirect con feedback por `messages` (toasts; logística sí los muestra).
 """
+import io
 import os
 
 from django.contrib import messages
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .forms import PlantillaForm
+from .excel import ExcelInvalido, leer_estudiantes
+from .forms import GenerarForm, PlantillaForm
+from .generar import generar_pdf
 from .models import PlantillaPersonalizacion
 from .permisos import solo_logistica
 from .validaciones import campos_faltantes, validar_plantilla_pdf
@@ -90,3 +94,52 @@ def plantilla_descargar(request, pk):
     return FileResponse(plantilla.archivo.open('rb'),
                         as_attachment=request.GET.get('inline') != '1',
                         filename=nombre)
+
+
+@solo_logistica
+def generar(request):
+    """Rellena la plantilla elegida con los estudiantes del Excel y devuelve el
+    PDF resultante. NO persiste nada (los estudiantes no viven en BD). Es un POST
+    "de lectura" (produce un archivo, como un export) → permitido en nivel LECTURA.
+    """
+    if request.method != 'POST':
+        return render(request, 'personalizacion/generar.html', {'form': GenerarForm()})
+
+    form = GenerarForm(request.POST, request.FILES)
+    if not form.is_valid():
+        for errores in form.errors.values():
+            for error in errores:
+                messages.error(request, error)
+        return render(request, 'personalizacion/generar.html', {'form': form})
+
+    plantilla = form.cleaned_data['plantilla']
+    colegio = form.cleaned_data['colegio']
+
+    try:
+        estudiantes = leer_estudiantes(request.FILES['excel'])
+    except ExcelInvalido as exc:
+        messages.error(request, str(exc))
+        return render(request, 'personalizacion/generar.html', {'form': form})
+
+    if not estudiantes:
+        messages.error(request, 'El Excel no tiene estudiantes (revisa la columna Nombres).')
+        return render(request, 'personalizacion/generar.html', {'form': form})
+
+    contexto = {'colegio': colegio}
+    if plantilla.tipo == PlantillaPersonalizacion.Tipo.PENSAR:
+        # nº de prueba (0–99) → decena/unidad. zfill(2): 5 → '05' → decena '0', unidad '5'.
+        digitos = str(int(form.cleaned_data['numero_prueba'])).zfill(2)
+        contexto['decena'] = digitos[-2]
+        contexto['unidad'] = digitos[-1]
+
+    # Bytes de la plantilla (storage-agnóstico: disco en dev, S3/Supabase en prod).
+    try:
+        plantilla.archivo.open('rb')
+        plantilla_bytes = plantilla.archivo.read()
+    finally:
+        plantilla.archivo.close()
+
+    pdf = generar_pdf(plantilla_bytes=plantilla_bytes, tipo=plantilla.tipo,
+                      estudiantes=estudiantes, contexto=contexto)
+    nombre = f'{plantilla.tipo.lower()}_{slugify(colegio) or "colegio"}.pdf'
+    return FileResponse(io.BytesIO(pdf), as_attachment=True, filename=nombre)
