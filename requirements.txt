@@ -15,6 +15,10 @@ psycopg2-binary==2.9.11    # Adaptador PostgreSQL
 # ── Exportación Excel ───────────────────────────────────────────────────────
 openpyxl==3.1.5            # Generación de .xlsx en exportar/views.py y carga_masiva.py
 
+# ── Personalización de PDFs (logística) ─────────────────────────────────────
+PyMuPDF==1.26.7            # Rellena AcroForm + bake() en logistica/personalizacion.
+                          # Wheel cp310-abi3 → compatible con Python 3.13 de Railway.
+
 # ── Almacenamiento de archivos ───────────────────────────────────────────────
 django-storages==1.14.4    # Backend S3 para soportes de pago (Supabase Storage)
 boto3==1.35.99             # Cliente S3 que usa django-storages (bucket privado)
