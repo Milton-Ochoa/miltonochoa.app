@@ -26,7 +26,7 @@ from .validaciones import campos_faltantes, validar_plantilla_pdf
 @solo_logistica
 def lista(request):
     """Plantillas guardadas (ordenadas por tipo/nombre) + form del modal de subida."""
-    plantillas = PlantillaPersonalizacion.objects.select_related('subido_por')
+    plantillas = PlantillaPersonalizacion.objects.all()
     return render(request, 'personalizacion/lista.html', {
         'plantillas': plantillas,
         'form': PlantillaForm(),
@@ -75,6 +75,11 @@ def plantilla_subir(request):
 @require_POST
 @solo_logistica
 def plantilla_eliminar(request, pk):
+    # Borrar es destructivo (el archivo se pierde del storage) → solo el
+    # superusuario. El template oculta el botón; este check es la barrera real.
+    if not request.user.is_superuser:
+        messages.error(request, 'Solo el administrador puede eliminar plantillas.')
+        return redirect('log_personalizacion_lista')
     plantilla = get_object_or_404(PlantillaPersonalizacion, pk=pk)
     nombre = plantilla.nombre
     # Primero el archivo del storage, luego la fila (patrón adjuntos de entrada).

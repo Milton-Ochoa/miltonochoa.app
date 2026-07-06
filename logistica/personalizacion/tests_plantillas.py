@@ -110,6 +110,14 @@ class SubirPlantillaTest(_BasePlantillasTest):
 
 
 class EliminarPlantillaTest(_BasePlantillasTest):
+    """Eliminar es SOLO del superusuario: el template oculta el botón al staff
+    y la vista rechaza el POST (el check del server es la barrera real)."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_client = Client(HTTP_HOST='logistica.testserver')
+        User.objects.create_superuser(username='admin', password='pass')
+        self.admin_client.login(username='admin', password='pass')
 
     def _crear(self):
         self.client.post('/personalizacion/plantillas/subir/', {
@@ -118,19 +126,34 @@ class EliminarPlantillaTest(_BasePlantillasTest):
         })
         return PlantillaPersonalizacion.objects.get()
 
-    def test_elimina_fila_y_archivo(self):
+    def test_admin_elimina_fila_y_archivo(self):
         plantilla = self._crear()
         storage, name = plantilla.archivo.storage, plantilla.archivo.name
         self.assertTrue(storage.exists(name))
-        r = self.client.post(
+        r = self.admin_client.post(
             f'/personalizacion/plantillas/{plantilla.pk}/eliminar/', follow=True)
         self.assertFalse(PlantillaPersonalizacion.objects.exists())
         self.assertFalse(storage.exists(name))
         self.assertTrue(any('eliminada' in m for m in self._mensajes(r)))
 
+    def test_staff_no_puede_eliminar(self):
+        plantilla = self._crear()
+        r = self.client.post(
+            f'/personalizacion/plantillas/{plantilla.pk}/eliminar/', follow=True)
+        self.assertTrue(PlantillaPersonalizacion.objects.exists())
+        self.assertTrue(any('administrador' in m for m in self._mensajes(r)))
+
+    def test_staff_no_ve_el_boton_de_eliminar(self):
+        plantilla = self._crear()
+        url_eliminar = f'/personalizacion/plantillas/{plantilla.pk}/eliminar/'
+        r = self.client.get('/personalizacion/')
+        self.assertNotContains(r, url_eliminar)
+        r = self.admin_client.get('/personalizacion/')
+        self.assertContains(r, url_eliminar)
+
     def test_eliminar_get_no_permitido(self):
         plantilla = self._crear()
-        r = self.client.get(
+        r = self.admin_client.get(
             f'/personalizacion/plantillas/{plantilla.pk}/eliminar/')
         self.assertEqual(r.status_code, 405)
         self.assertTrue(PlantillaPersonalizacion.objects.exists())

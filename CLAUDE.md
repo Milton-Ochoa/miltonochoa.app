@@ -443,8 +443,11 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
   la subida) + `campos_faltantes` **aviso suave** (compara campos AcroForm reales vs. esperados por
   el tipo → `messages.warning` sin bloquear).
 - **Vistas (`views.py`, gate `@solo_logistica`, names `log_personalizacion_*`):** `lista` (plantillas
-  + modal de subida), `plantilla_subir` (POST, validación dura + aviso suave), `plantilla_eliminar`
-  (POST, borra archivo del storage + fila), `plantilla_descargar` (proxiada, `?inline=1` abre en
+  + modal de subida; tabla patrón viáticos — filtros por columna + paginación client-side, columnas
+  Nombre/Tipo/Acciones: `subido_por`/`subido_en` siguen en el modelo pero NO se muestran),
+  `plantilla_subir` (POST, validación dura + aviso suave), `plantilla_eliminar`
+  (POST, **solo superusuario**: el template oculta el botón al staff y la vista rechaza el POST con
+  `messages.error`; borra archivo del storage + fila), `plantilla_descargar` (proxiada, `?inline=1` abre en
   pestaña — nunca URL firmada) y **`generar`** (GET = form; POST = valida, `leer_estudiantes`,
   `generar_pdf` y devuelve `FileResponse(io.BytesIO(pdf), as_attachment=True)`; NO persiste nada).
   El form re-renderiza con toast si el Excel es inválido o de 0 estudiantes.
