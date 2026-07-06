@@ -130,6 +130,13 @@
         </div>
         {% endwith %}
         {% endif %}
+
+        {# ── Personalización ── (primer nivel: no es inventario) #}
+        {% if 'personalizacion' in mp %}
+        <a href="{% url 'log_personalizacion_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'log_personalizacion_lista' or request.resolver_match.url_name == 'log_personalizacion_generar' %}active{% endif %}">
+            <i class="fas fa-file-pdf icon-main"></i> Personalización
+        </a>
+        {% endif %}
         {% endwith %}
         {% endif %}
 {% endblock %}

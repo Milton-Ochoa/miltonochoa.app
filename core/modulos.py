@@ -66,6 +66,7 @@ MODULOS = {
                ('/entradas/', '/salidas/', '/traslados/', '/movimientos/'),
                ('/movimientos/exportar/',)),
         Modulo('prestamos', 'Préstamos', ('/prestamos/',), ('/prestamos/exportar/',)),
+        Modulo('personalizacion', 'Personalización', ('/personalizacion/',)),
     ),
 }
 
