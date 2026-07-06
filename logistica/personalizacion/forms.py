@@ -58,7 +58,9 @@ class GenerarForm(_BootstrapMixin, forms.Form):
 
     plantilla = forms.ModelChoiceField(
         queryset=PlantillaPersonalizacion.objects.all(),
-        widget=PlantillaSelect,
+        # `select2-busqueda` activa el buscador dinámico (inventario/_select2.html,
+        # incluido por generar.html) cuando haya muchas plantillas.
+        widget=PlantillaSelect(attrs={'class': 'form-select select2-busqueda'}),
         empty_label='— Selecciona una plantilla —',
         label='Plantilla')
     colegio = forms.CharField(max_length=200, label='Colegio')
