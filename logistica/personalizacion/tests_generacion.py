@@ -66,6 +66,10 @@ class GenerarViewTest(TestCase):
     def test_get_muestra_formulario(self):
         r = self.client.get('/personalizacion/generar/')
         self.assertEqual(r.status_code, 200)
+        # El select de plantilla lleva el buscador dinámico (Select2, patrón
+        # inventario/_select2.html) para cuando haya muchas plantillas.
+        self.assertContains(r, 'select2-busqueda')
+        self.assertContains(r, 'select2.min.js')
 
     def test_no_logistica_redirigido(self):
         c = Client(HTTP_HOST='logistica.testserver')

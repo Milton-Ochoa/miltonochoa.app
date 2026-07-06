@@ -459,7 +459,10 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
 - **Form dinámico (`forms.py:GenerarForm` + `PlantillaSelect`):** el `<select>` de plantilla marca
   cada `<option>` con `data-tipo` (widget `PlantillaSelect.create_option`); el JS de `generar.html`
   muestra el input **Número de prueba** solo cuando el tipo es `PENSAR`. El server valida que PENSAR
-  traiga número (`clean()`), no confía en el JS.
+  traiga número (`clean()`), no confía en el JS. El select lleva **buscador dinámico** (clase
+  `select2-busqueda` + include de `inventario/_select2.html`); OJO: Select2 dispara el `change` de
+  jQuery, que no llega a `addEventListener` → el toggle de PENSAR se bindea TAMBIÉN con
+  `jQuery(select).on('change', …)`.
 - **Tests:** `tests_generar.py` (servicio + excel + validaciones en unidad puro, plantillas
   fabricadas en memoria con fitz vía `crear_plantilla_bytes`), `tests_plantillas.py` (CRUD + gates,
   arnés `MEDIA_TMP`) y `tests_generacion.py` (generación end-to-end: POST releyendo el PDF con fitz).
