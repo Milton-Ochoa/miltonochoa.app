@@ -66,7 +66,10 @@ MODULOS = {
                ('/entradas/', '/salidas/', '/traslados/', '/movimientos/'),
                ('/movimientos/exportar/',)),
         Modulo('prestamos', 'Préstamos', ('/prestamos/',), ('/prestamos/exportar/',)),
-        Modulo('personalizacion', 'Personalización', ('/personalizacion/',)),
+        # generar es POST "de lectura": no escribe BD, produce un PDF (como un export)
+        # → accesible en LECTURA. Es ruta hoja (no prefijo de las de escritura), match exacto.
+        Modulo('personalizacion', 'Personalización', ('/personalizacion/',),
+               ('/personalizacion/generar/',)),
     ),
 }
 

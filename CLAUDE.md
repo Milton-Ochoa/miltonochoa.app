@@ -403,6 +403,64 @@ Reglas de oro (NO romper):
   prestado/devuelto/pendiente).
 - En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
+## Personalización de PDFs (sub-app `logistica.personalizacion`, label `log_personalizacion`)
+
+Módulo de logística **separado del inventario** que reemplaza los 11 scripts CLI casi
+idénticos de `Automatizacion_PDFs`: rellena campos de formulario **AcroForm** de plantillas
+PDF con **PyMuPDF** (`import fitz`; paquete PyPI `PyMuPDF==1.26.*`), aplana cada hoja con
+`doc.bake()` y une **una hoja por estudiante**. Ítem de **primer nivel** en el sidebar de
+logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub-app completa
+(3 fases cerradas). Un solo modelo:
+
+| Modelo | Tabla |
+|---|---|
+| `PlantillaPersonalizacion` | `log_plantillas_personalizacion` |
+
+- **Modelo `PlantillaPersonalizacion`:** `nombre`, `tipo` (`SIMULACRO`/`PENSAR`), `archivo`
+  (`FileField` sobre `STORAGES['default']`, `upload_to` → `logistica/personalizacion/<tipo>-<slug>.pdf`),
+  `subido_por`/`subido_en`. Se gestionan **libremente** (subir/nombrar/tipar/borrar; varias de
+  cada tipo, `nombre` no unique). Los **estudiantes NO viven en BD**: se suben por Excel en cada
+  generación.
+- **Dos tipos** (config en `generar.py` `TIPOS`, función parametrizada por tipo):
+  - **SIMULACRO:** plantilla de 8 campos (4 arriba + 4 abajo = **el mismo estudiante** en ambas
+    mitades), **1 estudiante por hoja**. Campos `Nombre/Curso/Usuario/Colegio` × `Arriba/Abajo`.
+    Solo necesita el dato **colegio**.
+  - **PENSAR:** plantilla de 12 campos (6 por sección), **2 estudiantes distintos por hoja**
+    (recorridos de 2 en 2; sección de abajo vacía si el total es impar). Añade
+    `PruebaDecena/PruebaUnidad`. Necesita **colegio** + **número de prueba** (0–99, dividido en
+    decena/unidad con `zfill(2)`).
+- **Servicio `generar.py:generar_pdf(*, plantilla_bytes, tipo, estudiantes, contexto)`:**
+  storage-agnóstico (**recibe bytes**, nunca ruta de disco — en prod el storage es S3/Supabase),
+  no toca Django/ORM (testeable en unidad puro). **Reglas de oro heredadas de los scripts:**
+  reabrir la plantilla **LIMPIA por cada hoja** (`fitz.open(stream=...)`) y `doc.bake()` antes de
+  unir (sin aplanar, los campos homónimos quedan enlazados y comparten valor). `str(field_value)`
+  blinda contra grado/usuario numéricos.
+- **Excel (`excel.py:leer_estudiantes`, openpyxl, sin pandas):** columnas `Nombres`/`Grado`/`Usuario`
+  (tolerante a orden/mayúsculas, patrón `_norm` de monitores; limpia el `.0` que openpyxl deja en
+  enteros; omite filas sin `Nombres`). `ExcelInvalido` si faltan columnas. Devuelve `list[dict]`
+  con `nombre`/`grado`/`usuario`.
+- **Validación (`validaciones.py`):** `validar_plantilla_pdf` **dura** (solo `.pdf`, ≤10 MB, bloquea
+  la subida) + `campos_faltantes` **aviso suave** (compara campos AcroForm reales vs. esperados por
+  el tipo → `messages.warning` sin bloquear).
+- **Vistas (`views.py`, gate `@solo_logistica`, names `log_personalizacion_*`):** `lista` (plantillas
+  + modal de subida), `plantilla_subir` (POST, validación dura + aviso suave), `plantilla_eliminar`
+  (POST, borra archivo del storage + fila), `plantilla_descargar` (proxiada, `?inline=1` abre en
+  pestaña — nunca URL firmada) y **`generar`** (GET = form; POST = valida, `leer_estudiantes`,
+  `generar_pdf` y devuelve `FileResponse(io.BytesIO(pdf), as_attachment=True)`; NO persiste nada).
+  El form re-renderiza con toast si el Excel es inválido o de 0 estudiantes.
+- **Permisos (`core/modulos.py`):** `Modulo('personalizacion', 'Personalización', ('/personalizacion/',),
+  ('/personalizacion/generar/',))`. **generar es un POST "de lectura"** (produce un PDF, como un
+  export; no escribe BD) → accesible en nivel **LECTURA**; subir/eliminar son escrituras que exigen
+  **COMPLETO**. `/personalizacion/generar/` es ruta hoja (no prefijo de las de escritura) → el match
+  exacto de `posts_lectura` es seguro.
+- **Form dinámico (`forms.py:GenerarForm` + `PlantillaSelect`):** el `<select>` de plantilla marca
+  cada `<option>` con `data-tipo` (widget `PlantillaSelect.create_option`); el JS de `generar.html`
+  muestra el input **Número de prueba** solo cuando el tipo es `PENSAR`. El server valida que PENSAR
+  traiga número (`clean()`), no confía en el JS.
+- **Tests:** `tests_generar.py` (servicio + excel + validaciones en unidad puro, plantillas
+  fabricadas en memoria con fitz vía `crear_plantilla_bytes`), `tests_plantillas.py` (CRUD + gates,
+  arnés `MEDIA_TMP`) y `tests_generacion.py` (generación end-to-end: POST releyendo el PDF con fitz).
+
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 
 Adjuntos de la **ficha del profesor** (CV, cédula, RUT, …) gestionados desde la pestaña
