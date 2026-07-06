@@ -1,8 +1,9 @@
 # Área `logistica`
 
 Área del edificio AAMO servida en su propio subdominio
-(`logistica.miltonochoa.app`; dev: `logistica.lvh.me:8000`). Aquí vive el
-**inventario** de la operación: artículos, bodegas, movimientos y préstamos.
+(`logistica.miltonochoa.app`; dev: `logistica.lvh.me:8000`). Aquí viven el
+**inventario** de la operación (artículos, bodegas, movimientos y préstamos) y la
+**personalización** de PDFs (rellena plantillas AcroForm por estudiante).
 
 ## Estado
 
@@ -25,10 +26,31 @@
 - **Exports a Excel** (openpyxl, desde modales con filtros): existencias,
   movimientos (histórico completo) y préstamos.
 
+### Personalización de PDFs (sub-app `logistica.personalizacion`)
+
+Módulo aparte del inventario (label `log_personalizacion`, tabla
+`log_plantillas_personalizacion`). Reemplaza los 11 scripts CLI de
+`Automatizacion_PDFs`: rellena campos AcroForm de plantillas PDF con **PyMuPDF**
+(`import fitz`), aplana con `doc.bake()` y une **una hoja por estudiante**.
+
+- **Plantillas** (`PlantillaPersonalizacion`): se suben, nombran, tipan y borran
+  libremente (guardadas permanentemente). Dos tipos: **Simulacro** (8 campos, el
+  mismo estudiante arriba/abajo, 1 por hoja, solo colegio) y **Pensar** (12 campos,
+  2 estudiantes distintos por hoja, colegio + número de prueba). Aviso suave si la
+  plantilla no trae todos los campos que el tipo espera.
+- **Generación** (`/personalizacion/generar/`): elige plantilla + colegio (+ número
+  de prueba si es Pensar) y sube un **Excel** de estudiantes (columnas `Nombres`,
+  `Grado`, `Usuario`; NO se persisten). Devuelve el PDF final. Es storage-agnóstica
+  (abre la plantilla desde bytes, nunca por ruta: en prod el storage es S3/Supabase).
+- **Permisos**: módulo `personalizacion` del área; generar es un POST "de lectura"
+  (accesible en nivel LECTURA); subir/eliminar exigen COMPLETO.
+
 ## Cómo está montada
 
-- `logistica/urls.py` → `include('logistica.inventario.urls')` en la raíz `/`.
-- `logistica/inventario/` (label `log_inventario`) es la sub-app del inventario.
+- `logistica/urls.py` → `include('logistica.inventario.urls')` y
+  `include('logistica.personalizacion.urls')` en la raíz `/`.
+- `logistica/inventario/` (label `log_inventario`) es la sub-app del inventario y
+  `logistica/personalizacion/` (label `log_personalizacion`) la de personalización.
   Sus tablas usan el prefijo `log_` en `Meta.db_table` (registro completo en
   la sección _Inventario de logística_ de `CLAUDE.md`).
 - **Reglas de oro del dominio** (detalle en `CLAUDE.md`): `Movimiento` es un
