@@ -54,6 +54,8 @@
     </div>
 </div>
 
+{% include 'inventario/_select2.html' %}
+
 <script>
     // Muestra "Número de prueba" solo cuando la plantilla seleccionada es PENSAR
     // (cada <option> lleva data-tipo, puesto por el widget PlantillaSelect).
@@ -69,6 +71,9 @@
         }
 
         select.addEventListener('change', actualizar);
+        // Select2 dispara el change de jQuery, que NO llega a addEventListener;
+        // sin este binding el número de prueba no aparecería al elegir PENSAR.
+        if (window.jQuery) jQuery(select).on('change', actualizar);
         actualizar();  // estado inicial (por si el form vuelve con una plantilla ya elegida)
     })();
 </script>
