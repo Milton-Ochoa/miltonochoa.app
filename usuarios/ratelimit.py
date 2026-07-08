@@ -84,7 +84,15 @@ def rate_limit(max_calls: int = 60, periodo: int = 60, respuesta: str = 'json'):
             key = f'rl:{view_func.__name__}:{ip}'
             # cache.add es atómico: inicializa el contador solo si la clave no existe.
             cache.add(key, 0, timeout=periodo)
-            contador = cache.incr(key)
+            try:
+                contador = cache.incr(key)
+            except ValueError:
+                # Carrera con el TTL en Redis: la clave puede expirar entre el add
+                # y el incr (son dos round-trips de red). Se repone el contador en
+                # vez de propagar un 500. NO usar incr(ignore_key_check=True): crea
+                # la clave SIN TTL y el contador jamás se resetearía.
+                cache.add(key, 0, timeout=periodo)
+                contador = cache.incr(key)
 
             if contador > max_calls:
                 logger.warning('Rate limit superado: %s desde %s', view_func.__name__, ip)
