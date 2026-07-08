@@ -106,7 +106,7 @@ DEPARTAMENTOS_CIUDADES = {
         "Bucaramanga", "Floridablanca", "Girón", "Piedecuesta",
         "Barrancabermeja", "San Gil", "Socorro", "Vélez",
         "Barbosa", "Lebrija", "Puerto Wilches", "Málaga",
-        "Galán",
+        "Galán", "La Belleza",
     ],
     "Sucre": [
         "Sincelejo", "Corozal", "Sampués", "Tolú", "San Marcos",
