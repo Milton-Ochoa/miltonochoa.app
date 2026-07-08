@@ -525,6 +525,42 @@ class RateLimitTest(TestCase):
         r = vista_test(request)
         self.assertEqual(r.status_code, 429)
 
+    def test_carrera_ttl_entre_add_e_incr_no_revienta(self):
+        """Con Redis la clave puede expirar entre cache.add y cache.incr (dos
+        round-trips de red): incr lanza ValueError. El decorador debe reponer el
+        contador y atender la request, no propagar un 500 (visto en prod 2026-07-08)."""
+        from unittest import mock
+        from django.http import JsonResponse
+        factory = RequestFactory()
+
+        @rate_limit(max_calls=2, periodo=60)
+        def vista_test(request):
+            return JsonResponse({'ok': True})
+
+        incr_real = cache.incr
+        estado = {'primera': True}
+
+        def incr_con_expiracion(key, *args, **kwargs):
+            if estado['primera']:
+                estado['primera'] = False
+                cache.delete(key)  # simula el TTL venciendo justo tras el add
+                raise ValueError(f"Key '{key}' not found")
+            return incr_real(key, *args, **kwargs)
+
+        request = factory.get('/')
+        request.META['REMOTE_ADDR'] = '10.7.7.7'
+        with mock.patch.object(cache, 'incr', side_effect=incr_con_expiracion):
+            r = vista_test(request)
+        self.assertEqual(r.status_code, 200)
+
+        # El contador quedó bien repuesto: el límite sigue aplicando después.
+        request = factory.get('/')
+        request.META['REMOTE_ADDR'] = '10.7.7.7'
+        self.assertEqual(vista_test(request).status_code, 200)
+        request = factory.get('/')
+        request.META['REMOTE_ADDR'] = '10.7.7.7'
+        self.assertEqual(vista_test(request).status_code, 429)
+
     def test_proxy_cgnat_railway_usa_xff(self):
         """El proxy de Railway llega desde 100.64.0.0/10 (CGNAT, no 'privado' para
         ipaddress): debe tomarse el XFF para que cada cliente tenga su propio contador
