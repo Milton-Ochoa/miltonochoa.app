@@ -15,9 +15,9 @@ from django.test import Client, TestCase, override_settings
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from .models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
+from logistica.inventario.models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Salida, Stock, Tercero, Traslado)
-from .services import registrar_entrada
+from logistica.inventario.services import registrar_entrada
 
 _STORAGE_LOCAL = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
