@@ -646,10 +646,14 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 727 tests OK.**
+**Baseline actual: 761 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
+- App chica → un solo `tests.py`; app con varios dominios de test → paquete `tests/`
+  (módulos `test_*.py`; hoy: `usuarios/`, `programacion/colegios/`,
+  `logistica/inventario/` y `logistica/personalizacion/`). Un módulo suelto se corre con
+  `python manage.py test usuarios.tests.test_seguridad`.
 - BD de tests siempre SQLite y `BASE_DOMAIN=testserver` — forzados en `core/settings.py`.
 - Los tests **de área** usan `Client(HTTP_HOST='programacion.testserver')`; los del **apex**
   (login, PWA) el host por defecto `testserver`.
@@ -800,7 +804,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 727 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 761 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.

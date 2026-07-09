@@ -10,9 +10,9 @@ import fitz
 from django.test import SimpleTestCase
 from openpyxl import Workbook
 
-from .excel import ExcelInvalido, leer_estudiantes
-from .generar import campos_esperados, generar_pdf
-from .validaciones import campos_faltantes
+from logistica.personalizacion.excel import ExcelInvalido, leer_estudiantes
+from logistica.personalizacion.generar import campos_esperados, generar_pdf
+from logistica.personalizacion.validaciones import campos_faltantes
 
 
 def crear_plantilla_bytes(campos):

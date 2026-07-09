@@ -11,8 +11,8 @@ from django.test import Client, TestCase
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from .models import Bodega, Categoria, Item, Stock, Tercero
-from .services import registrar_entrada, registrar_salida
+from logistica.inventario.models import Bodega, Categoria, Item, Stock, Tercero
+from logistica.inventario.services import registrar_entrada, registrar_salida
 
 
 class _BaseCatalogosTest(TestCase):

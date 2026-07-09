@@ -315,7 +315,7 @@ hitos en `~/.claude/plans/necesito-mejorar-mi-panel-robust-simon.md`.
   `n_overrides=Count('modulos_override', distinct=True)` → el parcial `_tabla_usuarios_area.html`
   muestra un badge "Personalizado" y un botón "Permisos" por fila; el modal `modalPermisos`
   (pestañas por área, btn-group de 3 niveles por módulo con marca "(por defecto)") se pinta por JS
-  desde el GET y envía la matriz completa. Tests en `usuarios/tests_permisos.py`
+  desde el GET y envía la matriz completa. Tests en `usuarios/tests/test_permisos.py`
   (`PanelPermisosAjaxTest`), incluida la integración endpoint→middleware.
 - **Estado:** FASE 5 lista. Falta la verificación con el usuario, docs y release dev → main
   (FASE 6).
@@ -463,9 +463,9 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
   `select2-busqueda` + include de `inventario/_select2.html`); OJO: Select2 dispara el `change` de
   jQuery, que no llega a `addEventListener` → el toggle de PENSAR se bindea TAMBIÉN con
   `jQuery(select).on('change', …)`.
-- **Tests:** `tests_generar.py` (servicio + excel + validaciones en unidad puro, plantillas
-  fabricadas en memoria con fitz vía `crear_plantilla_bytes`), `tests_plantillas.py` (CRUD + gates,
-  arnés `MEDIA_TMP`) y `tests_generacion.py` (generación end-to-end: POST releyendo el PDF con fitz).
+- **Tests** (paquete `tests/`): `test_generar.py` (servicio + excel + validaciones en unidad puro,
+  plantillas fabricadas en memoria con fitz vía `crear_plantilla_bytes`), `test_plantillas.py` (CRUD +
+  gates, arnés `MEDIA_TMP`) y `test_generacion.py` (generación end-to-end: POST releyendo el PDF con fitz).
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 
@@ -573,7 +573,7 @@ no-JS, y pasa por la misma invalidación de caché del dashboard:
 con filtros client-side (tipo, profesor, colegio, motivo + rango sobre `fecha_clase`;
 patrón `viaticos/lista.html`) y export a Excel (openpyxl self-contained, modal con
 checkboxes de tipo y rango de fechas). Tests en
-`programacion/colegios/tests_cancelaciones.py`.
+`programacion/colegios/tests/test_cancelaciones.py`.
 
 ## Enrutado por subdominios y login
 
@@ -942,7 +942,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 727 tests OK
+python manage.py test                        # baseline: 761 tests OK
 python manage.py runserver
 ```
 
@@ -957,6 +957,17 @@ python manage.py runserver
   por defecto `testserver`. Los tests que suben archivos **fuerzan disco local**
   (`override_settings(MEDIA_ROOT=<tmp>, STORAGES={...FileSystemStorage...})` +
   `SimpleUploadedFile`, limpiando el tmp en `tearDownClass`) → **nunca** tocan Supabase.
+- **Organización de los tests (convención):** app chica = un solo `tests.py`; app con
+  varios dominios de test = **paquete `tests/`** (`__init__.py` + módulos `test_*.py`
+  por dominio; el descubrimiento de Django los encuentra solo). Hoy tienen paquete:
+  `usuarios/tests/` (acceso, gestión, seguridad, menús, permisos),
+  `programacion/colegios/tests/` (modelos, vistas, htmx, cache, cancelaciones),
+  `logistica/inventario/tests/` (área, catálogos, movimientos, préstamos, reportes,
+  servicios) y `logistica/personalizacion/tests/` (generar, plantillas, generación).
+  OJO: dentro de un paquete `tests/` los imports de la app van en **absoluto**
+  (`from logistica.inventario.models import …`); un `from .models import …` resolvería
+  contra el paquete de tests. Una app no puede tener `tests.py` y `tests/` a la vez.
+  Correr un módulo suelto: `python manage.py test usuarios.tests.test_seguridad`.
 
 ## Almacenamiento de archivos (`STORAGES`)
 

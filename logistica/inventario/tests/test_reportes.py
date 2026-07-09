@@ -15,8 +15,8 @@ from openpyxl import load_workbook
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from .models import Bodega, Categoria, Item, Movimiento, Prestamo, Tercero
-from .services import crear_prestamo, registrar_entrada
+from logistica.inventario.models import Bodega, Categoria, Item, Movimiento, Prestamo, Tercero
+from logistica.inventario.services import crear_prestamo, registrar_entrada
 
 XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
