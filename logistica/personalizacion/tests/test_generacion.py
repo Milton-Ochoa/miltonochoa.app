@@ -16,9 +16,9 @@ from django.test import Client, TestCase, override_settings
 
 from core.areas import GRUPO_STAFF_LOGISTICA
 
-from .generar import campos_esperados
-from .models import PlantillaPersonalizacion
-from .tests_generar import _excel_bytes, crear_plantilla_bytes
+from logistica.personalizacion.generar import campos_esperados
+from logistica.personalizacion.models import PlantillaPersonalizacion
+from .test_generar import _excel_bytes, crear_plantilla_bytes
 
 _STORAGE_LOCAL = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
