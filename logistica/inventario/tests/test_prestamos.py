@@ -13,9 +13,9 @@ from django.utils import timezone
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from .models import (Bodega, Categoria, Devolucion, Item, Movimiento,
+from logistica.inventario.models import (Bodega, Categoria, Devolucion, Item, Movimiento,
                      Prestamo, Stock, Tercero)
-from .services import crear_prestamo, registrar_entrada, registrar_salida
+from logistica.inventario.services import crear_prestamo, registrar_entrada, registrar_salida
 
 
 class _BasePrestamosTest(TestCase):

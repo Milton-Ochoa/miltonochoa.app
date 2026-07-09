@@ -10,9 +10,9 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from .models import (Bodega, Categoria, Devolucion, Entrada, Item, Movimiento,
+from logistica.inventario.models import (Bodega, Categoria, Devolucion, Entrada, Item, Movimiento,
                      Prestamo, PrestamoLinea, Salida, Stock, Tercero, Traslado)
-from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
+from logistica.inventario.services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, prestamos_vencidos,
                        registrar_ajuste, registrar_devolucion,
                        registrar_entrada, registrar_salida,
