@@ -17,16 +17,19 @@ def _plantilla_upload_to(instance, filename):
 class PlantillaPersonalizacion(models.Model):
     """Plantilla PDF con formulario AcroForm que se rellena por estudiante.
 
-    Dos tipos con distinta forma de rellenado (ver `personalizacion.generar`):
-    SIMULACRO (un estudiante por hoja, mismo dato arriba y abajo) y PENSAR (dos
-    estudiantes por hoja + número de prueba). Se guardan permanentemente y se
-    gestionan libremente (subir/borrar); los estudiantes NO viven en BD (se
-    suben por Excel en cada generación).
+    Tres tipos con distinta forma de rellenado (ver `personalizacion.generar`):
+    SIMULACRO (un estudiante por hoja, mismo dato arriba y abajo), PENSAR (dos
+    estudiantes por hoja + número de prueba) y MP (Martes de Prueba: tres
+    estudiantes por hoja + número de prueba; código de colegio, año y código de
+    estudiante vienen del Excel). Se guardan permanentemente y se gestionan
+    libremente (subir/borrar); los estudiantes NO viven en BD (se suben por
+    Excel en cada generación).
     """
 
     class Tipo(models.TextChoices):
         SIMULACRO = 'SIMULACRO', 'Simulacro'
         PENSAR    = 'PENSAR',    'Pensar'
+        MP        = 'MP',        'MP'
 
     nombre     = models.CharField(max_length=150)
     tipo       = models.CharField(max_length=10, choices=Tipo.choices)

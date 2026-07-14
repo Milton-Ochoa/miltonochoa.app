@@ -125,6 +125,52 @@ class GenerarViewTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r['Content-Type'], 'application/pdf')
 
+    # ── MP (3 estudiantes por hoja; Código/Año/Estudiante del Excel) ──
+    def test_mp_tres_por_hoja_con_datos_del_excel(self):
+        plantilla = self._crear_plantilla('MP')
+        cabs = ('Código', 'Año', 'Grado', 'Estudiante', 'Nombres', 'Usuario')
+        excel = _excel_upload([
+            (25153, 2026, 11, 101, 'Ana', '2515311101'),
+            (25153, 2026, 11, 102, 'Beto', '2515311102'),
+            (25153, 2026, 11, 103, 'Cami', '2515311103'),
+            (25153, 2026, 11, 104, 'Dani', '2515311104'),
+        ], encabezados=cabs)
+        r = self.client.post('/personalizacion/generar/', {
+            'plantilla': plantilla.pk, 'colegio': 'Colegio Z',
+            'numero_prueba': 7, 'excel': excel,
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'application/pdf')
+        with self._pdf_de(r) as doc:
+            self.assertEqual(doc.page_count, 2)  # 3 en la 1ª hoja, 1 en la 2ª
+            texto = doc[0].get_text()
+        # Datos del Excel (código colegio, año, código estudiante) + form (colegio,
+        # decena '0' y unidad '7' del nº de prueba).
+        for dato in ('Ana', 'Beto', 'Cami', '25153', '2026', '101', 'Colegio Z', '0', '7'):
+            self.assertIn(dato, texto)
+
+    def test_mp_exige_numero_prueba(self):
+        plantilla = self._crear_plantilla('MP')
+        excel = _excel_upload([(25153, 2026, 11, 101, 'Ana', 'u1')],
+                              encabezados=('Código', 'Año', 'Grado', 'Estudiante',
+                                           'Nombres', 'Usuario'))
+        r = self.client.post('/personalizacion/generar/', {
+            'plantilla': plantilla.pk, 'colegio': 'Colegio Z', 'excel': excel,
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)  # re-render, no descarga
+        self.assertTrue(any('número de prueba' in m.lower() for m in self._mensajes(r)))
+
+    def test_mp_excel_sin_columnas_extra_rerender(self):
+        # Un Excel válido para SIMULACRO/PENSAR no basta para MP.
+        plantilla = self._crear_plantilla('MP')
+        excel = _excel_upload([('Ana', 5, 'a')])
+        r = self.client.post('/personalizacion/generar/', {
+            'plantilla': plantilla.pk, 'colegio': 'Colegio Z',
+            'numero_prueba': 7, 'excel': excel,
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(any('faltan columnas' in m.lower() for m in self._mensajes(r)))
+
     # ── Errores del Excel ──
     def test_excel_invalido_rerender(self):
         plantilla = self._crear_plantilla('SIMULACRO')
