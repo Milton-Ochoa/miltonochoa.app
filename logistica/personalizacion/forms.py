@@ -15,6 +15,10 @@ from django import forms
 
 from .models import PlantillaPersonalizacion
 
+# Tipos que rellenan PruebaDecena/PruebaUnidad → exigen el número de prueba.
+_TIPOS_CON_PRUEBA = {PlantillaPersonalizacion.Tipo.PENSAR,
+                     PlantillaPersonalizacion.Tipo.MP}
+
 
 class _BootstrapMixin:
     """Aplica las clases Bootstrap a todos los widgets de una vez."""
@@ -40,8 +44,8 @@ class PlantillaForm(_BootstrapMixin, forms.ModelForm):
 
 class PlantillaSelect(forms.Select):
     """`<select>` de plantillas que añade `data-tipo` a cada opción, para que el
-    JS de `generar.html` muestre el número de prueba solo cuando el tipo es
-    PENSAR (sin un roundtrip al servidor)."""
+    JS de `generar.html` muestre el número de prueba solo cuando el tipo lo
+    requiere (PENSAR/MP, sin un roundtrip al servidor)."""
 
     def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
@@ -65,7 +69,7 @@ class GenerarForm(_BootstrapMixin, forms.Form):
         label='Plantilla')
     colegio = forms.CharField(max_length=200, label='Colegio')
     # 0–99 impone el supuesto documentado de 1–2 dígitos; la vista lo divide en
-    # decena/unidad con zfill(2). Obligatorio solo para PENSAR (ver clean()).
+    # decena/unidad con zfill(2). Obligatorio solo para PENSAR/MP (ver clean()).
     numero_prueba = forms.IntegerField(
         min_value=0, max_value=99, required=False, label='Número de prueba')
     excel = forms.FileField(
@@ -75,8 +79,9 @@ class GenerarForm(_BootstrapMixin, forms.Form):
     def clean(self):
         cleaned = super().clean()
         plantilla = cleaned.get('plantilla')
-        if (plantilla and plantilla.tipo == PlantillaPersonalizacion.Tipo.PENSAR
+        if (plantilla and plantilla.tipo in _TIPOS_CON_PRUEBA
                 and cleaned.get('numero_prueba') is None):
             self.add_error('numero_prueba',
-                           'El número de prueba es obligatorio para plantillas Pensar.')
+                           'El número de prueba es obligatorio para plantillas '
+                           f'{plantilla.get_tipo_display()}.')
         return cleaned

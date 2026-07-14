@@ -416,12 +416,13 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
 |---|---|
 | `PlantillaPersonalizacion` | `log_plantillas_personalizacion` |
 
-- **Modelo `PlantillaPersonalizacion`:** `nombre`, `tipo` (`SIMULACRO`/`PENSAR`), `archivo`
+- **Modelo `PlantillaPersonalizacion`:** `nombre`, `tipo` (`SIMULACRO`/`PENSAR`/`MP`), `archivo`
   (`FileField` sobre `STORAGES['default']`, `upload_to` → `logistica/personalizacion/<tipo>-<slug>.pdf`),
   `subido_por`/`subido_en`. Se gestionan **libremente** (subir/nombrar/tipar/borrar; varias de
   cada tipo, `nombre` no unique). Los **estudiantes NO viven en BD**: se suben por Excel en cada
   generación.
-- **Dos tipos** (config en `generar.py` `TIPOS`, función parametrizada por tipo):
+- **Tres tipos** (config en `generar.py` `TIPOS`, función parametrizada por tipo; cada tipo
+  declara sus `secciones` = sufijos de campo):
   - **SIMULACRO:** plantilla de 8 campos (4 arriba + 4 abajo = **el mismo estudiante** en ambas
     mitades), **1 estudiante por hoja**. Campos `Nombre/Curso/Usuario/Colegio` × `Arriba/Abajo`.
     Solo necesita el dato **colegio**.
@@ -429,16 +430,25 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
     (recorridos de 2 en 2; sección de abajo vacía si el total es impar). Añade
     `PruebaDecena/PruebaUnidad`. Necesita **colegio** + **número de prueba** (0–99, dividido en
     decena/unidad con `zfill(2)`).
+  - **MP** (Martes de Prueba): plantilla de **27 campos** (9 por sección × 3 secciones
+    `Arriba/Medio/Abajo`), **3 estudiantes distintos por hoja** (secciones sobrantes vacías).
+    A los campos de PENSAR añade `CodigoColegio/Año/CodigoEstudiante` **por estudiante** — OJO:
+    el campo del año lleva la **ñ literal** en la plantilla real (`AñoArriba`, …). Necesita
+    **colegio** + **número de prueba** (del form) y las columnas extra del Excel (ver abajo).
 - **Servicio `generar.py:generar_pdf(*, plantilla_bytes, tipo, estudiantes, contexto)`:**
   storage-agnóstico (**recibe bytes**, nunca ruta de disco — en prod el storage es S3/Supabase),
   no toca Django/ORM (testeable en unidad puro). **Reglas de oro heredadas de los scripts:**
   reabrir la plantilla **LIMPIA por cada hoja** (`fitz.open(stream=...)`) y `doc.bake()` antes de
   unir (sin aplanar, los campos homónimos quedan enlazados y comparten valor). `str(field_value)`
   blinda contra grado/usuario numéricos.
-- **Excel (`excel.py:leer_estudiantes`, openpyxl, sin pandas):** columnas `Nombres`/`Grado`/`Usuario`
-  (tolerante a orden/mayúsculas, patrón `_norm` de monitores; limpia el `.0` que openpyxl deja en
-  enteros; omite filas sin `Nombres`). `ExcelInvalido` si faltan columnas. Devuelve `list[dict]`
-  con `nombre`/`grado`/`usuario`.
+- **Excel (`excel.py:leer_estudiantes(archivo, tipo)`, openpyxl, sin pandas):** las columnas
+  obligatorias dependen del tipo (`COLUMNAS_POR_TIPO`): SIMULACRO/PENSAR = `Nombres`/`Grado`/
+  `Usuario`; **MP añade `Código` (→`codigo_colegio`), `Año` (→`anio`) y `Estudiante`
+  (→`codigo_estudiante`)** — son las del export **grdGeneral** del portal, cuyas columnas de más
+  se ignoran. Encabezados tolerantes a orden/mayúsculas **y tildes** (`_norm_encabezado` normaliza
+  NFKD: `Código`→`codigo`, `Año`→`ano`; patrón `_norm` de monitores); limpia el `.0` que openpyxl
+  deja en enteros; omite filas sin `Nombres`. `ExcelInvalido` si faltan columnas (el mensaje lista
+  los nombres bonitos vía `_DISPLAY`). Devuelve `list[dict]`.
 - **Validación (`validaciones.py`):** `validar_plantilla_pdf` **dura** (solo `.pdf`, ≤10 MB, bloquea
   la subida) + `campos_faltantes` **aviso suave** (compara campos AcroForm reales vs. esperados por
   el tipo → `messages.warning` sin bloquear).
@@ -458,11 +468,11 @@ logística (`base_logistica.html`, gate `{% if 'personalizacion' in mp %}`). Sub
   exacto de `posts_lectura` es seguro.
 - **Form dinámico (`forms.py:GenerarForm` + `PlantillaSelect`):** el `<select>` de plantilla marca
   cada `<option>` con `data-tipo` (widget `PlantillaSelect.create_option`); el JS de `generar.html`
-  muestra el input **Número de prueba** solo cuando el tipo es `PENSAR`. El server valida que PENSAR
-  traiga número (`clean()`), no confía en el JS. El select lleva **buscador dinámico** (clase
-  `select2-busqueda` + include de `inventario/_select2.html`); OJO: Select2 dispara el `change` de
-  jQuery, que no llega a `addEventListener` → el toggle de PENSAR se bindea TAMBIÉN con
-  `jQuery(select).on('change', …)`.
+  muestra el input **Número de prueba** solo cuando el tipo es `PENSAR` o `MP`. El server valida que
+  esos tipos traigan número (`clean()`, set `_TIPOS_CON_PRUEBA`), no confía en el JS. El select lleva
+  **buscador dinámico** (clase `select2-busqueda` + include de `inventario/_select2.html`); OJO:
+  Select2 dispara el `change` de jQuery, que no llega a `addEventListener` → el toggle se bindea
+  TAMBIÉN con `jQuery(select).on('change', …)`.
 - **Tests** (paquete `tests/`): `test_generar.py` (servicio + excel + validaciones en unidad puro,
   plantillas fabricadas en memoria con fitz vía `crear_plantilla_bytes`), `test_plantillas.py` (CRUD +
   gates, arnés `MEDIA_TMP`) y `test_generacion.py` (generación end-to-end: POST releyendo el PDF con fitz).

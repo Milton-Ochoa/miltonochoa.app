@@ -121,7 +121,8 @@ def generar(request):
     colegio = form.cleaned_data['colegio']
 
     try:
-        estudiantes = leer_estudiantes(request.FILES['excel'])
+        # El tipo decide las columnas obligatorias (MP añade Código/Año/Estudiante).
+        estudiantes = leer_estudiantes(request.FILES['excel'], plantilla.tipo)
     except ExcelInvalido as exc:
         messages.error(request, str(exc))
         return render(request, 'personalizacion/generar.html', {'form': form})
@@ -131,7 +132,8 @@ def generar(request):
         return render(request, 'personalizacion/generar.html', {'form': form})
 
     contexto = {'colegio': colegio}
-    if plantilla.tipo == PlantillaPersonalizacion.Tipo.PENSAR:
+    if plantilla.tipo in (PlantillaPersonalizacion.Tipo.PENSAR,
+                          PlantillaPersonalizacion.Tipo.MP):
         # nº de prueba (0–99) → decena/unidad. zfill(2): 5 → '05' → decena '0', unidad '5'.
         digitos = str(int(form.cleaned_data['numero_prueba'])).zfill(2)
         contexto['decena'] = digitos[-2]
