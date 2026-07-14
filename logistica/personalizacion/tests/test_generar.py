@@ -125,6 +125,51 @@ class GenerarPensarTest(SimpleTestCase):
         self.assertIn('2', texto)
 
 
+def _est_mp(nombre, codigo_estudiante):
+    """Estudiante MP de prueba (6 claves; código de colegio y año fijos)."""
+    return {'nombre': nombre, 'grado': '11', 'usuario': f'u-{codigo_estudiante}',
+            'codigo_colegio': '25153', 'anio': '2026',
+            'codigo_estudiante': codigo_estudiante}
+
+
+class GenerarMpTest(SimpleTestCase):
+    def setUp(self):
+        self.plantilla = crear_plantilla_bytes(sorted(campos_esperados('MP')))
+        self.ctx = {'colegio': 'COLE Z', 'decena': '0', 'unidad': '7'}
+
+    def test_campos_esperados_27_con_enie(self):
+        esperados = campos_esperados('MP')
+        self.assertEqual(len(esperados), 27)  # 9 campos × 3 secciones
+        self.assertIn('AñoMedio', esperados)  # el campo real lleva la ñ literal
+        self.assertIn('CodigoEstudianteAbajo', esperados)
+
+    def test_tres_estudiantes_por_hoja(self):
+        estudiantes = [_est_mp(n, c) for n, c in
+                       [('Ana', '101'), ('Beto', '102'), ('Cami', '103'),
+                        ('Dani', '104'), ('Elsa', '105'), ('Fito', '106')]]
+        pdf = generar_pdf(plantilla_bytes=self.plantilla, tipo='MP',
+                          estudiantes=estudiantes, contexto=self.ctx)
+        self.assertEqual(_paginas(pdf), 2)
+
+    def test_sobrantes_secciones_vacias(self):
+        # 4 estudiantes → 2 hojas; la 2ª solo lleva a Dani (Medio y Abajo vacíos).
+        estudiantes = [_est_mp(n, c) for n, c in
+                       [('Ana', '101'), ('Beto', '102'), ('Cami', '103'), ('Dani', '104')]]
+        pdf = generar_pdf(plantilla_bytes=self.plantilla, tipo='MP',
+                          estudiantes=estudiantes, contexto=self.ctx)
+        self.assertEqual(_paginas(pdf), 2)
+        texto = _texto_pagina(pdf, 1)
+        self.assertIn('Dani', texto)
+        self.assertNotIn('Cami', texto)
+
+    def test_datos_del_excel_y_del_form_en_pdf(self):
+        pdf = generar_pdf(plantilla_bytes=self.plantilla, tipo='MP',
+                          estudiantes=[_est_mp('Ana', '101')], contexto=self.ctx)
+        texto = _texto_pagina(pdf, 0)
+        for dato in ('Ana', '25153', '2026', '101', 'COLE Z', '0', '7'):
+            self.assertIn(dato, texto)
+
+
 class CamposFaltantesTest(SimpleTestCase):
     def test_plantilla_completa_no_falta_nada(self):
         plantilla = crear_plantilla_bytes(sorted(campos_esperados('SIMULACRO')))
@@ -176,3 +221,44 @@ class LeerEstudiantesTest(SimpleTestCase):
         excel = _excel_bytes([('Ana', 5)], encabezados=('Nombres', 'Grado'))
         with self.assertRaises(ExcelInvalido):
             leer_estudiantes(excel)
+
+
+# Encabezados reales del export grdGeneral del portal (con tildes y columnas
+# de más, que se ignoran).
+_CABS_GRD = ('IdEstudiante', 'Código', 'Año', 'Grado', 'Salón', 'Estudiante',
+             'Nombres', 'Usuario', 'Contraseña')
+
+
+class LeerEstudiantesMpTest(SimpleTestCase):
+    def test_lectura_grdgeneral(self):
+        excel = _excel_bytes(
+            [(6453792, 25153, 2026, 11, '1', 101, 'Ana Uno', '2515311101', 'x')],
+            encabezados=_CABS_GRD)
+        est = leer_estudiantes(excel, 'MP')
+        self.assertEqual(est[0], {
+            'nombre': 'Ana Uno', 'grado': '11', 'usuario': '2515311101',
+            'codigo_colegio': '25153', 'anio': '2026', 'codigo_estudiante': '101',
+        })
+
+    def test_encabezados_sin_tildes_tambien_valen(self):
+        excel = _excel_bytes(
+            [('Ana', 5, 'u1', 25153, 2026, 101)],
+            encabezados=('nombres', 'GRADO', 'Usuario', 'CODIGO', 'Ano', 'estudiante'))
+        est = leer_estudiantes(excel, 'MP')
+        self.assertEqual(est[0]['codigo_colegio'], '25153')
+        self.assertEqual(est[0]['anio'], '2026')
+        self.assertEqual(est[0]['codigo_estudiante'], '101')
+
+    def test_columnas_mp_faltantes_lanza_con_nombres(self):
+        # Excel válido para SIMULACRO/PENSAR pero incompleto para MP.
+        excel = _excel_bytes([('Ana', 5, 'u1')])
+        with self.assertRaises(ExcelInvalido) as ctx:
+            leer_estudiantes(excel, 'MP')
+        mensaje = str(ctx.exception)
+        for columna in ('Código', 'Año', 'Estudiante'):
+            self.assertIn(columna, mensaje)
+
+    def test_tipos_base_no_exigen_columnas_mp(self):
+        excel = _excel_bytes([('Ana', 5, 'u1')])
+        est = leer_estudiantes(excel, 'PENSAR')
+        self.assertEqual(est[0], {'nombre': 'Ana', 'grado': '5', 'usuario': 'u1'})

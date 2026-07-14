@@ -18,7 +18,9 @@
                 <div class="card-body">
                     <p class="text-muted small mb-3">
                         Elige una plantilla, escribe el colegio y sube el Excel de estudiantes
-                        (columnas <strong>Nombres</strong>, <strong>Grado</strong>, <strong>Usuario</strong>).
+                        (columnas <strong>Nombres</strong>, <strong>Grado</strong>, <strong>Usuario</strong>;
+                        para plantillas <strong>MP</strong> además <strong>Código</strong>,
+                        <strong>Año</strong> y <strong>Estudiante</strong>).
                         Se descargará un PDF con una hoja por estudiante.
                     </p>
                     <form method="post" action="{% url 'log_personalizacion_generar' %}" enctype="multipart/form-data">
@@ -31,7 +33,7 @@
                             <label class="form-label mb-1" for="{{ form.colegio.id_for_label }}">Colegio *</label>
                             {{ form.colegio }}
                         </div>
-                        {# Solo visible para plantillas PENSAR (lo controla el JS por data-tipo). #}
+                        {# Solo visible para plantillas PENSAR/MP (lo controla el JS por data-tipo). #}
                         <div class="mb-3 d-none" id="grupoNumeroPrueba">
                             <label class="form-label mb-1" for="{{ form.numero_prueba.id_for_label }}">Número de prueba *</label>
                             {{ form.numero_prueba }}
@@ -40,7 +42,7 @@
                         <div class="mb-3">
                             <label class="form-label mb-1" for="{{ form.excel.id_for_label }}">Excel de estudiantes *</label>
                             {{ form.excel }}
-                            <small class="text-muted d-block mt-1">Formato .xlsx con las columnas Nombres, Grado y Usuario.</small>
+                            <small class="text-muted d-block mt-1">Formato .xlsx con las columnas Nombres, Grado y Usuario (MP: también Código, Año y Estudiante — el export grdGeneral las trae todas).</small>
                         </div>
                         <div class="text-end">
                             <button type="submit" class="btn btn-primary btn-sm fw-bold">
@@ -58,7 +60,7 @@
 
 <script>
     // Muestra "Número de prueba" solo cuando la plantilla seleccionada es PENSAR
-    // (cada <option> lleva data-tipo, puesto por el widget PlantillaSelect).
+    // o MP (cada <option> lleva data-tipo, puesto por el widget PlantillaSelect).
     (function () {
         var select = document.getElementById('{{ form.plantilla.id_for_label }}');
         var grupo = document.getElementById('grupoNumeroPrueba');
@@ -67,7 +69,7 @@
         function actualizar() {
             var opt = select.options[select.selectedIndex];
             var tipo = opt ? opt.getAttribute('data-tipo') : '';
-            grupo.classList.toggle('d-none', tipo !== 'PENSAR');
+            grupo.classList.toggle('d-none', tipo !== 'PENSAR' && tipo !== 'MP');
         }
 
         select.addEventListener('change', actualizar);
