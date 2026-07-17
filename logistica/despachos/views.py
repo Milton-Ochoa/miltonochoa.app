@@ -1,22 +1,28 @@
 """Vistas de despachos.
 
-F2: carga del reporte diario. F3: tablero (3 tabs) + detalle de orden. Las
-acciones de estado/cambio de material llegan en F4; el badge/export/bodega por
-defecto en F5. Gate `@solo_logistica` (el middleware ya bloquea el subdominio; el
-decorador es la segunda barrera). La carga es un POST-redirect con feedback por
-`messages` (logística sí muestra toasts).
+F2: carga del reporte diario. F3: tablero (3 tabs) + detalle de orden. F4:
+acciones de estado (alistar/despachar/revertir) y cambio de material por línea.
+El badge/export/bodega por defecto llegan en F5. Gate `@solo_logistica` (el
+middleware ya bloquea el subdominio; el decorador es la segunda barrera). Todas
+las acciones son POST-redirect con feedback por `messages` (logística sí muestra
+toasts).
 """
 from datetime import datetime, timedelta
+from decimal import InvalidOperation
 
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from .forms import CargaReporteForm
-from .models import CargaReporte, OrdenDespacho
+from .models import ArticuloERP, CargaReporte, LineaOrden, OrdenDespacho
 from .permisos import solo_logistica
 from .reporte import ReporteInvalido
-from .services import ReporteViejo, importar_reporte
+from .services import (ReporteViejo, TransicionInvalida, importar_reporte,
+                       marcar_erp_actualizado, marcar_estado,
+                       registrar_cambio_material, revertir_cambio_material)
 
 # Tabs del tablero (querystring `?tab=`).
 TABS = ('abiertas', 'sin_remision', 'cerradas')
@@ -99,13 +105,99 @@ def orden_detalle(request, pk):
             'lineas__articulo', 'lineas__articulo_cambio'),
         pk=pk)
     lineas = list(orden.lineas.all())
+    # Catálogo para el modal de cambio de material (select2). Solo hace falta si
+    # la orden aún admite cambios (no terminal); el select se puebla una vez.
+    articulos = () if orden.terminal else ArticuloERP.objects.all()
     return render(request, 'despachos/orden_detalle.html', {
         'orden': orden,
         'lineas_material': [l for l in lineas if l.es_material],
         'lineas_formacion': [l for l in lineas if not l.es_material],
         'eventos': orden.eventos.select_related('usuario', 'carga')[:100],
+        'articulos': articulos,
         'hoy': timezone.localdate(),
     })
+
+
+# ---------------------------------------------------------------------------
+# Acciones (F4) — POST-redirect, gate COMPLETO (LECTURA las bloquea en el
+# middleware). Los errores de dominio se traducen a `messages.error`.
+# ---------------------------------------------------------------------------
+
+def _volver(request, orden):
+    """Redirige al `next` del POST si es una URL local segura; si no, al detalle.
+    Permite que las acciones desde el tablero regresen a la misma tab/filtro."""
+    destino = request.POST.get('next') or ''
+    if destino and url_has_allowed_host_and_scheme(
+            destino, allowed_hosts={request.get_host()},
+            require_https=request.is_secure()):
+        return redirect(destino)
+    return redirect('log_despachos_detalle', pk=orden.pk)
+
+
+@require_POST
+@solo_logistica
+def orden_estado(request, pk):
+    """Transición de estado local (body `accion` ∈ alistar/despachar/revertir)."""
+    orden = get_object_or_404(OrdenDespacho, pk=pk)
+    accion = (request.POST.get('accion') or '').strip()
+    try:
+        marcar_estado(orden=orden, accion=accion, usuario=request.user)
+        messages.success(
+            request, f'Orden {orden.id_orden}: {orden.get_estado_display().lower()}.')
+    except TransicionInvalida as exc:
+        messages.error(request, str(exc))
+    return _volver(request, orden)
+
+
+@require_POST
+@solo_logistica
+def linea_cambio(request, pk):
+    """Registra un cambio de material en una línea (artículo destino + cantidad)."""
+    linea = get_object_or_404(LineaOrden.objects.select_related('orden'), pk=pk)
+    articulo_id = request.POST.get('articulo_id', '')
+    if not articulo_id.isdigit():
+        messages.error(request, 'Selecciona el artículo de reemplazo.')
+        return redirect('log_despachos_detalle', pk=linea.orden_id)
+    articulo = get_object_or_404(ArticuloERP, pk=articulo_id)
+    cantidad = (request.POST.get('cantidad') or '').replace(',', '.').strip()
+    try:
+        registrar_cambio_material(linea=linea, articulo_destino=articulo,
+                                  cantidad=cantidad, usuario=request.user)
+        messages.success(
+            request, f'Cambio de material registrado en {linea.cod_articulo}.')
+    except (TransicionInvalida, ValueError, InvalidOperation) as exc:
+        messages.error(request, str(exc) or 'La cantidad del cambio es inválida.')
+    return redirect('log_despachos_detalle', pk=linea.orden_id)
+
+
+@require_POST
+@solo_logistica
+def linea_cambio_quitar(request, pk):
+    """Quita el cambio de material de una línea (vuelve al artículo original)."""
+    linea = get_object_or_404(
+        LineaOrden.objects.select_related('orden', 'articulo_cambio'), pk=pk)
+    try:
+        revertir_cambio_material(linea=linea, usuario=request.user)
+        messages.success(
+            request, f'Cambio de material de {linea.cod_articulo} revertido.')
+    except TransicionInvalida as exc:
+        messages.error(request, str(exc))
+    return redirect('log_despachos_detalle', pk=linea.orden_id)
+
+
+@require_POST
+@solo_logistica
+def linea_erp_toggle(request, pk):
+    """Marca/desmarca que el cambio de material ya se reflejó en el ERP
+    (body `hecho=1` → reflejado; cualquier otro valor → pendiente de nuevo)."""
+    linea = get_object_or_404(LineaOrden.objects.select_related('orden'), pk=pk)
+    hecho = request.POST.get('hecho') == '1'
+    try:
+        marcar_erp_actualizado(linea=linea, usuario=request.user, hecho=hecho)
+        messages.success(request, 'Estado del cambio en el ERP actualizado.')
+    except TransicionInvalida as exc:
+        messages.error(request, str(exc))
+    return redirect('log_despachos_detalle', pk=linea.orden_id)
 
 
 @solo_logistica

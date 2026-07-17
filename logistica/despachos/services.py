@@ -29,6 +29,13 @@ class ReporteViejo(Exception):
     traducen a `messages.error`."""
 
 
+class TransicionInvalida(Exception):
+    """Acción de estado o de cambio de material no permitida para el estado
+    actual de la orden/línea (p. ej. despachar una orden que no está alistada, o
+    cambiar el material de una orden ya cerrada en el ERP). Las vistas la
+    traducen a `messages.error`."""
+
+
 # Campos "espejo ERP" de la orden: se copian tal cual desde la primera fila del
 # grupo (idénticos en todas las líneas de la orden) en cada carga.
 _CAMPOS_ERP = (
@@ -395,3 +402,136 @@ def _aplicar(parsed, nombre_archivo, usuario):
     carga.save(update_fields=['n_nuevas', 'n_actualizadas', 'n_cerradas_auto',
                               'n_alertas_remision'])
     return carga
+
+
+# ---------------------------------------------------------------------------
+# Acciones locales (F4): estado de trabajo + cambio de material
+#
+# Únicas puertas de escritura de las marcas locales. Cada acción es
+# `transaction.atomic` y deja un `EventoOrden` (bitácora append-only). Los
+# estados terminales (REMITIDA/ANULADA) los fija SOLO el import; estas acciones
+# nunca los tocan.
+# ---------------------------------------------------------------------------
+
+# Acciones de estado admitidas (body `accion` de la vista).
+ALISTAR, DESPACHAR, REVERTIR = 'alistar', 'despachar', 'revertir'
+ACCIONES_ESTADO = (ALISTAR, DESPACHAR, REVERTIR)
+
+
+def _evento(orden, tipo, detalle, usuario, carga=None):
+    """Crea un `EventoOrden` (append-only). `usuario=None` = evento automático."""
+    return EventoOrden.objects.create(orden=orden, tipo=tipo, detalle=detalle,
+                                      usuario=usuario, carga=carga)
+
+
+@transaction.atomic
+def marcar_estado(*, orden, accion, usuario):
+    """Aplica una transición de estado local a una orden y registra el evento.
+
+    Flujo estricto PENDIENTE → ALISTADA → DESPACHADA; `revertir` retrocede
+    exactamente un paso. Los estados terminales (REMITIDA/ANULADA, fijados por el
+    import) rechazan toda acción. Fija/limpia el par usuario/fecha del paso.
+    Lanza `TransicionInvalida` si la acción no aplica al estado actual."""
+    Estado = OrdenDespacho.Estado
+    estado = orden.estado
+    ahora = timezone.now()
+
+    if estado in OrdenDespacho.ESTADOS_TERMINALES:
+        raise TransicionInvalida(
+            f'La orden {orden.id_orden} está cerrada en el ERP '
+            f'({orden.get_estado_display()}); no admite cambios de estado.')
+
+    if accion == ALISTAR:
+        if estado != Estado.PENDIENTE:
+            raise TransicionInvalida('Solo se puede alistar una orden pendiente.')
+        orden.estado = Estado.ALISTADA
+        orden.alistada_por, orden.alistada_en = usuario, ahora
+        _evento(orden, EventoOrden.Tipo.ALISTADA, 'Orden alistada.', usuario)
+
+    elif accion == DESPACHAR:
+        if estado != Estado.ALISTADA:
+            raise TransicionInvalida('Solo se puede despachar una orden alistada.')
+        orden.estado = Estado.DESPACHADA
+        orden.despachada_por, orden.despachada_en = usuario, ahora
+        _evento(orden, EventoOrden.Tipo.DESPACHADA, 'Orden despachada.', usuario)
+
+    elif accion == REVERTIR:
+        if estado == Estado.DESPACHADA:
+            orden.estado = Estado.ALISTADA
+            orden.despachada_por = orden.despachada_en = None
+            orden.alerta_remision = False  # ya no está despachada → sin alerta
+            _evento(orden, EventoOrden.Tipo.REVERTIDA,
+                    'Despacho revertido (vuelve a Alistada).', usuario)
+        elif estado == Estado.ALISTADA:
+            orden.estado = Estado.PENDIENTE
+            orden.alistada_por = orden.alistada_en = None
+            _evento(orden, EventoOrden.Tipo.REVERTIDA,
+                    'Alistamiento revertido (vuelve a Pendiente).', usuario)
+        else:
+            raise TransicionInvalida(
+                'La orden ya está pendiente; no hay nada que revertir.')
+    else:
+        raise TransicionInvalida(f'Acción de estado desconocida: {accion!r}.')
+
+    orden.save()
+    return orden
+
+
+@transaction.atomic
+def registrar_cambio_material(*, linea, articulo_destino, cantidad, usuario):
+    """Marca un cambio de material en una línea: se despachará `articulo_destino`
+    (cantidad `cantidad`) en vez del artículo original. Deja la línea con
+    `pendiente_erp=True` (falta reflejarlo en el ERP) y registra el evento.
+    Rechaza órdenes cerradas en el ERP (`TransicionInvalida`) y cantidades no
+    positivas (`ValueError`). `cantidad` puede venir como str/Decimal."""
+    if linea.orden.terminal:
+        raise TransicionInvalida('No se puede cambiar el material de una orden '
+                                 'cerrada en el ERP.')
+    cantidad = Decimal(cantidad)  # InvalidOperation si el texto no es numérico
+    if cantidad <= 0:
+        raise ValueError('La cantidad del cambio debe ser mayor que cero.')
+
+    linea.articulo_cambio = articulo_destino
+    linea.cantidad_cambio = cantidad
+    linea.cambiado_por = usuario
+    linea.cambiado_en = timezone.now()
+    linea.pendiente_erp = True
+    linea.save(update_fields=['articulo_cambio', 'cantidad_cambio',
+                              'cambiado_por', 'cambiado_en', 'pendiente_erp'])
+    _evento(linea.orden, EventoOrden.Tipo.CAMBIO_MATERIAL,
+            f'{linea.cod_articulo} → {articulo_destino.codigo} '
+            f'({_cant_str(cantidad)}).', usuario)
+    return linea
+
+
+@transaction.atomic
+def revertir_cambio_material(*, linea, usuario):
+    """Quita el cambio de material de una línea (vuelve al artículo original) y
+    registra el evento. Lanza `TransicionInvalida` si la línea no tenía cambio."""
+    if linea.articulo_cambio_id is None:
+        raise TransicionInvalida('Esta línea no tiene un cambio de material.')
+    detalle = f'{linea.cod_articulo} → {linea.articulo_cambio.codigo}: revertido.'
+    linea.articulo_cambio = None
+    linea.cantidad_cambio = None
+    linea.cambiado_por = None
+    linea.cambiado_en = None
+    linea.pendiente_erp = False
+    linea.save(update_fields=['articulo_cambio', 'cantidad_cambio',
+                              'cambiado_por', 'cambiado_en', 'pendiente_erp'])
+    _evento(linea.orden, EventoOrden.Tipo.CAMBIO_REVERTIDO, detalle, usuario)
+    return linea
+
+
+@transaction.atomic
+def marcar_erp_actualizado(*, linea, usuario, hecho):
+    """Marca (`hecho=True`) o vuelve a marcar pendiente (`hecho=False`) que el
+    cambio de material ya se reflejó en el ERP. Solo aplica a líneas con cambio
+    (`TransicionInvalida` si no lo tienen)."""
+    if linea.articulo_cambio_id is None:
+        raise TransicionInvalida('Esta línea no tiene un cambio de material.')
+    linea.pendiente_erp = not hecho
+    linea.save(update_fields=['pendiente_erp'])
+    detalle = ('Cambio de material reflejado en el ERP.' if hecho
+               else 'Cambio de material marcado de nuevo como pendiente en el ERP.')
+    _evento(linea.orden, EventoOrden.Tipo.ERP_ACTUALIZADO, detalle, usuario)
+    return linea

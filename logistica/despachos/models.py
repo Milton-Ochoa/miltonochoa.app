@@ -152,6 +152,11 @@ class OrdenDespacho(models.Model):
         return self.estado in self.ESTADOS_ABIERTOS
 
     @property
+    def terminal(self):
+        """Cerrada en el ERP (REMITIDA/ANULADA): no admite acciones locales."""
+        return self.estado in self.ESTADOS_TERMINALES
+
+    @property
     def vencida(self):
         """Abierta, despachable y con fecha de entrega ya pasada."""
         return (self.abierta and self.es_despachable and self.fecha_entrega

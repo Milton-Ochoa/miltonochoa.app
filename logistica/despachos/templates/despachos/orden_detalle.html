@@ -85,6 +85,37 @@
                         <span class="text-muted">Cerrada en ERP:</span>
                         {% if orden.cerrada_en %}{{ orden.cerrada_en|date:"Y-m-d H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}
                     </p>
+
+                    {# ── Acciones de estado ── #}
+                    <hr class="my-2">
+                    {% if orden.terminal %}
+                        <p class="text-muted mb-0"><i class="fas fa-lock me-1"></i>Orden cerrada en el ERP: sin acciones de estado.</p>
+                    {% else %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if orden.estado == 'PENDIENTE' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline">
+                                {% csrf_token %}<input type="hidden" name="accion" value="alistar">
+                                <button class="btn btn-info btn-sm"><i class="fas fa-box me-1"></i>Alistar</button>
+                            </form>
+                        {% elif orden.estado == 'ALISTADA' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Marcar {{ orden.id_orden }} como despachada?');">
+                                {% csrf_token %}<input type="hidden" name="accion" value="despachar">
+                                <button class="btn btn-primary btn-sm"><i class="fas fa-truck me-1"></i>Despachar</button>
+                            </form>
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline">
+                                {% csrf_token %}<input type="hidden" name="accion" value="revertir">
+                                <button class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Volver a pendiente</button>
+                            </form>
+                        {% elif orden.estado == 'DESPACHADA' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Revertir el despacho de {{ orden.id_orden }}?');">
+                                {% csrf_token %}<input type="hidden" name="accion" value="revertir">
+                                <button class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Revertir despacho</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -120,6 +151,40 @@
                                 {% if l.pendiente_erp %}<span class="badge bg-warning text-dark ms-1">Pendiente en ERP</span>{% endif %}
                             {% else %}<span class="text-muted">—</span>{% endif %}
                             {% if l.eliminada_erp %}<span class="badge bg-danger ms-1">Eliminada en ERP</span>{% endif %}
+
+                            {% if not orden.terminal %}
+                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                {% if l.tiene_cambio %}
+                                    <form method="post" action="{% url 'log_despachos_cambio_erp' l.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        {% if l.pendiente_erp %}
+                                            <input type="hidden" name="hecho" value="1">
+                                            <button class="btn btn-outline-success btn-sm py-0 px-1" title="Marcar el cambio como reflejado en el ERP">
+                                                <i class="fas fa-check me-1"></i>Hecho en ERP
+                                            </button>
+                                        {% else %}
+                                            <input type="hidden" name="hecho" value="0">
+                                            <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="Volver a marcar pendiente en el ERP">
+                                                <i class="fas fa-rotate-left me-1"></i>Pendiente ERP
+                                            </button>
+                                        {% endif %}
+                                    </form>
+                                    <form method="post" action="{% url 'log_despachos_cambio_quitar' l.pk %}" class="d-inline"
+                                          onsubmit="return confirm('¿Quitar el cambio de material de {{ l.cod_articulo }}?');">
+                                        {% csrf_token %}
+                                        <button class="btn btn-outline-danger btn-sm py-0 px-1" title="Quitar el cambio de material">
+                                            <i class="fas fa-times me-1"></i>Quitar
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline-primary btn-sm py-0 px-1 abrir-cambio"
+                                            data-url="{% url 'log_despachos_cambio' l.pk %}"
+                                            data-cod="{{ l.cod_articulo }}" data-cant="{{ l.cantidad|floatformat:'-2' }}">
+                                        <i class="fas fa-exchange-alt me-1"></i>Cambiar material
+                                    </button>
+                                {% endif %}
+                            </div>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
@@ -192,4 +257,62 @@
         </div>
     </div>
 </div>
+
+{% if not orden.terminal %}
+{# ── Modal de cambio de material (compartido; el JS fija la línea destino) ── #}
+<div class="modal fade" id="modalCambio" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" id="formCambio" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exchange-alt me-2"></i>Cambio de material</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small mb-3">
+                    Artículo original: <strong id="cambioOriginal"></strong>.
+                    Se despachará el de reemplazo en su lugar; quedará
+                    <span class="badge bg-warning text-dark">Pendiente en ERP</span> hasta que lo confirmes.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label mb-1" for="cambioArticulo">Artículo de reemplazo *</label>
+                    <select name="articulo_id" id="cambioArticulo" class="form-select select2-busqueda" required>
+                        <option value="">— Selecciona un artículo —</option>
+                        {% for a in articulos %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label mb-1" for="cambioCantidad">Cantidad *</label>
+                    <input type="number" step="0.01" min="0.01" name="cantidad" id="cambioCantidad"
+                           class="form-control" required>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary btn-sm">Guardar cambio</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% include 'inventario/_select2.html' %}
+<script>
+(function () {
+    var modalEl = document.getElementById('modalCambio');
+    var form = document.getElementById('formCambio');
+    var sel = document.getElementById('cambioArticulo');
+    document.querySelectorAll('.abrir-cambio').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            form.action = btn.dataset.url;
+            document.getElementById('cambioOriginal').textContent = btn.dataset.cod;
+            document.getElementById('cambioCantidad').value = btn.dataset.cant;
+            // Reset del select2 (dispara el change de jQuery para limpiar el widget).
+            if (window.jQuery) { jQuery(sel).val('').trigger('change'); }
+            else { sel.value = ''; }
+            new bootstrap.Modal(modalEl).show();
+        });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}
