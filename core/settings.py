@@ -136,6 +136,7 @@ TEMPLATES = [
                 'programacion.monitores.context_processors.simulacros_sin_monitor',
                 'programacion.monitores.context_processors.pagos_monitores_por_revisar',
                 'logistica.inventario.context_processors.alertas_inventario',
+                'logistica.despachos.context_processors.alertas_despachos',
             ],
         },
     },

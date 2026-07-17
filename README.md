@@ -75,7 +75,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores, viáticos y **monitores/simulacros** (con su ciclo de pago propio). |
 | **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** y **a monitores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badges de pendientes. Acceso por grupo `area:financiera`. |
-| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega: catálogos, entradas/salidas/traslados, kardex inmutable, préstamos bidireccionales con devolución parcial, dashboard con alertas y exports a Excel. Acceso por grupo `area:logistica`. |
+| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega (catálogos, movimientos, kardex inmutable, préstamos), **personalización** de PDFs AcroForm por estudiante y **despachos** de material (tablero de órdenes del ERP externo, estados de trabajo, cambio de material, alertas y export). Acceso por grupo `area:logistica`. |
 
 **Programación**, **Financiera** y **Logística** comparten el mismo *chrome* visual (sidebar,
 header, footer) definido en `templates/base_chrome.html`; cada área solo aporta su menú y
@@ -330,11 +330,13 @@ lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
 
 ## Área Logística
 
-El área **Logística** (`logistica.miltonochoa.app`) gestiona el **inventario** de la
-operación con la sub-app `logistica.inventario` (tablas con prefijo `log_`). Es un
-inventario **por cantidades** (sin seriales ni costos; el valor unitario de cada artículo
-es solo referencial para los exports), **multi-bodega** desde el día 1. Acceso por grupo
-`area:logistica`.
+El área **Logística** (`logistica.miltonochoa.app`) reúne tres sub-apps (tablas con prefijo
+`log_`): **inventario** (`logistica.inventario`), **personalización** de PDFs
+(`logistica.personalizacion`) y **despachos** de material (`logistica.despachos`). Acceso por
+grupo `area:logistica`.
+
+El **inventario** es **por cantidades** (sin seriales ni costos; el valor unitario de cada
+artículo es solo referencial para los exports), **multi-bodega** desde el día 1.
 
 ### Catálogos y existencias
 
@@ -374,6 +376,35 @@ es solo referencial para los exports), **multi-bodega** desde el día 1. Acceso 
 - **Exports a Excel** con filtros: existencias (por bodega, con valor referencial),
   movimientos (histórico completo, por tipo y rango) y préstamos (dirección/estado/solo
   vencidos, con totales prestado/devuelto/pendiente).
+
+### Personalización de PDFs
+
+- Rellena campos **AcroForm** de plantillas PDF con **PyMuPDF** y une **una hoja por
+  estudiante** (tipos Simulacro / Pensar / Martes de Prueba, con distinto nº de campos por
+  hoja). Las plantillas se suben y gestionan; los estudiantes se cargan por **Excel** en cada
+  generación (nada se persiste).
+
+### Despachos de material
+
+El personal despacha material físico a colegios; las órdenes viven en un **ERP externo** del
+que se descarga a diario un reporte (`.xls` que en realidad es una tabla HTML de ~26 MB). AAMO
+lo importa y da el **tablero de órdenes por despachar**.
+
+- **Carga diaria idempotente**: se sube el reporte y un servicio transaccional hace el upsert
+  conservando las marcas locales, sincroniza líneas y cierra las órdenes anuladas. Rechaza un
+  archivo más viejo que la última carga.
+- **Tablero** con 3 pestañas (por despachar / despachadas sin remisión / cerradas), filtros por
+  columna y atajos de fecha (vencidas / próx. 7 días / hoy / semana / mes), resaltado de
+  vencidas y próximas, y salto rápido a una orden por su número.
+- **Estados de trabajo** Pendiente → Alistada → Despachada (+ terminales automáticos
+  Remitida / Anulada del import), con **verificación cruzada** contra el ERP (despachada aquí
+  sin remisión, o cerrada en el ERP sin marcar → alerta).
+- **Cambio de material** por línea (artículo de reemplazo + cantidad) con flag "pendiente de
+  actualizar en ERP".
+- **Badge** de órdenes vencidas en el menú, **export a Excel** del tablero con los filtros
+  vigentes (permitido en solo lectura) y **bodega por defecto** por usuario que pre-filtra el
+  tablero (la asigna el superusuario). Las líneas de categoría FORMACIÓN (horas clase) no son
+  material y quedan fuera del tablero.
 
 ---
 
@@ -440,10 +471,13 @@ AAMO/
 │                            #   (sin modelos propios — importan de programacion.*)
 │
 ├── logistica/              # ÁREA logística (logistica.miltonochoa.app)
-│   ├── urls.py              #   router del área (raíz /): inventario
-│   └── inventario/          #   Inventario multi-bodega (label log_inventario, tablas log_*):
-│                            #   catálogos, kardex append-only, stock por servicios
-│                            #   transaccionales, préstamos bidireccionales, dashboard + exports
+│   ├── urls.py              #   router del área (raíz /): inventario + personalizacion + despachos
+│   ├── inventario/          #   Inventario multi-bodega (label log_inventario, tablas log_*):
+│   │                        #   catálogos, kardex append-only, stock por servicios
+│   │                        #   transaccionales, préstamos bidireccionales, dashboard + exports
+│   ├── personalizacion/     #   Relleno de PDFs AcroForm por estudiante (label log_personalizacion)
+│   └── despachos/           #   Tablero de órdenes del ERP externo (label log_despachos):
+│                            #   import idempotente, estados, cambio de material, alertas, export
 │
 ├── templates/              # Globales: base_chrome.html (chrome compartido), base.html
 │                           #   (menú programación), base_financiera.html (menú financiera),
@@ -639,6 +673,7 @@ python manage.py test colegios
 python manage.py test usuarios
 python manage.py test financiera.viaticos
 python manage.py test logistica.inventario
+python manage.py test logistica.despachos
 
 # Cobertura (requiere coverage)
 coverage run --source='.' manage.py test
@@ -646,14 +681,14 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 761 tests OK.**
+**Baseline actual: 908 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
 - App chica → un solo `tests.py`; app con varios dominios de test → paquete `tests/`
   (módulos `test_*.py`; hoy: `usuarios/`, `programacion/colegios/`,
-  `logistica/inventario/` y `logistica/personalizacion/`). Un módulo suelto se corre con
-  `python manage.py test usuarios.tests.test_seguridad`.
+  `logistica/inventario/`, `logistica/personalizacion/` y `logistica/despachos/`). Un módulo
+  suelto se corre con `python manage.py test usuarios.tests.test_seguridad`.
 - BD de tests siempre SQLite y `BASE_DOMAIN=testserver` — forzados en `core/settings.py`.
 - Los tests **de área** usan `Client(HTTP_HOST='programacion.testserver')`; los del **apex**
   (login, PWA) el host por defecto `testserver`.
@@ -804,7 +839,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 761 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 908 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.

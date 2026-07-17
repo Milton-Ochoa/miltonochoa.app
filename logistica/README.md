@@ -2,8 +2,9 @@
 
 Área del edificio AAMO servida en su propio subdominio
 (`logistica.miltonochoa.app`; dev: `logistica.lvh.me:8000`). Aquí viven el
-**inventario** de la operación (artículos, bodegas, movimientos y préstamos) y la
-**personalización** de PDFs (rellena plantillas AcroForm por estudiante).
+**inventario** de la operación (artículos, bodegas, movimientos y préstamos), la
+**personalización** de PDFs (rellena plantillas AcroForm por estudiante) y los
+**despachos** de material (tablero de órdenes del ERP externo).
 
 ## Estado
 
@@ -45,14 +46,43 @@ Módulo aparte del inventario (label `log_personalizacion`, tabla
 - **Permisos**: módulo `personalizacion` del área; generar es un POST "de lectura"
   (accesible en nivel LECTURA); subir/eliminar exigen COMPLETO.
 
+### Despachos de material (sub-app `logistica.despachos`)
+
+Módulo aparte (label `log_despachos`, tablas `log_despachos_*`). El personal despacha
+material físico a colegios; las órdenes viven en un **ERP externo** del que se descarga a
+diario un reporte (`.xls` que en realidad es una tabla HTML de ~26 MB). AAMO importa ese
+reporte y da el tablero de órdenes por despachar.
+
+- **Carga diaria idempotente** (`/despachos/cargar/`): sube el `.xls`; `importar_reporte`
+  (única puerta de escritura, `transaction.atomic()` con upsert bulk) refresca los datos ERP
+  conservando las marcas locales, sincroniza líneas, cierra órdenes anuladas y actualiza
+  alertas. **Anti-archivo-viejo**: rechaza un reporte más viejo que la última carga.
+- **Tablero** (`/despachos/`): 3 tabs (por despachar / despachadas sin remisión / cerradas),
+  filtros por columna + atajos de fecha (vencidas / próx. 7 días / hoy / semana / mes)
+  client-side, resaltado de vencidas (rojo) y próximas (amarillo), `?q=PPAL-N` salto al
+  detalle. **Detalle** (`/despachos/orden/<pk>/`): datos ERP, líneas de material (FORMACIÓN
+  colapsada aparte) e historial de eventos append-only.
+- **Estados de trabajo** `PENDIENTE → ALISTADA → DESPACHADA` (marcar/revertir un paso) +
+  terminales automáticos `REMITIDA`/`ANULADA` del import. **Verificación cruzada**: despachada
+  aquí pero sin remisión en el ERP → alerta; cerrada en el ERP sin marcar → aviso.
+- **Cambio de material** por línea (artículo de reemplazo + cantidad) con flag "pendiente de
+  actualizar en ERP".
+- **Badge** rojo de órdenes vencidas (context processor `alertas_despachos`). **Export a
+  Excel** del tablero con los filtros vigentes (reutiliza el helper de inventario; permitido en
+  LECTURA). **Bodega por defecto** por usuario (`AsignacionBodega`) que pre-filtra el tablero;
+  la gestiona el **superusuario** en `/despachos/bodegas/`.
+- **Permisos**: módulo `despachos` del área; ver tablero/detalle y exportar = LECTURA; cargar,
+  marcar y cambiar material = COMPLETO.
+
 ## Cómo está montada
 
-- `logistica/urls.py` → `include('logistica.inventario.urls')` y
-  `include('logistica.personalizacion.urls')` en la raíz `/`.
-- `logistica/inventario/` (label `log_inventario`) es la sub-app del inventario y
-  `logistica/personalizacion/` (label `log_personalizacion`) la de personalización.
-  Sus tablas usan el prefijo `log_` en `Meta.db_table` (registro completo en
-  la sección _Inventario de logística_ de `CLAUDE.md`).
+- `logistica/urls.py` → `include('logistica.inventario.urls')`,
+  `include('logistica.personalizacion.urls')` y `include('logistica.despachos.urls')` en la
+  raíz `/`.
+- `logistica/inventario/` (label `log_inventario`), `logistica/personalizacion/` (label
+  `log_personalizacion`) y `logistica/despachos/` (label `log_despachos`) son las 3 sub-apps.
+  Sus tablas usan el prefijo `log_` en `Meta.db_table` (registro completo en las secciones
+  _Inventario de logística_ y _Despachos de material_ de `CLAUDE.md`).
 - **Reglas de oro del dominio** (detalle en `CLAUDE.md`): `Movimiento` es un
   ledger **append-only** (kardex; los errores se corrigen con
   contramovimiento/ajuste, jamás edición/borrado) y `Stock` (denormalizado por
@@ -63,7 +93,8 @@ Módulo aparte del inventario (label `log_personalizacion`, tabla
   subdominio en `core/urls_logistica.py`; la sub-app en `INSTALLED_APPS`.
 - Los `messages` de Django se muestran como **toast** en esta área (mismo
   mecanismo que programación, en `templates/base_chrome.html`).
-- En `/admin/` todo está registrado; `Movimiento` y `Stock` son solo lectura.
+- En `/admin/` todo está registrado; `Movimiento` y `Stock` (inventario) y
+  `CargaReporte` y `EventoOrden` (despachos) son solo lectura.
 
 ## Acceso
 
