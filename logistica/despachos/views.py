@@ -13,6 +13,7 @@ from decimal import InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.models import Group, User
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -33,8 +34,10 @@ from .services import (ReporteViejo, TransicionInvalida, importar_reporte,
                        registrar_cambio_material, revertir_cambio_material)
 
 # Filtros de columna del tablero (name en el POST del export → campo del modelo).
+# `f_cliente` (columna "Colegio") NO está aquí: se filtra sobre `centro_costos` con
+# fallback a `cliente`, que no es un simple `icontains` (ver `tablero_exportar`).
 FILTROS_COLUMNA = {
-    'f_orden': 'id_orden', 'f_cliente': 'cliente', 'f_bodega': 'bodega',
+    'f_orden': 'id_orden', 'f_bodega': 'bodega',
     'f_ciudad': 'ciudad', 'f_depto': 'departamento', 'f_articulo': 'resumen_articulos',
 }
 
@@ -286,6 +289,14 @@ def tablero_exportar(request):
         if valor:
             ordenes = ordenes.filter(**{f'{campo_modelo}__icontains': valor})
 
+    # Columna "Colegio" = centro_costos con fallback a cliente: el filtro casa
+    # sobre centro_costos o, si viene vacío, sobre cliente (espeja `OrdenDespacho.colegio`).
+    colegio = (request.POST.get('f_cliente') or '').strip()
+    if colegio:
+        ordenes = ordenes.filter(
+            Q(centro_costos__icontains=colegio)
+            | Q(centro_costos='', cliente__icontains=colegio))
+
     # Rango de fecha de entrega (atajos/rango client-side de las tabs de trabajo).
     ent_desde = _parse_fecha(request.POST.get('ent_desde'))
     ent_hasta = _parse_fecha(request.POST.get('ent_hasta'))
@@ -302,7 +313,7 @@ def tablero_exportar(request):
         if o.cerrada_sin_marcar:
             alertas.append('Cerrada sin marcar')
         filas.append([
-            o.id_orden, o.cliente, o.bodega, o.ciudad, o.departamento,
+            o.id_orden, o.colegio, o.bodega, o.ciudad, o.departamento,
             o.direccion, o.telefono, o.vendedor, o.resumen_articulos, o.n_lineas,
             o.fecha_entrega.strftime('%Y-%m-%d') if o.fecha_entrega else '',
             o.fecha_orden.strftime('%Y-%m-%d %H:%M') if o.fecha_orden else '',
@@ -311,7 +322,7 @@ def tablero_exportar(request):
         ])
     excel = _generar_excel(
         titulo='Despachos',
-        columnas=['N° orden', 'Cliente', 'Bodega', 'Ciudad', 'Departamento',
+        columnas=['N° orden', 'Colegio', 'Bodega', 'Ciudad', 'Departamento',
                   'Dirección', 'Teléfono', 'Vendedor', 'Artículos', 'N° líneas',
                   'Fecha entrega', 'Fecha orden', 'Estado', 'Facturación ERP',
                   'Vigencia', 'Alertas'],

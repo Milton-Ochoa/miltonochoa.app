@@ -116,6 +116,31 @@ class ExportTest(_BaseLogistica):
         ordenes = {f[0] for f in self._leer(resp)[1:]}
         self.assertEqual(ordenes, {'PPAL-10'})
 
+    def test_export_columna_colegio_usa_centro_costos_con_fallback(self):
+        # centro_costos presente → se exporta ese; vacío → cae al cliente.
+        self.o1.centro_costos = 'COLEGIO REAL'
+        self.o1.save(update_fields=['centro_costos'])
+        filas = self._leer(self.client.post(_EXPORTAR, {'tab': 'abiertas'}))
+        self.assertEqual(filas[0][1], 'Colegio')  # cabecera renombrada
+        por_orden = {f[0]: f[1] for f in filas[1:]}
+        self.assertEqual(por_orden['PPAL-10'], 'COLEGIO REAL')   # centro de costos
+        self.assertEqual(por_orden['PPAL-11'], 'Colegio Dos')    # fallback a cliente
+
+    def test_export_filtro_colegio_precede_centro_costos_y_cae_a_cliente(self):
+        self.o1.centro_costos = 'COLEGIO REAL'
+        self.o1.save(update_fields=['centro_costos'])
+
+        def _ordenes(**post):
+            return {f[0] for f in self._leer(
+                self.client.post(_EXPORTAR, {'tab': 'abiertas', **post}))[1:]}
+
+        # Casa por centro_costos.
+        self.assertEqual(_ordenes(f_cliente='real'), {'PPAL-10'})
+        # o1 tiene centro_costos no vacío → NO casa por su cliente.
+        self.assertEqual(_ordenes(f_cliente='colegio uno'), set())
+        # o2 sin centro_costos → casa por cliente (fallback).
+        self.assertEqual(_ordenes(f_cliente='colegio dos'), {'PPAL-11'})
+
     def test_export_requiere_post(self):
         self.assertEqual(self.client.get(_EXPORTAR).status_code, 405)
 

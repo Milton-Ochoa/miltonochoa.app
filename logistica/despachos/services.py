@@ -111,9 +111,13 @@ def _cant_str(cantidad):
 
 def _denormalizar(incoming):
     """(es_despachable, n_lineas, resumen_articulos) desde las filas de la orden.
-    Solo cuentan las líneas de material (categoría ≠ FORMACIÓN)."""
+    Solo cuentan las líneas de material (categoría ≠ FORMACIÓN).
+
+    El resumen usa la DESCRIPCIÓN del artículo (más legible en el tablero que el
+    código); cae al código si la descripción viene vacía."""
     material = [f for f in incoming if not _es_formacion(f.categoria)]
-    partes = [f'{_cant_str(f.cantidad)}× {f.cod_articulo}' for f in material]
+    partes = [f'{_cant_str(f.cantidad)}× {f.descripcion or f.cod_articulo}'
+              for f in material]
     resumen = '; '.join(partes)[:300]
     return bool(material), len(material), resumen
 

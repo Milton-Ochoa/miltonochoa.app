@@ -148,6 +148,13 @@ class OrdenDespacho(models.Model):
         return f'{self.id_orden} — {self.cliente}'
 
     @property
+    def colegio(self):
+        """Nombre del colegio para la UI. En el reporte ERP el colegio viene en
+        'Centro de costos' (`centro_costos`); si esa columna está vacía se cae al
+        'Cliente' (`cliente`) como respaldo."""
+        return self.centro_costos or self.cliente
+
+    @property
     def abierta(self):
         return self.estado in self.ESTADOS_ABIERTOS
 
