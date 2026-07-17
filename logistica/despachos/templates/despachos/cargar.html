@@ -76,7 +76,8 @@
                     {% for c in cargas %}
                     <tr>
                         <td>{{ c.creado_en|date:"Y-m-d H:i" }}</td>
-                        <td>{{ c.usuario.get_full_name|default:c.usuario.username|default:"—" }}</td>
+                        {# La carga puede haber quedado sin usuario (FK SET_NULL): guardar el None antes de resolver .username, o el filtro `default` revienta al buscar en None. #}
+                        <td>{% if c.usuario %}{{ c.usuario.get_full_name|default:c.usuario.username }}{% else %}—{% endif %}</td>
                         <td class="text-end">{{ c.n_ordenes }}</td>
                         <td class="text-end">{{ c.n_nuevas }}</td>
                         <td class="text-end">{{ c.n_actualizadas }}</td>
