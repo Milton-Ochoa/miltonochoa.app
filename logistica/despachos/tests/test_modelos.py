@@ -43,6 +43,15 @@ class OrdenDespachoTest(TestCase):
             with transaction.atomic():
                 OrdenDespacho.objects.create(id_orden='PPAL-1')
 
+    def test_colegio_usa_centro_costos_con_fallback(self):
+        # El colegio vive en 'Centro de costos'; si está vacío, cae al 'Cliente'.
+        self.assertEqual(
+            OrdenDespacho(centro_costos='COLEGIO REAL', cliente='Cli').colegio,
+            'COLEGIO REAL')
+        self.assertEqual(
+            OrdenDespacho(centro_costos='', cliente='Colegio Fallback').colegio,
+            'Colegio Fallback')
+
     def test_abierta(self):
         for estado, esperado in [
             (OrdenDespacho.Estado.PENDIENTE, True),

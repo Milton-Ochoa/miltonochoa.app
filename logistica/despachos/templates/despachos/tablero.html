@@ -134,7 +134,7 @@
                 <thead class="table-dark">
                     <tr>
                         <th class="col-orden">N° orden</th>
-                        <th class="col-cliente">Cliente</th>
+                        <th class="col-cliente">Colegio</th>
                         <th class="col-bodega">Bodega</th>
                         <th class="col-ciudad">Ciudad</th>
                         <th class="col-depto">Depto.</th>
@@ -160,9 +160,10 @@
                 </thead>
                 <tbody id="cuerpoTablaDespachos">
                     {% for o in ordenes %}
+                    {# data-cliente lleva el COLEGIO (centro de costos con fallback a cliente): el encabezado de la columna es "Colegio" y su filtro busca sobre ese texto. #}
                     <tr class="fila-orden{% if tab != 'cerradas' and o.fecha_entrega %}{% if o.fecha_entrega < hoy %} fila-vencida{% elif o.fecha_entrega <= limite_proxima %} fila-proxima{% endif %}{% endif %}"
                         data-orden="{{ o.id_orden|lower }}"
-                        data-cliente="{{ o.cliente|lower }}"
+                        data-cliente="{{ o.colegio|lower }}"
                         data-bodega="{{ o.bodega|lower }}"
                         data-ciudad="{{ o.ciudad|lower }}"
                         data-depto="{{ o.departamento|lower }}"
@@ -170,7 +171,7 @@
                         data-entrega="{{ o.fecha_entrega|date:'Y-m-d' }}"
                         data-estado="{{ o.estado|lower }}">
                         <td><strong>{{ o.id_orden }}</strong></td>
-                        <td title="{{ o.cliente }}">{{ o.cliente }}</td>
+                        <td title="{{ o.colegio }}">{{ o.colegio }}</td>
                         <td>{{ o.bodega }}</td>
                         <td>{{ o.ciudad }}</td>
                         <td>{{ o.departamento }}</td>

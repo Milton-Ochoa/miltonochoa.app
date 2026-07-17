@@ -29,10 +29,11 @@
         <div class="col-lg-7">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-dark text-white py-2">
-                    <i class="fas fa-building me-1"></i> Cliente y orden (datos del ERP)
+                    <i class="fas fa-building me-1"></i> Colegio y orden (datos del ERP)
                 </div>
                 <div class="card-body">
                     <dl class="row mb-0 small">
+                        <dt class="col-sm-4">Colegio</dt><dd class="col-sm-8">{{ orden.colegio|default:"—" }}</dd>
                         <dt class="col-sm-4">Cliente</dt><dd class="col-sm-8">{{ orden.cliente|default:"—" }}</dd>
                         <dt class="col-sm-4">ID. cliente</dt><dd class="col-sm-8">{{ orden.id_cliente|default:"—" }}</dd>
                         <dt class="col-sm-4">Teléfono</dt><dd class="col-sm-8">{{ orden.telefono|default:"—" }}</dd>
@@ -41,7 +42,6 @@
                         <dt class="col-sm-4">Dirección</dt><dd class="col-sm-8">{{ orden.direccion|default:"—" }}</dd>
                         <dt class="col-sm-4">Bodega</dt><dd class="col-sm-8">{{ orden.bodega|default:"—" }}</dd>
                         <dt class="col-sm-4">Sucursal</dt><dd class="col-sm-8">{{ orden.sucursal|default:"—" }}</dd>
-                        <dt class="col-sm-4">Centro de costos</dt><dd class="col-sm-8">{{ orden.centro_costos|default:"—" }}</dd>
                         <dt class="col-sm-4">Vendedor</dt><dd class="col-sm-8">{{ orden.vendedor|default:"—" }}</dd>
                         <dt class="col-sm-4">Fecha de orden</dt><dd class="col-sm-8">{{ orden.fecha_orden|date:"Y-m-d H:i"|default:"—" }}</dd>
                         <dt class="col-sm-4">Fecha de entrega</dt>

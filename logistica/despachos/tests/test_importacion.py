@@ -63,14 +63,23 @@ class CreacionInicialTest(_BaseImport):
         self.assertEqual(carga.n_actualizadas, 0)
 
     def test_denormalizaciones_y_resumen(self):
+        # El resumen usa la DESCRIPCIÓN del artículo (más legible que el código).
         self._importar([
-            _fila(id_orden='PPAL-1', cod_articulo='727', cantidad='17,00'),
-            _fila(id_orden='PPAL-1', cod_articulo='728', cantidad='3,00'),
+            _fila(id_orden='PPAL-1', cod_articulo='727', descripcion='SIMULACRO 5', cantidad='17,00'),
+            _fila(id_orden='PPAL-1', cod_articulo='728', descripcion='PENSAR 3', cantidad='3,00'),
         ])
         o = OrdenDespacho.objects.get(id_orden='PPAL-1')
         self.assertTrue(o.es_despachable)
         self.assertEqual(o.n_lineas, 2)
-        self.assertEqual(o.resumen_articulos, '17× 727; 3× 728')
+        self.assertEqual(o.resumen_articulos, '17× SIMULACRO 5; 3× PENSAR 3')
+
+    def test_resumen_cae_al_codigo_si_no_hay_descripcion(self):
+        # Sin descripción, el resumen usa el código como respaldo.
+        self._importar([
+            _fila(id_orden='PPAL-1', cod_articulo='727', descripcion='', cantidad='4,00'),
+        ])
+        o = OrdenDespacho.objects.get(id_orden='PPAL-1')
+        self.assertEqual(o.resumen_articulos, '4× 727')
 
     def test_orden_100_formacion_no_es_despachable(self):
         self._importar([
@@ -86,13 +95,15 @@ class CreacionInicialTest(_BaseImport):
 
     def test_orden_mixta_solo_material_en_resumen(self):
         self._importar([
-            _fila(id_orden='PPAL-1', cod_articulo='727', categoria='EVALUACIÓN', cantidad='5,00'),
-            _fila(id_orden='PPAL-1', cod_articulo='H1', categoria='FORMACIÓN', cantidad='2,00'),
+            _fila(id_orden='PPAL-1', cod_articulo='727', descripcion='SIMULACRO 5',
+                  categoria='EVALUACIÓN', cantidad='5,00'),
+            _fila(id_orden='PPAL-1', cod_articulo='H1', descripcion='HORAS CLASE',
+                  categoria='FORMACIÓN', cantidad='2,00'),
         ])
         o = OrdenDespacho.objects.get(id_orden='PPAL-1')
         self.assertTrue(o.es_despachable)
         self.assertEqual(o.n_lineas, 1)
-        self.assertEqual(o.resumen_articulos, '5× 727')
+        self.assertEqual(o.resumen_articulos, '5× SIMULACRO 5')
         self.assertEqual(o.lineas.count(), 2)
 
 
