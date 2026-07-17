@@ -138,9 +138,9 @@
         </a>
         {% endif %}
 
-        {# ── Despachos ── (primer nivel; apunta a la carga por ahora, F2. El tablero y el badge llegan en F3/F5) #}
+        {# ── Despachos ── (primer nivel; apunta al tablero. El badge de vencidas llega en F5) #}
         {% if 'despachos' in mp %}
-        <a href="{% url 'log_despachos_cargar' %}" class="nav-item {% if request.resolver_match.url_name == 'log_despachos_cargar' %}active{% endif %}">
+        <a href="{% url 'log_despachos_tablero' %}" class="nav-item {% if request.resolver_match.url_name == 'log_despachos_tablero' or request.resolver_match.url_name == 'log_despachos_detalle' or request.resolver_match.url_name == 'log_despachos_cargar' %}active{% endif %}">
             <i class="fas fa-truck icon-main text-info"></i> Despachos
         </a>
         {% endif %}

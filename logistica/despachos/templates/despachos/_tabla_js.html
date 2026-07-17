@@ -1,0 +1,152 @@
+{% comment %}
+  Filtrado por columna (data-*) + rango/atajos de fecha de entrega client-side +
+  paginación inline. Mismo patrón que viáticos/pagos, adaptado a despachos (ids
+  propios). Los atajos de fecha y el buscador "Ir a orden" solo existen en las
+  tabs de trabajo; el JS tolera su ausencia en la tab "Cerradas".
+{% endcomment %}
+<script>
+(function () {
+    var HOY = "{{ hoy|date:'Y-m-d' }}";
+
+    var POR_PAGINA = 20;
+    var pagina = 1;
+
+    var inputs = document.querySelectorAll('.fila-filtros input[data-filtro]');
+    var filas  = Array.from(document.querySelectorAll('#cuerpoTablaDespachos tr.fila-orden'));
+    var ctrl   = document.getElementById('paginaControlesDesp');
+    var cont   = document.getElementById('contadorVisiblesDesp');
+    var inpDesde = document.getElementById('despDesde');
+    var inpHasta = document.getElementById('despHasta');
+
+    // ── Utilidades de fecha (operan sobre strings ISO 'YYYY-MM-DD') ──
+    function d(iso) { var p = iso.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+    function iso(dt) {
+        var m = dt.getMonth() + 1, day = dt.getDate();
+        return dt.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (day < 10 ? '0' + day : day);
+    }
+
+    function filtradas() {
+        var q = {};
+        inputs.forEach(function (inp) {
+            var val = inp.value.trim().toLowerCase();
+            if (val) q[inp.dataset.filtro] = val;
+        });
+        var desde = inpDesde && inpDesde.value ? inpDesde.value : null;
+        var hasta = inpHasta && inpHasta.value ? inpHasta.value : null;
+
+        return filas.filter(function (tr) {
+            for (var k in q) {
+                if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
+            }
+            if (desde || hasta) {
+                var ent = tr.dataset.entrega;
+                if (!ent) return false;               // sin fecha de entrega no entra en un rango
+                if (desde && ent < desde) return false;
+                if (hasta && ent > hasta) return false;
+            }
+            return true;
+        });
+    }
+
+    function render() {
+        var f = filtradas();
+        var total = Math.max(1, Math.ceil(f.length / POR_PAGINA));
+        if (pagina > total) pagina = total;
+        var inicio = (pagina - 1) * POR_PAGINA;
+
+        filas.forEach(function (tr) { tr.style.display = 'none'; });
+        f.slice(inicio, inicio + POR_PAGINA).forEach(function (tr) { tr.style.display = ''; });
+
+        if (cont) cont.textContent = f.length;
+        renderControles(total);
+    }
+
+    function renderControles(total) {
+        if (!ctrl) return;
+        ctrl.innerHTML = '';
+        if (total <= 1) return;
+
+        function addLi(label, page, opts) {
+            var li = document.createElement('li');
+            li.className = 'page-item' + (opts && opts.disabled ? ' disabled' : '') + (opts && opts.active ? ' active' : '');
+            var a = document.createElement('a');
+            a.className = 'page-link';
+            a.href = '#';
+            a.innerHTML = label;
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (opts && opts.disabled) return;
+                pagina = page;
+                render();
+            });
+            li.appendChild(a);
+            ctrl.appendChild(li);
+        }
+
+        addLi('&laquo;', pagina - 1, { disabled: pagina === 1 });
+        for (var i = 1; i <= total; i++) {
+            if (i === 1 || i === total || Math.abs(i - pagina) <= 2) {
+                addLi(i, i, { active: i === pagina });
+            } else if (Math.abs(i - pagina) === 3) {
+                var li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">…</span>';
+                ctrl.appendChild(li);
+            }
+        }
+        addLi('&raquo;', pagina + 1, { disabled: pagina === total });
+    }
+
+    inputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { pagina = 1; render(); });
+    });
+    if (inpDesde) inpDesde.addEventListener('change', function () { pagina = 1; render(); });
+    if (inpHasta) inpHasta.addEventListener('change', function () { pagina = 1; render(); });
+
+    // ── Atajos de fecha de entrega ──
+    document.querySelectorAll('[data-atajo]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var hoy = d(HOY), desde = '', hasta = '';
+            switch (btn.dataset.atajo) {
+                case 'todas': break;
+                case 'vencidas':
+                    hasta = iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1));
+                    break;
+                case 'prox7':
+                    desde = HOY;
+                    hasta = iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 7));
+                    break;
+                case 'hoy':
+                    desde = HOY; hasta = HOY;
+                    break;
+                case 'semana':
+                    var dow = (hoy.getDay() + 6) % 7;  // 0 = lunes
+                    desde = iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dow));
+                    hasta = iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dow + 6));
+                    break;
+                case 'mes':
+                    desde = iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+                    hasta = iso(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
+                    break;
+            }
+            if (inpDesde) inpDesde.value = desde;
+            if (inpHasta) inpHasta.value = hasta;
+            pagina = 1; render();
+        });
+    });
+
+    // ── Buscador "Ir a orden" (client-side navega al ?q= del server) ──
+    var buscarOrden = document.getElementById('despBuscarOrden');
+    if (buscarOrden) {
+        buscarOrden.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var v = buscarOrden.value.trim();
+                if (v) window.location.href = "{% url 'log_despachos_tablero' %}?q=" + encodeURIComponent(v);
+            }
+        });
+    }
+
+    render();
+})();
+</script>
