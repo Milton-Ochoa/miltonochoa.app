@@ -43,6 +43,12 @@ class OrdenDespachoTest(TestCase):
             with transaction.atomic():
                 OrdenDespacho.objects.create(id_orden='PPAL-1')
 
+    def test_articulos_lista_parte_el_resumen(self):
+        self.assertEqual(
+            OrdenDespacho(resumen_articulos='3× LIBRO A; 2× LIBRO B').articulos_lista,
+            ['3× LIBRO A', '2× LIBRO B'])
+        self.assertEqual(OrdenDespacho(resumen_articulos='').articulos_lista, [])
+
     def test_colegio_usa_centro_costos_con_fallback(self):
         # El colegio vive en 'Centro de costos'; si está vacío, cae al 'Cliente'.
         self.assertEqual(

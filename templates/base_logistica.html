@@ -138,13 +138,10 @@
         </a>
         {% endif %}
 
-        {# ── Despachos ── (primer nivel; apunta al tablero. Badge = órdenes vencidas) #}
+        {# ── Despachos ── (primer nivel; apunta al tablero) #}
         {% if 'despachos' in mp %}
         <a href="{% url 'log_despachos_tablero' %}" class="nav-item d-flex align-items-center {% if request.resolver_match.url_name == 'log_despachos_tablero' or request.resolver_match.url_name == 'log_despachos_detalle' or request.resolver_match.url_name == 'log_despachos_cargar' or request.resolver_match.url_name == 'log_despachos_bodegas' %}active{% endif %}">
             <i class="fas fa-truck icon-main text-info"></i> <span>Despachos</span>
-            {% if desp_vencidas_count %}
-            <span class="badge bg-danger ms-auto" style="font-size:0.7rem; padding:2px 6px;">{{ desp_vencidas_count }}</span>
-            {% endif %}
         </a>
         {% endif %}
         {% endwith %}
