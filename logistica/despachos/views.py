@@ -2,27 +2,41 @@
 
 F2: carga del reporte diario. F3: tablero (3 tabs) + detalle de orden. F4:
 acciones de estado (alistar/despachar/revertir) y cambio de material por línea.
-El badge/export/bodega por defecto llegan en F5. Gate `@solo_logistica` (el
-middleware ya bloquea el subdominio; el decorador es la segunda barrera). Todas
-las acciones son POST-redirect con feedback por `messages` (logística sí muestra
-toasts).
+F5: badge (context processor), export a Excel del tablero con filtros vigentes,
+bodega por defecto por usuario y su gestión (superusuario). Gate `@solo_logistica`
+(el middleware ya bloquea el subdominio; el decorador es la segunda barrera).
+Todas las acciones son POST-redirect con feedback por `messages` (logística sí
+muestra toasts).
 """
 from datetime import datetime, timedelta
 from decimal import InvalidOperation
 
 from django.contrib import messages
+from django.contrib.auth.models import Group, User
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from core.areas import GRUPO_STAFF_LOGISTICA
+# Los helpers de Excel se reutilizan tal cual del inventario (mismo trade-off
+# self-contained openpyxl); no se duplica la maquinaria de la hoja.
+from logistica.inventario.views import _generar_excel, _respuesta_xlsx
+
 from .forms import CargaReporteForm
-from .models import ArticuloERP, CargaReporte, LineaOrden, OrdenDespacho
+from .models import (ArticuloERP, AsignacionBodega, CargaReporte, LineaOrden,
+                     OrdenDespacho)
 from .permisos import solo_logistica
 from .reporte import ReporteInvalido
 from .services import (ReporteViejo, TransicionInvalida, importar_reporte,
                        marcar_erp_actualizado, marcar_estado,
                        registrar_cambio_material, revertir_cambio_material)
+
+# Filtros de columna del tablero (name en el POST del export → campo del modelo).
+FILTROS_COLUMNA = {
+    'f_orden': 'id_orden', 'f_cliente': 'cliente', 'f_bodega': 'bodega',
+    'f_ciudad': 'ciudad', 'f_depto': 'departamento', 'f_articulo': 'resumen_articulos',
+}
 
 # Tabs del tablero (querystring `?tab=`).
 TABS = ('abiertas', 'sin_remision', 'cerradas')
@@ -38,6 +52,26 @@ def _parse_fecha(valor):
         return datetime.strptime((valor or '').strip(), '%Y-%m-%d').date()
     except (ValueError, TypeError):
         return None
+
+
+def _normaliza_tab(valor):
+    return valor if valor in TABS else 'abiertas'
+
+
+def _queryset_tab(tab, *, desde=None, hasta=None):
+    """Queryset base de cada tab (misma lógica que comparten tablero y export).
+    `desde`/`hasta` solo aplican a la tab "cerradas" (rango de `fecha_orden`)."""
+    if tab == 'abiertas':
+        return OrdenDespacho.objects.filter(
+            estado__in=OrdenDespacho.ESTADOS_ABIERTOS, es_despachable=True)
+    if tab == 'sin_remision':
+        return OrdenDespacho.objects.filter(estado=OrdenDespacho.Estado.DESPACHADA)
+    qs = OrdenDespacho.objects.filter(estado__in=OrdenDespacho.ESTADOS_TERMINALES)
+    if desde:
+        qs = qs.filter(fecha_orden__date__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha_orden__date__lte=hasta)
+    return qs
 
 
 @solo_logistica
@@ -59,9 +93,7 @@ def tablero(request):
             return redirect('log_despachos_detalle', pk=orden.pk)
         messages.warning(request, f'No se encontró ninguna orden «{q}».')
 
-    tab = request.GET.get('tab')
-    if tab not in TABS:
-        tab = 'abiertas'
+    tab = _normaliza_tab(request.GET.get('tab'))
 
     # Contadores de las tabs de trabajo (cheap COUNTs, cubiertos por el índice).
     n_abiertas = OrdenDespacho.objects.filter(
@@ -73,15 +105,10 @@ def tablero(request):
     desde = _parse_fecha(request.GET.get('desde')) or (hoy - timedelta(days=DIAS_CERRADAS))
     hasta = _parse_fecha(request.GET.get('hasta')) or hoy
 
-    if tab == 'abiertas':
-        ordenes = OrdenDespacho.objects.filter(
-            estado__in=OrdenDespacho.ESTADOS_ABIERTOS, es_despachable=True)
-    elif tab == 'sin_remision':
-        ordenes = OrdenDespacho.objects.filter(estado=OrdenDespacho.Estado.DESPACHADA)
-    else:  # cerradas
-        ordenes = OrdenDespacho.objects.filter(
-            estado__in=OrdenDespacho.ESTADOS_TERMINALES,
-            fecha_orden__date__gte=desde, fecha_orden__date__lte=hasta)
+    ordenes = _queryset_tab(tab, desde=desde, hasta=hasta)
+
+    # Bodega por defecto del usuario (pre-puebla el filtro de bodega, borrable).
+    asignacion = AsignacionBodega.objects.filter(usuario=request.user).first()
 
     return render(request, 'despachos/tablero.html', {
         'tab': tab,
@@ -93,6 +120,7 @@ def tablero(request):
         'desde': desde,
         'hasta': hasta,
         'q': q,
+        'bodega_default': asignacion.bodega if asignacion else '',
     })
 
 
@@ -232,4 +260,116 @@ def cargar(request):
         'form': CargaReporteForm(),
         'cargas': cargas,
         'ultima': cargas[0] if cargas else None,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Export a Excel (F5) — POST desde el modal del tablero; el JS copia los filtros
+# vigentes (tab + columnas + rango de fecha) a inputs hidden y el server los
+# re-aplica al queryset (patrón `fin_viaticos_exportar`). Permitido en LECTURA
+# (ruta `/despachos/exportar/` declarada en `posts_lectura` de `core/modulos.py`).
+# ---------------------------------------------------------------------------
+
+@require_POST
+@solo_logistica
+def tablero_exportar(request):
+    """Exporta el tablero (la tab y filtros vigentes) a Excel. Sin cap: se
+    exporta todo lo que casa los filtros, no la página."""
+    tab = _normaliza_tab(request.POST.get('tab'))
+    desde = _parse_fecha(request.POST.get('desde'))
+    hasta = _parse_fecha(request.POST.get('hasta'))
+    ordenes = _queryset_tab(tab, desde=desde, hasta=hasta)
+
+    # Filtros por columna (icontains, como el client-side del tablero).
+    for campo_post, campo_modelo in FILTROS_COLUMNA.items():
+        valor = (request.POST.get(campo_post) or '').strip()
+        if valor:
+            ordenes = ordenes.filter(**{f'{campo_modelo}__icontains': valor})
+
+    # Rango de fecha de entrega (atajos/rango client-side de las tabs de trabajo).
+    ent_desde = _parse_fecha(request.POST.get('ent_desde'))
+    ent_hasta = _parse_fecha(request.POST.get('ent_hasta'))
+    if ent_desde:
+        ordenes = ordenes.filter(fecha_entrega__gte=ent_desde)
+    if ent_hasta:
+        ordenes = ordenes.filter(fecha_entrega__lte=ent_hasta)
+
+    filas = []
+    for o in ordenes:
+        alertas = []
+        if o.alerta_remision:
+            alertas.append('Falta remisión')
+        if o.cerrada_sin_marcar:
+            alertas.append('Cerrada sin marcar')
+        filas.append([
+            o.id_orden, o.cliente, o.bodega, o.ciudad, o.departamento,
+            o.direccion, o.telefono, o.vendedor, o.resumen_articulos, o.n_lineas,
+            o.fecha_entrega.strftime('%Y-%m-%d') if o.fecha_entrega else '',
+            o.fecha_orden.strftime('%Y-%m-%d %H:%M') if o.fecha_orden else '',
+            o.get_estado_display(), o.estado_facturacion, o.vigencia,
+            '; '.join(alertas),
+        ])
+    excel = _generar_excel(
+        titulo='Despachos',
+        columnas=['N° orden', 'Cliente', 'Bodega', 'Ciudad', 'Departamento',
+                  'Dirección', 'Teléfono', 'Vendedor', 'Artículos', 'N° líneas',
+                  'Fecha entrega', 'Fecha orden', 'Estado', 'Facturación ERP',
+                  'Vigencia', 'Alertas'],
+        filas=filas,
+        anchos=[12, 28, 14, 14, 16, 30, 14, 20, 30, 9, 13, 17, 12, 24, 14, 22])
+    hoy = timezone.localdate().strftime('%Y%m%d')
+    return _respuesta_xlsx(excel, f'Despachos_{tab}_{hoy}.xlsx')
+
+
+# ---------------------------------------------------------------------------
+# Bodega por usuario (F5) — asignación formal user→bodega que fija el filtro por
+# defecto del tablero. La gestiona SOLO el superusuario (patrón
+# `plantilla_eliminar`: el template oculta la página y la vista rechaza el POST).
+# ---------------------------------------------------------------------------
+
+def _bodegas_erp():
+    """Bodegas distintas vistas en el ERP (para el select de asignación)."""
+    return list(OrdenDespacho.objects
+                .exclude(bodega='')
+                .values_list('bodega', flat=True)
+                .distinct().order_by('bodega'))
+
+
+@solo_logistica
+def bodegas_usuarios(request):
+    """Página de gestión de la bodega por defecto de cada usuario de logística.
+    Solo superusuario: el ítem no aparece a otros roles y el POST se rechaza."""
+    if not request.user.is_superuser:
+        messages.error(request, 'Solo el administrador puede gestionar bodegas.')
+        return redirect('log_despachos_tablero')
+
+    if request.method == 'POST':
+        usuario = get_object_or_404(User, pk=request.POST.get('user_id', ''))
+        bodega = (request.POST.get('bodega') or '').strip()
+        if bodega:
+            AsignacionBodega.objects.update_or_create(
+                usuario=usuario,
+                defaults={'bodega': bodega, 'asignado_por': request.user})
+            messages.success(
+                request, f'Bodega de {usuario.username}: {bodega}.')
+        else:
+            AsignacionBodega.objects.filter(usuario=usuario).delete()
+            messages.success(
+                request, f'{usuario.username} ya no tiene bodega por defecto.')
+        return redirect('log_despachos_bodegas')
+
+    # Usuarios del área (grupo de etiqueta) + los que ya tengan asignación.
+    grupo = Group.objects.filter(name=GRUPO_STAFF_LOGISTICA).first()
+    usuarios = User.objects.filter(is_active=True)
+    if grupo:
+        usuarios = usuarios.filter(groups=grupo)
+    else:
+        usuarios = usuarios.filter(bodega_despachos__isnull=False)
+    usuarios = (usuarios.exclude(is_superuser=True)
+                .select_related('bodega_despachos')
+                .order_by('username').distinct())
+
+    return render(request, 'despachos/bodegas.html', {
+        'usuarios': usuarios,
+        'bodegas': _bodegas_erp(),
     })

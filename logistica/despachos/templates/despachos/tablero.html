@@ -5,6 +5,14 @@
 <a href="{% url 'log_despachos_cargar' %}" class="btn btn-primary btn-sm fw-bold">
     <i class="fas fa-cloud-upload-alt me-1"></i> Cargar reporte
 </a>
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarDesp">
+    <i class="fas fa-file-excel me-1"></i> Exportar
+</button>
+{% if request.user.is_superuser %}
+<a href="{% url 'log_despachos_bodegas' %}" class="btn btn-outline-secondary btn-sm fw-bold">
+    <i class="fas fa-warehouse me-1"></i> Bodegas
+</a>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -139,7 +147,8 @@
                     <tr class="fila-filtros">
                         <th><input type="text" data-filtro="orden"></th>
                         <th><input type="text" data-filtro="cliente"></th>
-                        <th><input type="text" data-filtro="bodega"></th>
+                        {# Pre-poblado con la bodega por defecto del usuario (borrable). #}
+                        <th><input type="search" data-filtro="bodega" value="{{ bodega_default }}"></th>
                         <th><input type="text" data-filtro="ciudad"></th>
                         <th><input type="text" data-filtro="depto"></th>
                         <th><input type="text" data-filtro="articulo"></th>
@@ -250,6 +259,61 @@
             input.value = btn.dataset.accion;
             form.submit();
         });
+    });
+})();
+</script>
+
+{# ── Modal: exportar el tablero con los filtros vigentes ── #}
+<div class="modal fade" id="modalExportarDesp" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'log_despachos_exportar' %}" class="modal-content" id="despExportForm">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar despachos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Se exporta la pestaña <strong>«{{ tab }}»</strong> con los filtros que tengas aplicados ahora en la tabla (sin límite de páginas).</p>
+                <p class="text-muted small mb-0"><i class="fas fa-info-circle me-1"></i> El archivo incluye todas las órdenes que casan los filtros vigentes, no solo la página visible.</p>
+                {# Hidden: los rellena el JS con el estado vigente del tablero al enviar. #}
+                <input type="hidden" name="tab" value="{{ tab }}">
+                <input type="hidden" name="desde" value="{% if tab == 'cerradas' %}{{ desde|date:'Y-m-d' }}{% endif %}">
+                <input type="hidden" name="hasta" value="{% if tab == 'cerradas' %}{{ hasta|date:'Y-m-d' }}{% endif %}">
+                <input type="hidden" name="ent_desde" id="despExpEntDesde">
+                <input type="hidden" name="ent_hasta" id="despExpEntHasta">
+                <input type="hidden" name="f_orden"    id="despExpOrden">
+                <input type="hidden" name="f_cliente"  id="despExpCliente">
+                <input type="hidden" name="f_bodega"   id="despExpBodega">
+                <input type="hidden" name="f_ciudad"   id="despExpCiudad">
+                <input type="hidden" name="f_depto"    id="despExpDepto">
+                <input type="hidden" name="f_articulo" id="despExpArticulo">
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> Exportar</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+{% comment %}
+  Copia el estado vigente de los filtros client-side (columnas + rango de fecha de
+  entrega) a los inputs hidden del modal justo antes de enviar. El tab y el rango
+  de fecha_orden (cerradas) ya vienen renderizados server-side arriba.
+{% endcomment %}
+(function () {
+    var form = document.getElementById('despExportForm');
+    if (!form) return;
+    function val(sel) { var el = document.querySelector(sel); return el ? el.value.trim() : ''; }
+    form.addEventListener('submit', function () {
+        document.getElementById('despExpEntDesde').value = val('#despDesde');
+        document.getElementById('despExpEntHasta').value = val('#despHasta');
+        document.getElementById('despExpOrden').value    = val('.fila-filtros input[data-filtro="orden"]');
+        document.getElementById('despExpCliente').value  = val('.fila-filtros input[data-filtro="cliente"]');
+        document.getElementById('despExpBodega').value   = val('.fila-filtros input[data-filtro="bodega"]');
+        document.getElementById('despExpCiudad').value   = val('.fila-filtros input[data-filtro="ciudad"]');
+        document.getElementById('despExpDepto').value    = val('.fila-filtros input[data-filtro="depto"]');
+        document.getElementById('despExpArticulo').value = val('.fila-filtros input[data-filtro="articulo"]');
     });
 })();
 </script>
