@@ -1,0 +1,203 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Despachos{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_despachos_cargar' %}" class="btn btn-primary btn-sm fw-bold">
+    <i class="fas fa-cloud-upload-alt me-1"></i> Cargar reporte
+</a>
+{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-desp { table-layout: fixed; width: 100%; }
+    .tabla-desp th, .tabla-desp td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.83rem; padding: 0.4rem 0.5rem;
+    }
+    .tabla-desp thead.table-dark th { font-weight: 600; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tabla-desp tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-desp tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    /* Resaltado de vencimiento (solo en las tabs de trabajo). */
+    .tabla-desp tr.fila-vencida  td { background-color: #f8d7da !important; }
+    .tabla-desp tr.fila-proxima  td { background-color: #fff3cd !important; }
+    .col-orden   { width: 9%;  }
+    .col-cliente { width: 22%; }
+    .col-bodega  { width: 11%; }
+    .col-ciudad  { width: 11%; }
+    .col-depto   { width: 11%; }
+    .col-art     { width: 18%; }
+    .col-entrega { width: 9%;  text-align: center; }
+    .col-estado  { width: 9%;  text-align: center; }
+    .col-ver     { width: 6%;  text-align: center; }
+</style>
+
+<div class="container-fluid py-3">
+
+    {# ── Tabs ── #}
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'abiertas' %}active{% endif %}"
+               href="{% url 'log_despachos_tablero' %}?tab=abiertas">
+                <i class="fas fa-box-open me-1"></i> Por despachar
+                <span class="badge bg-secondary ms-1">{{ n_abiertas }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'sin_remision' %}active{% endif %}"
+               href="{% url 'log_despachos_tablero' %}?tab=sin_remision">
+                <i class="fas fa-truck-loading me-1"></i> Despachadas sin remisión
+                <span class="badge bg-secondary ms-1">{{ n_sin_remision }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'cerradas' %}active{% endif %}"
+               href="{% url 'log_despachos_tablero' %}?tab=cerradas">
+                <i class="fas fa-check-circle me-1"></i> Cerradas
+            </a>
+        </li>
+    </ul>
+
+    {# ── Barra de herramientas por tab ── #}
+    {% if tab == 'cerradas' %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end" action="{% url 'log_despachos_tablero' %}">
+                <input type="hidden" name="tab" value="cerradas">
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Fecha de orden desde</label>
+                    <input type="date" name="desde" value="{{ desde|date:'Y-m-d' }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-0">hasta</label>
+                    <input type="date" name="hasta" value="{{ hasta|date:'Y-m-d' }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter me-1"></i> Aplicar</button>
+                </div>
+                <div class="col-auto ms-auto">
+                    <label class="form-label small mb-0">Ir a la orden</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="q" value="{{ q }}" placeholder="PPAL-1234" class="form-control">
+                        <button type="submit" class="btn btn-outline-secondary"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+            </form>
+            <p class="text-muted small mb-0 mt-2">
+                <i class="fas fa-info-circle me-1"></i>
+                Se muestran las órdenes cerradas en el rango de <strong>fecha de orden</strong>.
+                El histórico completo saldrá por el export.
+            </p>
+        </div>
+    </div>
+    {% else %}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <span class="text-muted small me-1">Fecha de entrega:</span>
+        <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary" data-atajo="todas">Todas</button>
+            <button type="button" class="btn btn-outline-danger" data-atajo="vencidas">Vencidas</button>
+            <button type="button" class="btn btn-outline-warning" data-atajo="prox7">Próx. 7 días</button>
+            <button type="button" class="btn btn-outline-secondary" data-atajo="hoy">Hoy</button>
+            <button type="button" class="btn btn-outline-secondary" data-atajo="semana">Esta semana</button>
+            <button type="button" class="btn btn-outline-secondary" data-atajo="mes">Este mes</button>
+        </div>
+        <div class="d-flex align-items-center gap-1 ms-2">
+            <input type="date" id="despDesde" class="form-control form-control-sm" style="width: auto;">
+            <span class="text-muted small">a</span>
+            <input type="date" id="despHasta" class="form-control form-control-sm" style="width: auto;">
+        </div>
+        <div class="ms-auto">
+            <div class="input-group input-group-sm" style="width: 220px;">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="text" id="despBuscarOrden" class="form-control" placeholder="Ir a orden PPAL-…">
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-desp" id="tablaDespachos">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="col-orden">N° orden</th>
+                        <th class="col-cliente">Cliente</th>
+                        <th class="col-bodega">Bodega</th>
+                        <th class="col-ciudad">Ciudad</th>
+                        <th class="col-depto">Depto.</th>
+                        <th class="col-art">Artículos</th>
+                        <th class="col-entrega">Entrega</th>
+                        <th class="col-estado">Estado</th>
+                        <th class="col-ver">Ver</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th><input type="text" data-filtro="orden"></th>
+                        <th><input type="text" data-filtro="cliente"></th>
+                        <th><input type="text" data-filtro="bodega"></th>
+                        <th><input type="text" data-filtro="ciudad"></th>
+                        <th><input type="text" data-filtro="depto"></th>
+                        <th><input type="text" data-filtro="articulo"></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaDespachos">
+                    {% for o in ordenes %}
+                    <tr class="fila-orden{% if tab != 'cerradas' and o.fecha_entrega %}{% if o.fecha_entrega < hoy %} fila-vencida{% elif o.fecha_entrega <= limite_proxima %} fila-proxima{% endif %}{% endif %}"
+                        data-orden="{{ o.id_orden|lower }}"
+                        data-cliente="{{ o.cliente|lower }}"
+                        data-bodega="{{ o.bodega|lower }}"
+                        data-ciudad="{{ o.ciudad|lower }}"
+                        data-depto="{{ o.departamento|lower }}"
+                        data-articulo="{{ o.resumen_articulos|lower }}"
+                        data-entrega="{{ o.fecha_entrega|date:'Y-m-d' }}"
+                        data-estado="{{ o.estado|lower }}">
+                        <td><strong>{{ o.id_orden }}</strong></td>
+                        <td title="{{ o.cliente }}">{{ o.cliente }}</td>
+                        <td>{{ o.bodega }}</td>
+                        <td>{{ o.ciudad }}</td>
+                        <td>{{ o.departamento }}</td>
+                        <td title="{{ o.resumen_articulos }}">{{ o.resumen_articulos|default:"—" }}</td>
+                        <td class="text-center">{{ o.fecha_entrega|date:"Y-m-d"|default:"—" }}</td>
+                        <td class="text-center">
+                            {% if o.estado == 'PENDIENTE' %}<span class="badge bg-secondary">Pendiente</span>
+                            {% elif o.estado == 'ALISTADA' %}<span class="badge bg-info text-dark">Alistada</span>
+                            {% elif o.estado == 'DESPACHADA' %}<span class="badge bg-primary">Despachada</span>
+                            {% elif o.estado == 'REMITIDA' %}<span class="badge bg-success">Remitida</span>
+                            {% elif o.estado == 'ANULADA' %}<span class="badge bg-dark">Anulada</span>
+                            {% endif %}
+                            {% if o.alerta_remision %}<i class="fas fa-exclamation-triangle text-danger ms-1" title="Despachada aquí; falta la remisión en el ERP"></i>{% endif %}
+                            {% if o.cerrada_sin_marcar %}<i class="fas fa-flag text-warning ms-1" title="Cerrada en el ERP sin marcar despacho aquí"></i>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'log_despachos_detalle' o.pk %}" class="btn btn-outline-info btn-sm py-0 px-2">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox me-1"></i>
+                            {% if tab == 'cerradas' %}No hay órdenes cerradas en el rango seleccionado.
+                            {% elif tab == 'sin_remision' %}No hay órdenes despachadas pendientes de remisión.
+                            {% else %}No hay órdenes por despachar.{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="contadorVisiblesDesp">0</span> de {{ ordenes|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="paginaControlesDesp"></ul></nav>
+        </div>
+    </div>
+</div>
+
+{% include 'despachos/_tabla_js.html' %}
+{% endblock %}

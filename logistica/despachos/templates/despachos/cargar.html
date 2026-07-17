@@ -1,6 +1,12 @@
 {% extends 'base_logistica.html' %}
 {% block header_title %}Despachos — Cargar reporte{% endblock %}
 
+{% block header_center %}
+<a href="{% url 'log_despachos_tablero' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i> Volver al tablero
+</a>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-3" style="max-width: 1000px;">
 
