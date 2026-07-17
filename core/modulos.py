@@ -70,6 +70,9 @@ MODULOS = {
         # → accesible en LECTURA. Es ruta hoja (no prefijo de las de escritura), match exacto.
         Modulo('personalizacion', 'Personalización', ('/personalizacion/',),
                ('/personalizacion/generar/',)),
+        # Cargar/marcar/cambiar material = escrituras (COMPLETO); tablero/detalle
+        # + el export son LECTURA. El export es ruta hoja (match EXACTO seguro).
+        Modulo('despachos', 'Despachos', ('/despachos/',), ('/despachos/exportar/',)),
     ),
 }
 

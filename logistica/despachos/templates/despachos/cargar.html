@@ -1,0 +1,92 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Despachos — Cargar reporte{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1000px;">
+
+    {% comment %} Banner "datos al día de…": la Fecha orden más reciente vista en la última carga. {% endcomment %}
+    {% if ultima %}
+    <div class="alert alert-info d-flex align-items-center py-2" role="alert">
+        <i class="fas fa-clock me-2"></i>
+        <div>
+            Última carga: <strong>{{ ultima.creado_en|date:"Y-m-d H:i" }}</strong>
+            {% if ultima.usuario %} por {{ ultima.usuario.get_full_name|default:ultima.usuario.username }}{% endif %}.
+            Datos del ERP al <strong>{{ ultima.max_fecha_orden|date:"Y-m-d H:i"|default:"—" }}</strong>.
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Subir reporte ── #}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-white py-2">
+            <i class="fas fa-upload me-1"></i> Subir el reporte diario del ERP
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Sube el «Reporte de conceptos de órdenes de venta» (.xls) descargado del ERP.
+                Se importa todo el archivo: las órdenes nuevas se agregan, las existentes se
+                refrescan y las marcas de trabajo hechas aquí se conservan. Puedes recargarlo
+                varias veces al día. Un archivo más viejo que la última carga se rechaza.
+            </p>
+            <form method="post" enctype="multipart/form-data"
+                  action="{% url 'log_despachos_cargar' %}">
+                {% csrf_token %}
+                <div class="d-flex flex-column flex-sm-row gap-2 align-items-sm-end">
+                    <div class="flex-grow-1">
+                        <label for="id_archivo" class="form-label small fw-bold mb-1">
+                            {{ form.archivo.label }}
+                        </label>
+                        {{ form.archivo }}
+                    </div>
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="fas fa-cloud-upload-alt me-1"></i> Importar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Historial de cargas ── #}
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white py-2">
+            <i class="fas fa-history me-1"></i> Últimas cargas
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.83rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Usuario</th>
+                        <th class="text-end">Órdenes</th>
+                        <th class="text-end">Nuevas</th>
+                        <th class="text-end">Actualizadas</th>
+                        <th class="text-end">Cerradas</th>
+                        <th class="text-end">Alertas</th>
+                        <th class="text-end">Descartadas</th>
+                        <th>ERP al</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in cargas %}
+                    <tr>
+                        <td>{{ c.creado_en|date:"Y-m-d H:i" }}</td>
+                        <td>{{ c.usuario.get_full_name|default:c.usuario.username|default:"—" }}</td>
+                        <td class="text-end">{{ c.n_ordenes }}</td>
+                        <td class="text-end">{{ c.n_nuevas }}</td>
+                        <td class="text-end">{{ c.n_actualizadas }}</td>
+                        <td class="text-end">{{ c.n_cerradas_auto }}</td>
+                        <td class="text-end">{{ c.n_alertas_remision }}</td>
+                        <td class="text-end">{{ c.n_descartadas }}</td>
+                        <td>{{ c.max_fecha_orden|date:"Y-m-d H:i"|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">
+                        Aún no se ha cargado ningún reporte.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
