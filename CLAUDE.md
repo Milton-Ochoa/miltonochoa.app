@@ -1012,6 +1012,14 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
 - Ejecuta `python manage.py test` y compara con el baseline (727 OK).
+- **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
+  un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
+  fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran
+  afectar** (p. ej. `python manage.py test <sub-app>` + el área compartida si tocaron
+  `settings.py`/`base_*.html`/`core/modulos.py`/permisos), NO `python manage.py test` entero
+  (tarda demasiado). `check` + `makemigrations --check` sí en cada fase. **Solo la última fase con
+  código** corre la suite COMPLETA una vez para confirmar el baseline + todos los tests nuevos
+  juntos. (Aplica ahora al plan de despachos; ver su memoria `plan-ordenes-despachos.md`.)
 - Si cambias estructura (rutas, modelos, signals, áreas), **actualiza este archivo y el README**.
 - Si cambias estructura, también **regenera el grafo** con `/graphify . --update` para que el
   mapa de `graphify-out/` no quede desfasado (ver la sección _Mapa del proyecto: skill graphify_).
