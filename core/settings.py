@@ -96,6 +96,7 @@ INSTALLED_APPS = [
     'financiera.monitores',
     'logistica.inventario',
     'logistica.personalizacion',
+    'logistica.despachos',
 ]
 
 MIDDLEWARE = [
