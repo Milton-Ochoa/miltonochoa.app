@@ -23,15 +23,18 @@
     /* Resaltado de vencimiento (solo en las tabs de trabajo). */
     .tabla-desp tr.fila-vencida  td { background-color: #f8d7da !important; }
     .tabla-desp tr.fila-proxima  td { background-color: #fff3cd !important; }
-    .col-orden   { width: 9%;  }
-    .col-cliente { width: 22%; }
-    .col-bodega  { width: 11%; }
-    .col-ciudad  { width: 11%; }
-    .col-depto   { width: 11%; }
-    .col-art     { width: 18%; }
-    .col-entrega { width: 9%;  text-align: center; }
-    .col-estado  { width: 9%;  text-align: center; }
-    .col-ver     { width: 6%;  text-align: center; }
+    .col-orden    { width: 8%;  }
+    .col-cliente  { width: 18%; }
+    .col-bodega   { width: 10%; }
+    .col-ciudad   { width: 10%; }
+    .col-depto    { width: 10%; }
+    .col-art      { width: 15%; }
+    .col-entrega  { width: 8%;  text-align: center; }
+    .col-estado   { width: 9%;  text-align: center; }
+    .col-acciones { width: 12%; text-align: center; }
+    .col-ver      { width: 5%;  text-align: center; }
+    /* Los botones de acción no deben recortarse por el ellipsis de la celda. */
+    .tabla-desp td.col-acciones { overflow: visible; white-space: normal; }
 </style>
 
 <div class="container-fluid py-3">
@@ -130,6 +133,7 @@
                         <th class="col-art">Artículos</th>
                         <th class="col-entrega">Entrega</th>
                         <th class="col-estado">Estado</th>
+                        <th class="col-acciones">Acciones</th>
                         <th class="col-ver">Ver</th>
                     </tr>
                     <tr class="fila-filtros">
@@ -139,6 +143,7 @@
                         <th><input type="text" data-filtro="ciudad"></th>
                         <th><input type="text" data-filtro="depto"></th>
                         <th><input type="text" data-filtro="articulo"></th>
+                        <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
@@ -172,6 +177,31 @@
                             {% if o.alerta_remision %}<i class="fas fa-exclamation-triangle text-danger ms-1" title="Despachada aquí; falta la remisión en el ERP"></i>{% endif %}
                             {% if o.cerrada_sin_marcar %}<i class="fas fa-flag text-warning ms-1" title="Cerrada en el ERP sin marcar despacho aquí"></i>{% endif %}
                         </td>
+                        <td class="col-acciones">
+                            {% if o.estado == 'PENDIENTE' %}
+                                <button type="button" class="btn btn-info btn-sm py-0 px-2 desp-accion"
+                                        data-url="{% url 'log_despachos_estado' o.pk %}" data-accion="alistar">
+                                    <i class="fas fa-box me-1"></i>Alistar
+                                </button>
+                            {% elif o.estado == 'ALISTADA' %}
+                                <button type="button" class="btn btn-primary btn-sm py-0 px-2 desp-accion"
+                                        data-url="{% url 'log_despachos_estado' o.pk %}" data-accion="despachar"
+                                        data-confirm="¿Marcar {{ o.id_orden }} como despachada?">
+                                    <i class="fas fa-truck me-1"></i>Despachar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 desp-accion"
+                                        data-url="{% url 'log_despachos_estado' o.pk %}" data-accion="revertir"
+                                        title="Revertir a pendiente">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                            {% elif o.estado == 'DESPACHADA' %}
+                                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 desp-accion"
+                                        data-url="{% url 'log_despachos_estado' o.pk %}" data-accion="revertir"
+                                        data-confirm="¿Revertir el despacho de {{ o.id_orden }}?">
+                                    <i class="fas fa-undo me-1"></i>Revertir
+                                </button>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
                         <td class="text-center">
                             <a href="{% url 'log_despachos_detalle' o.pk %}" class="btn btn-outline-info btn-sm py-0 px-2">
                                 <i class="fas fa-eye"></i>
@@ -180,7 +210,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">
+                        <td colspan="10" class="text-center text-muted py-4">
                             <i class="fas fa-inbox me-1"></i>
                             {% if tab == 'cerradas' %}No hay órdenes cerradas en el rango seleccionado.
                             {% elif tab == 'sin_remision' %}No hay órdenes despachadas pendientes de remisión.
@@ -198,6 +228,31 @@
         </div>
     </div>
 </div>
+
+{% comment %}
+  Un solo formulario oculto para TODAS las acciones de estado de la tabla (evita
+  repetir el csrf_token en ~930 filas). Cada botón `.desp-accion` fija su action y
+  la acción y lo envía; `next` conserva la tab/filtro actual al volver.
+{% endcomment %}
+<form id="despAccionForm" method="post" class="d-none">
+    {% csrf_token %}
+    <input type="hidden" name="accion" id="despAccionInput">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+</form>
+<script>
+(function () {
+    var form = document.getElementById('despAccionForm');
+    var input = document.getElementById('despAccionInput');
+    document.querySelectorAll('.desp-accion').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (btn.dataset.confirm && !window.confirm(btn.dataset.confirm)) return;
+            form.action = btn.dataset.url;
+            input.value = btn.dataset.accion;
+            form.submit();
+        });
+    });
+})();
+</script>
 
 {% include 'despachos/_tabla_js.html' %}
 {% endblock %}
