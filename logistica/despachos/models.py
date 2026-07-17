@@ -148,6 +148,12 @@ class OrdenDespacho(models.Model):
         return f'{self.id_orden} — {self.cliente}'
 
     @property
+    def articulos_lista(self):
+        """`resumen_articulos` partido por artículo ('3× A; 2× B' → ['3× A',
+        '2× B']) para mostrar uno por línea en el tablero."""
+        return [p.strip() for p in self.resumen_articulos.split(';') if p.strip()]
+
+    @property
     def colegio(self):
         """Nombre del colegio para la UI. En el reporte ERP el colegio viene en
         'Centro de costos' (`centro_costos`); si esa columna está vacía se cae al

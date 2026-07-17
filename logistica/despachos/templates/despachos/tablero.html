@@ -31,18 +31,20 @@
     /* Resaltado de vencimiento (solo en las tabs de trabajo). */
     .tabla-desp tr.fila-vencida  td { background-color: #f8d7da !important; }
     .tabla-desp tr.fila-proxima  td { background-color: #fff3cd !important; }
-    .col-orden    { width: 8%;  }
-    .col-cliente  { width: 18%; }
-    .col-bodega   { width: 10%; }
-    .col-ciudad   { width: 10%; }
-    .col-depto    { width: 10%; }
-    .col-art      { width: 15%; }
-    .col-entrega  { width: 8%;  text-align: center; }
+    .col-orden    { width: 9%;  }
+    .col-cliente  { width: 24%; }
+    .col-bodega   { width: 13%; }
+    .col-art      { width: 24%; }
+    .col-entrega  { width: 9%;  text-align: center; }
     .col-estado   { width: 9%;  text-align: center; }
     .col-acciones { width: 12%; text-align: center; }
     .col-ver      { width: 5%;  text-align: center; }
     /* Los botones de acción no deben recortarse por el ellipsis de la celda. */
     .tabla-desp td.col-acciones { overflow: visible; white-space: normal; }
+    /* Artículos: uno por línea (se ven todos sin pasar el mouse). */
+    .tabla-desp td.col-art { overflow: visible; white-space: normal; vertical-align: top; line-height: 1.3; }
+    /* Esquinas redondeadas (como las demás tablas): la tarjeta recorta el thead. */
+    .card-tabla-desp { overflow: hidden; }
 </style>
 
 <div class="container-fluid py-3">
@@ -128,7 +130,7 @@
     </div>
     {% endif %}
 
-    <div class="card shadow-sm">
+    <div class="card shadow-sm card-tabla-desp">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 tabla-desp" id="tablaDespachos">
                 <thead class="table-dark">
@@ -136,8 +138,6 @@
                         <th class="col-orden">N° orden</th>
                         <th class="col-cliente">Colegio</th>
                         <th class="col-bodega">Bodega</th>
-                        <th class="col-ciudad">Ciudad</th>
-                        <th class="col-depto">Depto.</th>
                         <th class="col-art">Artículos</th>
                         <th class="col-entrega">Entrega</th>
                         <th class="col-estado">Estado</th>
@@ -149,8 +149,6 @@
                         <th><input type="text" data-filtro="cliente"></th>
                         {# Pre-poblado con la bodega por defecto del usuario (borrable). #}
                         <th><input type="search" data-filtro="bodega" value="{{ bodega_default }}"></th>
-                        <th><input type="text" data-filtro="ciudad"></th>
-                        <th><input type="text" data-filtro="depto"></th>
                         <th><input type="text" data-filtro="articulo"></th>
                         <th></th>
                         <th></th>
@@ -165,17 +163,13 @@
                         data-orden="{{ o.id_orden|lower }}"
                         data-cliente="{{ o.colegio|lower }}"
                         data-bodega="{{ o.bodega|lower }}"
-                        data-ciudad="{{ o.ciudad|lower }}"
-                        data-depto="{{ o.departamento|lower }}"
                         data-articulo="{{ o.resumen_articulos|lower }}"
                         data-entrega="{{ o.fecha_entrega|date:'Y-m-d' }}"
                         data-estado="{{ o.estado|lower }}">
                         <td><strong>{{ o.id_orden }}</strong></td>
                         <td title="{{ o.colegio }}">{{ o.colegio }}</td>
                         <td>{{ o.bodega }}</td>
-                        <td>{{ o.ciudad }}</td>
-                        <td>{{ o.departamento }}</td>
-                        <td title="{{ o.resumen_articulos }}">{{ o.resumen_articulos|default:"—" }}</td>
+                        <td class="col-art">{% for a in o.articulos_lista %}{{ a }}<br>{% empty %}—{% endfor %}</td>
                         <td class="text-center">{{ o.fecha_entrega|date:"Y-m-d"|default:"—" }}</td>
                         <td class="text-center">
                             {% if o.estado == 'PENDIENTE' %}<span class="badge bg-secondary">Pendiente</span>
@@ -220,7 +214,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="10" class="text-center text-muted py-4">
+                        <td colspan="8" class="text-center text-muted py-4">
                             <i class="fas fa-inbox me-1"></i>
                             {% if tab == 'cerradas' %}No hay órdenes cerradas en el rango seleccionado.
                             {% elif tab == 'sin_remision' %}No hay órdenes despachadas pendientes de remisión.
