@@ -61,6 +61,14 @@ class GatesCargaTest(TestCase):
     def test_staff_logistica_ve_la_carga(self):
         self.assertEqual(self.client.get(_URL).status_code, 200)
 
+    def test_historial_con_carga_sin_usuario_no_revienta(self):
+        # Regresión: una CargaReporte con usuario=None (FK SET_NULL, p. ej. tras
+        # borrar al que la subió) rompía el render del historial (el filtro
+        # `default` intentaba resolver .username sobre None → 500).
+        CargaReporte.objects.create(usuario=None, nombre_archivo='r.xls',
+                                    n_ordenes=3)
+        self.assertEqual(self.client.get(_URL).status_code, 200)
+
     def test_lectura_no_puede_cargar(self):
         # Override a LECTURA: puede ver la página (GET) pero el POST (escritura) lo
         # bloquea el middleware granular por módulo.
