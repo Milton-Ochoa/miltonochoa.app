@@ -21,6 +21,7 @@ from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
 from .models import (GRADOS, AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
+from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, registrar_ajuste,
                        registrar_devolucion, registrar_entrada,
@@ -68,14 +69,25 @@ def _form_a_messages(request, form):
 
 @solo_logistica
 def items_lista(request):
+    """Catálogo pivotado: una fila por MATERIAL (categoría, referencia) con sus
+    12 grados en columnas — es como el usuario lo maneja en su Excel. El Item
+    por grado sigue siendo la unidad real (cada celda enlaza a su kardex)."""
     items = (Item.objects.select_related('categoria')
              .annotate(stock_total=Coalesce(models.Sum('stocks__cantidad'), 0))
              .order_by('categoria__nombre', 'referencia', 'grado'))
+    bajo_minimo_ids = set(items_bajo_minimo().values_list('pk', flat=True))
+    materiales = agrupar_materiales(items)
+    for fila in materiales:
+        # El mínimo es por item, pero la alerta se resume en la fila para no
+        # obligar a leer las 12 celdas.
+        fila['alerta'] = any(c['item'] and c['item'].pk in bajo_minimo_ids
+                             for c in fila['celdas'])
     return render(request, 'inventario/items_lista.html', {
-        'items': items,
+        'materiales': materiales,
+        'grados': GRADOS,
         'form': MaterialForm(),
         'hay_categorias': Categoria.objects.exists(),
-        'bajo_minimo_ids': set(items_bajo_minimo().values_list('pk', flat=True)),
+        'bajo_minimo_ids': bajo_minimo_ids,
     })
 
 
@@ -247,19 +259,29 @@ def tercero_ajax_crear(request):
 # Existencias
 # ---------------------------------------------------------------------------
 
+def _items_activos():
+    """Todos los items activos: el pivote necesita el juego completo de grados
+    de cada material, no solo los que ya tienen existencia."""
+    return (Item.objects.filter(activo=True).select_related('categoria')
+            .order_by('categoria__nombre', 'referencia', 'grado'))
+
+
+def _stocks_visibles():
+    return (Stock.objects
+            .select_related('item', 'item__categoria', 'bodega')
+            .filter(item__activo=True))
+
+
 @solo_logistica
 def stock(request):
-    """Existencias por item×bodega (el denormalizado que mantienen los
-    servicios). Las filas en 0 se muestran a propósito: dicen "este item vivió
-    en esta bodega" y son el punto de entrada del ajuste (modal en F4)."""
-    filas = (Stock.objects
-             .select_related('item', 'item__categoria', 'bodega')
-             .filter(item__activo=True)
-             .order_by('item__categoria__nombre', 'item__referencia',
-                       'item__grado', 'bodega__nombre'))
+    """Existencias pivotadas: una fila por (material, bodega) con los 12 grados
+    en columnas. Cada celda abre el ajuste de ese Item×Bodega — también las que
+    están en 0 o sin fila de `Stock` todavía (el servicio la crea)."""
+    filas = agrupar_materiales_por_bodega(_items_activos(), _stocks_visibles())
     alertas = list(items_bajo_minimo())
     return render(request, 'inventario/stock.html', {
         'filas': filas,
+        'grados': GRADOS,
         'items_alerta': alertas,
         'bajo_minimo_ids': {item.pk for item in alertas},
         # Para el select del modal de exportar (también inactivas: tienen historial).
@@ -713,35 +735,41 @@ def _fecha_post(request, nombre):
 @require_POST
 @solo_logistica
 def stock_exportar(request):
-    """Existencias actuales (items activos, incluidas filas en 0 como en la
-    vista). Filtro opcional de bodega. `valor_unitario` es referencial (el
-    kardex es de cantidades): se exporta junto al valor total estimado."""
-    filas_qs = (Stock.objects
-                .select_related('item', 'item__categoria', 'bodega')
-                .filter(item__activo=True)
-                .order_by('item__categoria__nombre', 'item__referencia',
-                          'item__grado', 'bodega__nombre'))
+    """Existencias pivotadas: una fila por (material, bodega) con los 12 grados
+    en columnas, igual que la pantalla y que la hoja de cálculo del usuario.
+    Filtro opcional de bodega. `valor_unitario` es referencial (el kardex es de
+    cantidades): se exporta junto al valor total estimado de la fila."""
+    stocks = _stocks_visibles()
     bodega_id = request.POST.get('bodega', '')
     if bodega_id.isdigit():
-        filas_qs = filas_qs.filter(bodega_id=bodega_id)
+        stocks = stocks.filter(bodega_id=bodega_id)
 
     filas = []
-    for s in filas_qs:
-        vu = s.item.valor_unitario
+    for fila in agrupar_materiales_por_bodega(_items_activos(), stocks):
+        item = fila['muestra']
+        vu = item.valor_unitario
         filas.append([
-            s.item.categoria.nombre, s.item.referencia, s.item.grado_display,
-            s.item.get_unidad_medida_display(), s.bodega.nombre, s.cantidad,
-            s.item.stock_minimo or '',
+            fila['categoria'].nombre, fila['referencia'], fila['bodega'].nombre,
+            item.get_unidad_medida_display(),
+            # Celda vacía (no en 0) cuando el material no tiene ese grado: en la
+            # hoja se distingue "no existe" de "existe y está agotado".
+            *[c['cantidad'] if c['item'] else '' for c in fila['celdas']],
+            fila['total'], item.stock_minimo or '',
             vu if vu is not None else '',
-            vu * s.cantidad if vu is not None else '',
+            vu * fila['total'] if vu is not None else '',
         ])
+    n_grados = len(GRADOS)
+    columnas = (['Categoría', 'Referencia', 'Bodega', 'Unidad']
+                + [f'{g}°' for g in GRADOS]
+                + ['Total', 'Mínimo global', 'Valor unitario', 'Valor total'])
+    col_valor_unitario = 4 + n_grados + 3  # tras los 12 grados, total y mínimo
     excel = _generar_excel(
         titulo='Existencias',
-        columnas=['Categoría', 'Referencia', 'Grado', 'Unidad', 'Bodega',
-                  'Cantidad', 'Mínimo global', 'Valor unitario', 'Valor total'],
+        columnas=columnas,
         filas=filas,
-        anchos=[20, 26, 8, 12, 18, 10, 12, 14, 14],
-        formatos={8: '"$"#,##0', 9: '"$"#,##0'})
+        anchos=[20, 26, 18, 12] + [6] * n_grados + [10, 12, 14, 14],
+        formatos={col_valor_unitario: '"$"#,##0',
+                  col_valor_unitario + 1: '"$"#,##0'})
     hoy = timezone.localdate().strftime('%Y%m%d')
     return _respuesta_xlsx(excel, f'Existencias_{hoy}.xlsx')
 
