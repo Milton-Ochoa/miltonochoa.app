@@ -61,8 +61,8 @@
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th>Código</th>
                             <th>Artículo</th>
+                            <th>Grado</th>
                             <th>Bodega</th>
                             <th class="text-end">Prestado</th>
                             <th class="text-end">Devuelto</th>
@@ -73,8 +73,8 @@
                     <tbody>
                         {% for l in prestamo.lineas.all %}
                         <tr>
-                            <td>{{ l.item.codigo }}</td>
-                            <td>{{ l.item.nombre }}</td>
+                            <td>{{ l.item.material }}</td>
+                            <td>{{ l.item.grado_display }}</td>
                             <td>{{ l.bodega.nombre }}</td>
                             <td class="text-end">{{ l.cantidad_prestada }}</td>
                             <td class="text-end">{{ l.cantidad_devuelta }}</td>
@@ -155,7 +155,7 @@
                     <tbody>
                         {% for l in prestamo.lineas.all %}
                         <tr>
-                            <td>{{ l.item.codigo }} - {{ l.item.nombre }}</td>
+                            <td>{{ l.item.nombre }}</td>
                             <td>{{ l.bodega.nombre }}</td>
                             <td class="text-end fw-bold">{{ l.pendiente }}</td>
                             <td>

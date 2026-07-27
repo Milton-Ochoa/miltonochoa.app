@@ -285,9 +285,10 @@ def items_bajo_minimo():
     """Items activos cuyo stock TOTAL (suma de bodegas) está en o bajo su
     mínimo. `stock_minimo=0` significa "sin alerta" y queda fuera."""
     return (Item.objects.filter(activo=True, stock_minimo__gt=0)
+            .select_related('categoria')  # `Item.nombre` lee la categoría
             .annotate(stock_total=Coalesce(models.Sum('stocks__cantidad'), 0))
             .filter(stock_total__lte=models.F('stock_minimo'))
-            .order_by('nombre'))
+            .order_by('categoria__nombre', 'referencia', 'grado'))
 
 
 def prestamos_vencidos():

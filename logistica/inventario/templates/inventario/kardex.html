@@ -7,7 +7,7 @@
     <div class="card shadow-sm mb-3">
         <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
-                <strong>{{ item.codigo }} - {{ item.nombre }}</strong>
+                <strong>{{ item.nombre }}</strong>
                 <span class="text-muted ms-2">{{ item.categoria.nombre }} · {{ item.get_unidad_medida_display }}</span>
             </div>
             <a href="{% url 'log_stock' %}" class="btn btn-outline-secondary btn-sm">

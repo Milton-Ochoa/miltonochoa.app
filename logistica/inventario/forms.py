@@ -61,16 +61,72 @@ class BodegaForm(_BootstrapModelForm):
         fields = ['nombre', 'ubicacion']
 
 
-class ItemForm(_BootstrapModelForm):
-    class Meta:
-        model = Item
-        fields = ['codigo', 'nombre', 'categoria', 'unidad_medida',
-                  'descripcion', 'stock_minimo', 'valor_unitario', 'activo']
-        widgets = {'descripcion': forms.Textarea(attrs={'rows': 2})}
+class MaterialForm(_BootstrapForm):
+    """Alta/edición de un MATERIAL = (categoría, referencia) con sus 12 grados.
 
-    def __init__(self, *args, **kwargs):
+    No es ModelForm porque no mapea a una fila: un material son 12 `Item`
+    (0°–11°) que comparten estos campos. La vista los crea/actualiza en grupo.
+    """
+
+    categoria = forms.ModelChoiceField(label='Categoría', queryset=None,
+                                       empty_label='— Categoría —')
+    referencia = forms.CharField(label='Referencia', max_length=100,
+                                 required=False)
+    unidad_medida = forms.ChoiceField(label='Unidad',
+                                      choices=Item.UnidadMedida.choices,
+                                      initial=Item.UnidadMedida.UNIDAD)
+    descripcion = forms.CharField(label='Descripción', required=False,
+                                  widget=forms.Textarea(attrs={'rows': 2}))
+    stock_minimo = forms.IntegerField(label='Stock mínimo', min_value=0,
+                                      initial=0, required=False)
+    valor_unitario = forms.IntegerField(label='Valor unitario', min_value=0,
+                                        required=False)
+    activo = forms.BooleanField(label='Activo', required=False, initial=True)
+
+    def __init__(self, *args, original=None, **kwargs):
+        """`original` = (categoria_id, referencia) del material que se edita
+        (None al crear): sirve para excluirlo del chequeo de duplicados."""
         super().__init__(*args, **kwargs)
+        self.original = original
+        self.fields['categoria'].queryset = Categoria.objects.all()
         _con_buscador(self.fields['categoria'])
+
+    def clean_referencia(self):
+        return (self.cleaned_data.get('referencia') or '').strip()
+
+    def clean_stock_minimo(self):
+        return self.cleaned_data.get('stock_minimo') or 0
+
+    def clean(self):
+        cleaned = super().clean()
+        categoria, referencia = cleaned.get('categoria'), cleaned.get('referencia')
+        if categoria is None:
+            return cleaned
+        # Unicidad del MATERIAL: el UniqueConstraint del modelo es por grado y
+        # no ve el grupo, así que el duplicado se detecta aquí.
+        if self.original != (categoria.pk, referencia or ''):
+            if Item.objects.filter(categoria=categoria,
+                                   referencia=referencia or '').exists():
+                raise forms.ValidationError(
+                    'Ya existe un material con esa categoría y referencia.')
+        return cleaned
+
+
+def clave_material(categoria_id, referencia):
+    """Identificador de un material en los formularios: `'<cat_id>:<ref>'`.
+    La referencia puede contener ':' → el parseo parte solo en el primero."""
+    return f'{categoria_id}:{referencia}'
+
+
+def parsear_clave_material(valor):
+    """Inversa de `clave_material`. Devuelve (categoria_id:int, referencia:str)
+    o None si la clave viene vacía o mal formada."""
+    if not valor or ':' not in valor:
+        return None
+    cat_id, _, referencia = valor.partition(':')
+    if not cat_id.isdigit():
+        return None
+    return int(cat_id), referencia
 
 
 class TerceroForm(_BootstrapModelForm):

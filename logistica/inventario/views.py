@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 from django.contrib import messages
-from django.db import models
+from django.db import models, transaction
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
 from django.http import FileResponse, HttpResponse, JsonResponse
@@ -15,10 +15,10 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .adjuntos import validar_adjunto
-from .forms import (BodegaForm, CategoriaForm, EntradaForm, ItemForm,
+from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
                     PrestamoForm, SalidaForm, TerceroForm, TrasladoForm,
-                    parsear_lineas)
-from .models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
+                    parsear_clave_material, parsear_lineas)
+from .models import (GRADOS, AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
@@ -47,7 +47,8 @@ def home(request):
         'recibidos_abiertos': recibidos.count(),
         'recibidos_vencidos': recibidos.filter(fecha_compromiso__lt=hoy).count(),
         'ultimos_movimientos': (Movimiento.objects
-                                .select_related('item', 'bodega', 'creado_por')
+                                .select_related('item', 'item__categoria',
+                                                'bodega', 'creado_por')
                                 .order_by('-creado_en', '-id')[:10]),
     })
 
@@ -69,10 +70,10 @@ def _form_a_messages(request, form):
 def items_lista(request):
     items = (Item.objects.select_related('categoria')
              .annotate(stock_total=Coalesce(models.Sum('stocks__cantidad'), 0))
-             .order_by('nombre'))
+             .order_by('categoria__nombre', 'referencia', 'grado'))
     return render(request, 'inventario/items_lista.html', {
         'items': items,
-        'form': ItemForm(),
+        'form': MaterialForm(),
         'hay_categorias': Categoria.objects.exists(),
         'bajo_minimo_ids': set(items_bajo_minimo().values_list('pk', flat=True)),
     })
@@ -80,16 +81,44 @@ def items_lista(request):
 
 @require_POST
 @solo_logistica
-def item_guardar(request):
-    item_id = request.POST.get('item_id') or None
-    instancia = get_object_or_404(Item, pk=item_id) if item_id else None
-    form = ItemForm(request.POST, instance=instancia)
-    if form.is_valid():
-        item = form.save()
-        verbo = 'actualizado' if instancia else 'creado'
-        messages.success(request, f'Artículo "{item.nombre}" {verbo}.')
-    else:
+def material_guardar(request):
+    """Alta/edición de un material completo: los 12 grados de una vez.
+
+    El alta es eager (crea los 12 `Item` aunque su stock nazca en 0) porque
+    los documentos necesitan el Item ya resuelto al capturar cantidades por
+    grado. La edición actualiza los campos compartidos de TODO el grupo.
+    """
+    original = parsear_clave_material(request.POST.get('material'))
+    form = MaterialForm(request.POST, original=original)
+    if not form.is_valid():
         _form_a_messages(request, form)
+        return redirect('log_items_lista')
+
+    datos = form.cleaned_data
+    compartidos = {
+        'unidad_medida': datos['unidad_medida'],
+        'descripcion': datos['descripcion'],
+        'stock_minimo': datos['stock_minimo'],
+        'valor_unitario': datos['valor_unitario'],
+        'activo': datos['activo'],
+    }
+    etiqueta = f'{datos["categoria"].nombre} {datos["referencia"]}'.strip()
+    if original is None:
+        with transaction.atomic():
+            Item.objects.bulk_create([
+                Item(categoria=datos['categoria'], referencia=datos['referencia'],
+                     grado=grado, **compartidos) for grado in GRADOS])
+        messages.success(request, f'Material "{etiqueta}" creado con sus '
+                                  f'{len(GRADOS)} grados.')
+    else:
+        cat_id, referencia = original
+        grupo = Item.objects.filter(categoria_id=cat_id, referencia=referencia)
+        if not grupo.exists():
+            messages.error(request, 'El material ya no existe.')
+            return redirect('log_items_lista')
+        grupo.update(categoria=datos['categoria'],
+                     referencia=datos['referencia'], **compartidos)
+        messages.success(request, f'Material "{etiqueta}" actualizado.')
     return redirect('log_items_lista')
 
 
@@ -226,7 +255,8 @@ def stock(request):
     filas = (Stock.objects
              .select_related('item', 'item__categoria', 'bodega')
              .filter(item__activo=True)
-             .order_by('item__nombre', 'bodega__nombre'))
+             .order_by('item__categoria__nombre', 'item__referencia',
+                       'item__grado', 'bodega__nombre'))
     alertas = list(items_bajo_minimo())
     return render(request, 'inventario/stock.html', {
         'filas': filas,
@@ -257,7 +287,10 @@ def _lineas_previas(post, *, con_bodega=False):
 
 
 def _items_para_lineas():
-    return Item.objects.filter(activo=True).order_by('nombre')
+    # select_related: la etiqueta de cada opción es `Item.nombre`, que lee la
+    # categoría (un N+1 por línea sin esto).
+    return (Item.objects.filter(activo=True).select_related('categoria')
+            .order_by('categoria__nombre', 'referencia', 'grado'))
 
 
 @solo_logistica
@@ -300,7 +333,7 @@ def entrada_nueva(request):
 def entrada_detalle(request, pk):
     entrada = get_object_or_404(
         Entrada.objects.select_related('bodega', 'creado_por')
-        .prefetch_related('lineas__item', 'adjuntos__subido_por'), pk=pk)
+        .prefetch_related('lineas__item__categoria', 'adjuntos__subido_por'), pk=pk)
     return render(request, 'inventario/entrada_detalle.html', {'entrada': entrada})
 
 
@@ -388,7 +421,7 @@ def salida_nueva(request):
 def salida_detalle(request, pk):
     salida = get_object_or_404(
         Salida.objects.select_related('bodega', 'tercero', 'creado_por')
-        .prefetch_related('lineas__item'), pk=pk)
+        .prefetch_related('lineas__item__categoria'), pk=pk)
     return render(request, 'inventario/salida_detalle.html', {'salida': salida})
 
 
@@ -434,7 +467,7 @@ def traslado_detalle(request, pk):
     traslado = get_object_or_404(
         Traslado.objects.select_related('bodega_origen', 'bodega_destino',
                                         'creado_por')
-        .prefetch_related('lineas__item'), pk=pk)
+        .prefetch_related('lineas__item__categoria'), pk=pk)
     return render(request, 'inventario/traslado_detalle.html',
                   {'traslado': traslado})
 
@@ -488,9 +521,9 @@ def prestamo_nuevo(request):
 def prestamo_detalle(request, pk):
     prestamo = get_object_or_404(
         Prestamo.objects.select_related('tercero', 'creado_por')
-        .prefetch_related('lineas__item', 'lineas__bodega',
+        .prefetch_related('lineas__item__categoria', 'lineas__bodega',
                           'devoluciones__creado_por',
-                          'devoluciones__movimientos__item',
+                          'devoluciones__movimientos__item__categoria',
                           'devoluciones__movimientos__bodega'), pk=pk)
     return render(request, 'inventario/prestamo_detalle.html',
                   {'prestamo': prestamo})
@@ -575,7 +608,7 @@ MOVIMIENTOS_MAX_FILAS = 500
 @solo_logistica
 def movimientos(request):
     lista = (Movimiento.objects
-             .select_related('item', 'bodega', 'creado_por')
+             .select_related('item', 'item__categoria', 'bodega', 'creado_por')
              .order_by('-creado_en', '-id')[:MOVIMIENTOS_MAX_FILAS])
     return render(request, 'inventario/movimientos.html', {
         'movimientos': lista,
@@ -686,7 +719,8 @@ def stock_exportar(request):
     filas_qs = (Stock.objects
                 .select_related('item', 'item__categoria', 'bodega')
                 .filter(item__activo=True)
-                .order_by('item__nombre', 'bodega__nombre'))
+                .order_by('item__categoria__nombre', 'item__referencia',
+                          'item__grado', 'bodega__nombre'))
     bodega_id = request.POST.get('bodega', '')
     if bodega_id.isdigit():
         filas_qs = filas_qs.filter(bodega_id=bodega_id)
@@ -695,7 +729,7 @@ def stock_exportar(request):
     for s in filas_qs:
         vu = s.item.valor_unitario
         filas.append([
-            s.item.codigo, s.item.nombre, s.item.categoria.nombre,
+            s.item.categoria.nombre, s.item.referencia, s.item.grado_display,
             s.item.get_unidad_medida_display(), s.bodega.nombre, s.cantidad,
             s.item.stock_minimo or '',
             vu if vu is not None else '',
@@ -703,10 +737,10 @@ def stock_exportar(request):
         ])
     excel = _generar_excel(
         titulo='Existencias',
-        columnas=['Código', 'Artículo', 'Categoría', 'Unidad', 'Bodega',
+        columnas=['Categoría', 'Referencia', 'Grado', 'Unidad', 'Bodega',
                   'Cantidad', 'Mínimo global', 'Valor unitario', 'Valor total'],
         filas=filas,
-        anchos=[12, 32, 18, 12, 18, 10, 12, 14, 14],
+        anchos=[20, 26, 8, 12, 18, 10, 12, 14, 14],
         formatos={8: '"$"#,##0', 9: '"$"#,##0'})
     hoy = timezone.localdate().strftime('%Y%m%d')
     return _respuesta_xlsx(excel, f'Existencias_{hoy}.xlsx')
@@ -719,7 +753,7 @@ def movimientos_exportar(request):
     filtros de tipo (checkboxes) y rango de fechas. En orden cronológico:
     así el saldo por fila se lee como un kardex."""
     qs = (Movimiento.objects
-          .select_related('item', 'bodega', 'creado_por')
+          .select_related('item', 'item__categoria', 'bodega', 'creado_por')
           .order_by('creado_en', 'id'))
     tipos_validos = set(Movimiento.Tipo.values)
     tipos = [t for t in request.POST.getlist('tipos') if t in tipos_validos]
@@ -733,16 +767,17 @@ def movimientos_exportar(request):
 
     filas = [[
         timezone.localtime(m.creado_en).strftime('%d/%m/%Y %H:%M'),
-        m.get_tipo_display(), m.item.codigo, m.item.nombre, m.bodega.nombre,
+        m.get_tipo_display(), m.item.categoria.nombre, m.item.referencia,
+        m.item.grado_display, m.bodega.nombre,
         m.delta, m.saldo_resultante, m.detalle,
         m.creado_por.username if m.creado_por else '',
     ] for m in qs]
     excel = _generar_excel(
         titulo='Movimientos',
-        columnas=['Fecha', 'Tipo', 'Código', 'Artículo', 'Bodega', 'Cantidad',
-                  'Saldo', 'Detalle', 'Registró'],
+        columnas=['Fecha', 'Tipo', 'Categoría', 'Referencia', 'Grado',
+                  'Bodega', 'Cantidad', 'Saldo', 'Detalle', 'Registró'],
         filas=filas,
-        anchos=[16, 24, 12, 32, 18, 10, 10, 40, 14])
+        anchos=[16, 24, 20, 26, 8, 18, 10, 10, 40, 14])
     partes = [desde.strftime('%Y%m%d') if desde else 'inicio',
               hasta.strftime('%Y%m%d') if hasta else 'fin']
     return _respuesta_xlsx(excel, f'Movimientos_{partes[0]}_{partes[1]}.xlsx')
