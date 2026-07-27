@@ -627,46 +627,76 @@ Devoluciones.xlsx` del usuario (la columna "Registro Effi" se **omite** a propó
 - **El dominio vive en `logistica.inventario`, NO en la sub-app de UI** — toda escritura al
   stock/ledger debe pasar por sus servicios transaccionales. Modelos `DevolucionColegio`
   (`log_devoluciones_colegios`: `fecha_recibido`, `colegio`, `codigo_colegio`, `regional`,
-  `ejecutivo`, `bodega` PROTECT, `observaciones`, `creado_por` SET_NULL) y
-  `DevolucionColegioLinea` (`log_devoluciones_colegios_lineas`: FK devolución CASCADE, FK
-  item PROTECT, `cantidad` > 0). Migración `log_inventario/0003`. Tipo de movimiento
-  `Movimiento.Tipo.DEV_COLEGIO` (positivo, suma stock). OJO: el nombre `Devolucion` ya
-  estaba tomado por las devoluciones de **préstamo** — por eso `DevolucionColegio`.
+  `ejecutivo`, `bodega` PROTECT, `valida`, `motivo_no_valida`, `observaciones`, `creado_por`
+  SET_NULL) y `DevolucionColegioLinea` (`log_devoluciones_colegios_lineas`: FK devolución
+  CASCADE, FK item PROTECT, `cantidad` > 0). Migraciones `log_inventario/0003` y `0004`
+  (no válidas). Tipo de movimiento `Movimiento.Tipo.DEV_COLEGIO` (positivo, suma stock).
+  OJO: el nombre `Devolucion` ya estaba tomado por las devoluciones de **préstamo** — por
+  eso `DevolucionColegio`.
+- **Devoluciones NO VÁLIDAS** (`valida=False`): el material llegó pero **no se acepta**
+  (dañado, marcado, incompleto…). Queda el registro completo —cabecera y líneas por grado,
+  para saber qué vino— pero **no se toca stock ni kardex**: el servicio simplemente no emite
+  movimientos. `motivo_no_valida` es **obligatorio** ahí, y lo exigen las tres capas: el
+  `clean()` del form, un `ValueError` del servicio y el CHECK
+  `devolucion_colegio_no_valida_con_motivo` en BD (`valida=True OR motivo_no_valida != ''`).
+  Al marcarla válida el motivo se limpia. Sin movimientos, una no válida **sí se puede
+  borrar** (el PROTECT de `Movimiento` es lo que blinda a las válidas). En la UI van con
+  badge rojo, fila resaltada y, en su detalle, sin enlace al kardex (no hay movimiento que
+  ver). `property estado_label` → 'Válida'/'No válida' (la usa el Excel).
 - **Servicio** `registrar_devolucion_colegio(*, bodega, lineas, usuario, fecha_recibido,
-  colegio, codigo_colegio='', regional='', ejecutivo='', observaciones='')` — molde exacto
-  de `registrar_entrada` (atómico; `lineas` = `[(Item, cantidad)]`).
+  colegio, codigo_colegio='', regional='', ejecutivo='', observaciones='', valida=True,
+  motivo_no_valida='')` — molde exacto de `registrar_entrada` (atómico; `lineas` =
+  `[(Item, cantidad)]`). Con `valida=False` valida la cantidad > 0 **a mano** (sin
+  movimiento no hay quien lo haga) para que el error sea de dominio y no un IntegrityError.
 - **UI de logística** (`logistica/devoluciones/`, label `log_devoluciones`, **sin modelos**,
   prefijo `/devoluciones/`, names `log_devoluciones_*`, gate `solo_logistica`): `lista`
-  (tabla con filtros + paginación client-side), `nueva` (cabecera por `DevolucionColegioForm`
-  + líneas con el parcial compartido `inventario/_lineas_material.html`, `con_bodega=False`
-  porque la bodega es de la devolución completa), `detalle` (pivote por material) y
-  `exportar`. El **colegio es texto libre** con `<datalist>` alimentado por `_colegios_erp()`
-  (distinct de `OrdenDespacho.centro_costos`, con `cliente` de respaldo — criterio de
-  `colegio_erp`): el que devuelve puede no estar en el ERP.
+  (resumen: una fila por devolución, con filtros + paginación client-side), `detallado`
+  (`/devoluciones/detalle/`, **todo el detalle en pantalla**), `nueva` (cabecera por
+  `DevolucionColegioForm` + líneas con el parcial compartido
+  `inventario/_lineas_material.html`, `con_bodega=False` porque la bodega es de la devolución
+  completa; el bloque "no válida" es un checkbox + motivo que el JS solo muestra/oculta),
+  `detalle` (pivote de UNA devolución) y `exportar`. El **colegio es texto libre** con
+  `<datalist>` alimentado por `_colegios_erp()` (distinct de `OrdenDespacho.centro_costos`,
+  con `cliente` de respaldo — criterio de `colegio_erp`): el que devuelve puede no estar en
+  el ERP.
+- **Detalle por material en pantalla** (el usuario NO debe tener que bajar el Excel para
+  verlo): parcial compartido `devoluciones/_tabla_detalle.html` con el **mismo layout de la
+  hoja** (una fila por devolución y material, 12 columnas de grado, total, estado y
+  observaciones), filtros por columna + paginación client-side. Lo pintan las dos áreas
+  (`log_devoluciones_detallado` y `fin_devoluciones_detallado`) desde
+  `views.contexto_detalle()`; `con_detalle=True` enlaza con la devolución (solo logística,
+  que es quien tiene esa vista). Cada lista lleva un btn-group Resumen ⇄ Detalle por
+  material. OJO con el filtro de estado: los valores son `valida`/`rechazada` porque el
+  motor compara con `indexOf` y `"no-valida"` contendría `"valida"`.
 - **Excel compartido** en `logistica/devoluciones/export.py` (NO en `views.py`, porque
   financiera lo reutiliza tal cual): `COLUMNAS`/`ANCHOS`, `materiales_devueltos(devolucion)`
   (pivote por material, suma el mismo material capturado en dos filas),
-  `filas_export(devoluciones)` y `generar_excel_devoluciones(devoluciones)` → bytes. Layout =
-  Fecha de recibido, Colegio, Código, Regional, Ejecutivo, Categoría, Referencia, 0°…11°,
-  Total, Observaciones; un grado no devuelto sale **vacío**, no en 0. El queryset que se le
+  `filas_detalle(devoluciones)` (**fuente única** del layout: la alimenta tanto la tabla en
+  pantalla como el Excel, así no pueden divergir), `filas_export(devoluciones)` y
+  `generar_excel_devoluciones(devoluciones)` → bytes. Layout = Fecha de recibido, Colegio,
+  Código, Regional, Ejecutivo, Categoría, Referencia, 0°…11°, Total, Estado, Motivo del
+  rechazo, Observaciones; un grado no devuelto sale **vacío**, no en 0. El queryset que se le
   pase necesita `prefetch_related('lineas__item__categoria')` (las properties del material
-  leen la categoría). También son públicos `devoluciones_anotadas()` y
-  `devoluciones_para_export(post)` (filtros `desde`/`hasta` sobre `fecha_recibido` +
-  `colegio` icontains) — financiera los importa para no divergir de logística.
+  leen la categoría). También son públicos `devoluciones_anotadas()`, `contexto_detalle()` y
+  `devoluciones_para_export(post)` (filtros `desde`/`hasta` sobre `fecha_recibido`,
+  `colegio` icontains y `estado` = `validas`/`no_validas`, vacío = todas) — financiera los
+  importa para no divergir de logística. El modal de exportar también es compartido
+  (`devoluciones/_modal_exportar.html`, parámetro `accion_url`).
 - **UI de financiera** (`financiera/devoluciones/`, label `fin_devoluciones`, **sin modelos**,
-  gate local `solo_financiera`): solo `fin_devoluciones_lista` (`@require_GET`) y
-  `fin_devoluciones_exportar` (`@require_POST`, es un POST "de lectura"). No hay alta ni
-  detalle: registrar es competencia de logística. Template `financiera/devoluciones.html`
-  extiende `base_financiera.html` y **NO lleva bloques de `messages`** (contrato del área).
+  gate local `solo_financiera`): `fin_devoluciones_lista` y `fin_devoluciones_detallado`
+  (ambas `@require_GET`) + `fin_devoluciones_exportar` (`@require_POST`, es un POST "de
+  lectura"). No hay alta ni edición: registrar es competencia de logística. Templates
+  `financiera/devoluciones.html` y `financiera/devoluciones_detalle.html` extienden
+  `base_financiera.html` y **NO llevan bloques de `messages`** (contrato del área).
 - **Permisos** (`core/modulos.py`): `Modulo('devoluciones', 'Devoluciones de colegios',
   ('/devoluciones/',), ('/devoluciones/exportar/',))` en **las dos** áreas. En logística
   LECTURA = lista/detalle/export y COMPLETO añade registrar; en financiera, al no haber
   escrituras, LECTURA y COMPLETO se comportan igual. Ítem de primer nivel en
   `base_logistica.html` (tras Despachos) y en `base_financiera.html`, icono `fa-rotate-left`.
-- **Tests:** `logistica/devoluciones/tests/test_devoluciones.py` (gates, alta por grados,
-  detalle, export, autocompletado del ERP), `financiera/devoluciones/tests.py` (gate por
-  área, solo lectura, mismo layout de Excel) y el servicio en
-  `logistica/inventario/tests/test_servicios.py`.
+- **Tests:** `logistica/devoluciones/tests/test_devoluciones.py` (gates, alta por grados, no
+  válidas, detalle por material, export, autocompletado del ERP),
+  `financiera/devoluciones/tests.py` (gate por área, solo lectura, detalle en pantalla,
+  mismo layout de Excel) y el servicio en `logistica/inventario/tests/test_servicios.py`.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 

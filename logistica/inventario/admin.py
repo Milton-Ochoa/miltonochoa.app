@@ -141,8 +141,8 @@ class DevolucionColegioLineaInline(admin.TabularInline):
 @admin.register(DevolucionColegio)
 class DevolucionColegioAdmin(admin.ModelAdmin):
     list_display = ('id', 'fecha_recibido', 'colegio', 'regional', 'ejecutivo',
-                    'bodega', 'creado_por')
-    list_filter = ('bodega', 'regional')
+                    'bodega', 'valida', 'creado_por')
+    list_filter = ('valida', 'bodega', 'regional')
     search_fields = ('colegio', 'codigo_colegio', 'ejecutivo')
     date_hierarchy = 'fecha_recibido'
     inlines = [DevolucionColegioLineaInline]

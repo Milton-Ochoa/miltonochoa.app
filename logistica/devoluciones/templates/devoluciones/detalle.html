@@ -18,6 +18,16 @@
                         <i class="fas fa-arrow-left me-1"></i> Volver
                     </a>
                 </div>
+                {% if not devolucion.valida %}
+                <div class="alert alert-danger mb-0 rounded-0 py-2 small">
+                    <i class="fas fa-ban me-1"></i>
+                    <strong>Devolución NO VÁLIDA:</strong> {{ devolucion.motivo_no_valida }}
+                    <span class="d-block text-muted">
+                        Queda el registro de lo que llegó, pero no sumó a existencias
+                        ni dejó movimientos en el kardex.
+                    </span>
+                </div>
+                {% endif %}
                 <div class="card-body py-2">
                     <div class="row g-2 small">
                         <div class="col-md-3"><strong>Recibido:</strong> {{ devolucion.fecha_recibido|date:'Y-m-d' }}</div>
@@ -25,7 +35,14 @@
                         <div class="col-md-2"><strong>Código:</strong> {{ devolucion.codigo_colegio|default:'—' }}</div>
                         <div class="col-md-2"><strong>Regional:</strong> {{ devolucion.regional|default:'—' }}</div>
                         <div class="col-md-4"><strong>Ejecutivo:</strong> {{ devolucion.ejecutivo|default:'—' }}</div>
-                        <div class="col-md-4"><strong>Bodega:</strong> {{ devolucion.bodega.nombre }}</div>
+                        <div class="col-md-4">
+                            <strong>Bodega:</strong> {{ devolucion.bodega.nombre }}
+                            {% if devolucion.valida %}
+                            <span class="badge bg-success ms-1">Válida</span>
+                            {% else %}
+                            <span class="badge bg-danger ms-1">No válida</span>
+                            {% endif %}
+                        </div>
                         <div class="col-md-4">
                             <strong>Registró:</strong> {{ devolucion.creado_por.username|default:'—' }}
                             <span class="text-muted">({{ devolucion.creado_en|date:'Y-m-d H:i' }})</span>
@@ -52,7 +69,10 @@
                                 <td>{{ m.referencia|default:'—' }}</td>
                                 {% for c in m.celdas %}
                                 <td class="col-grado">
-                                    {% if c.item %}
+                                    {% comment %} Sin enlace al kardex en las no válidas: no dejaron movimiento que ver. {% endcomment %}
+                                    {% if c.item and not devolucion.valida %}
+                                    {{ c.cantidad }}
+                                    {% elif c.item %}
                                     <a href="{% url 'log_item_kardex' c.item.pk %}" title="Kardex del grado {{ c.grado }}°">{{ c.cantidad }}</a>
                                     {% else %}
                                     <span class="text-muted">·</span>
