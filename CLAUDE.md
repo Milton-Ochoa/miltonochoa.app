@@ -1206,6 +1206,17 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   cerrar cualquier cambio en `.html`, revisa que no quede ningún `{# #}` partido en dos líneas.
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
+- **Migraciones destructivas: la suite NO las valida.** Los tests corren en SQLite y prod es
+  PostgreSQL. Una migración que **borra filas y después hace `ALTER TABLE`** sobre esas
+  mismas tablas revienta en Postgres con `cannot ALTER TABLE … because it has pending
+  trigger events` (Django crea las FK `DEFERRABLE INITIALLY DEFERRED`: dentro de una
+  transacción los DELETE dejan encolados sus triggers hasta el commit). En SQLite pasa
+  verde. Ya tumbó un deploy (502 en prod, jul 2026, `log_inventario/0002`). Regla: si una
+  migración mezcla DML masivo con DDL, márcala **`atomic = False`** (cada DELETE hace commit
+  y la cola queda vacía) o separa el borrado en su propia migración — ojo: separarla añade
+  una arista al grafo y las copias locales que ya aplicaron la original fallan con
+  `InconsistentMigrationHistory`, así que en una migración ya publicada `atomic = False` es
+  la salida sin daños colaterales.
 - Ejecuta `python manage.py test` y compara con el baseline (982 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
