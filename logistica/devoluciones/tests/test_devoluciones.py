@@ -83,8 +83,7 @@ class _BaseDevolucionesTest(TestCase):
 class GatesDevolucionesTest(_BaseDevolucionesTest):
 
     def _urls(self):
-        return ['/devoluciones/', '/devoluciones/nueva/',
-                '/devoluciones/detalle/']
+        return ['/devoluciones/', '/devoluciones/nueva/']
 
     def test_anonimo_redirigido(self):
         c = Client(HTTP_HOST='logistica.testserver')
@@ -382,39 +381,3 @@ class DevolucionNoValidaTest(_BaseDevolucionesTest):
         # Sin filtro salen las dos: el default no esconde registros.
         filas = _filas_xlsx(self.client.post('/devoluciones/exportar/', {}))
         self.assertEqual(len(filas), 2)
-
-
-class DetallePorMaterialTest(_BaseDevolucionesTest):
-    """La vista que evita tener que bajar el Excel para ver el detalle."""
-
-    def test_una_fila_por_devolucion_y_material(self):
-        self._registrar(lineas=[(self.material[3], 5), (self.material[4], 2),
-                                (self.otro[0], 1)])
-        self._registrar(colegio='Colegio Sur', lineas=[(self.material[1], 3)])
-        resp = self.client.get('/devoluciones/detalle/')
-        self.assertEqual(resp.status_code, 200)
-        filas = resp.context['filas']
-        self.assertEqual(len(filas), 3)  # 2 materiales + 1
-        fila = next(f for f in filas
-                    if f['devolucion'].colegio == 'Colegio Norte'
-                    and f['referencia'] == 'Cuadernillo A')
-        self.assertEqual(fila['celdas'][3]['cantidad'], 5)
-        self.assertEqual(fila['total'], 7)
-
-    def test_pinta_las_columnas_de_la_hoja(self):
-        self._registrar(lineas=[(self.material[3], 5)])
-        resp = self.client.get('/devoluciones/detalle/')
-        for texto in ['Ejecutivo', 'Categoría', 'Referencia', 'Ana Ruiz',
-                      'Cuadernillo A', 'Colegio Norte']:
-            self.assertContains(resp, texto)
-
-    def test_marca_las_no_validas(self):
-        self._registrar(colegio='Colegio Sur', lineas=[(self.otro[0], 1)],
-                        valida=False, motivo_no_valida='Cuadernillos rayados')
-        resp = self.client.get('/devoluciones/detalle/')
-        self.assertContains(resp, 'No válida')
-        self.assertContains(resp, 'Cuadernillos rayados')
-
-    def test_gate_de_area(self):
-        c = Client(HTTP_HOST='logistica.testserver')
-        self.assertEqual(c.get('/devoluciones/detalle/').status_code, 302)

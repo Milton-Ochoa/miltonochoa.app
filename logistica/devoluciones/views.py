@@ -23,8 +23,7 @@ from logistica.inventario.views import (_form_a_messages,
                                         _materiales_para_lineas,
                                         _respuesta_xlsx)
 
-from .export import (filas_detalle, generar_excel_devoluciones,
-                     materiales_devueltos)
+from .export import generar_excel_devoluciones, materiales_devueltos
 from .forms import DevolucionColegioForm
 
 
@@ -34,19 +33,6 @@ def devoluciones_anotadas():
     return (DevolucionColegio.objects.select_related('bodega', 'creado_por')
             .annotate(n_materiales=models.Count('lineas', distinct=True),
                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0)))
-
-
-def contexto_detalle():
-    """Contexto de la tabla "Detalle por material" (una fila por devolución y
-    material, con sus 12 grados) — el mismo layout del Excel, en pantalla.
-
-    Público: las dos áreas pintan exactamente la misma tabla con el parcial
-    compartido `devoluciones/_tabla_detalle.html`.
-    """
-    devoluciones = (DevolucionColegio.objects
-                    .select_related('bodega', 'creado_por')
-                    .prefetch_related('lineas__item__categoria'))
-    return {'filas': filas_detalle(devoluciones), 'grados': GRADOS}
 
 
 def _fecha(post, nombre):
@@ -100,12 +86,6 @@ def lista(request):
     return render(request, 'devoluciones/lista.html', {
         'devoluciones': devoluciones_anotadas(),
     })
-
-
-@solo_logistica
-def detallado(request):
-    """Todo el detalle en pantalla (lo que antes solo se veía bajando el Excel)."""
-    return render(request, 'devoluciones/detallado.html', contexto_detalle())
 
 
 @solo_logistica

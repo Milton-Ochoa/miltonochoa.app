@@ -145,38 +145,3 @@ class ExportFinDevolucionesTest(_BaseFinDevolucionesTest):
     def test_get_no_permitido(self):
         self.assertEqual(self.client.get('/devoluciones/exportar/').status_code,
                          405)
-
-
-class DetalleEnPantallaTest(_BaseFinDevolucionesTest):
-    """Financiera ve TODO el detalle sin bajar el Excel (misma tabla que logística)."""
-
-    def test_detalle_por_material(self):
-        self._registrar(lineas=[(self.material[3], 5), (self.material[4], 2)])
-        resp = self.client.get('/devoluciones/detalle/')
-        self.assertEqual(resp.status_code, 200)
-        fila = resp.context['filas'][0]
-        self.assertEqual(fila['celdas'][3]['cantidad'], 5)
-        self.assertEqual(fila['total'], 7)
-        for texto in ['Cuadernillo A', 'Colegio Norte', 'Ana Ruiz']:
-            self.assertContains(resp, texto)
-
-    def test_marca_las_no_validas(self):
-        self._registrar(colegio='Colegio Sur', lineas=[(self.material[0], 1)],
-                        valida=False, motivo_no_valida='Cuadernillos rayados')
-        resp = self.client.get('/devoluciones/detalle/')
-        self.assertContains(resp, 'No válida')
-        self.assertContains(resp, 'Cuadernillos rayados')
-
-    def test_sigue_siendo_solo_lectura(self):
-        self.assertEqual(self.client.post('/devoluciones/detalle/', {}).status_code,
-                         405)
-        # No enlaza la vista de devolución de logística (aquí no existe).
-        self._registrar()
-        html = self.client.get('/devoluciones/detalle/').content.decode()
-        self.assertNotIn('Nueva devolución', html)
-
-    def test_gate_de_area(self):
-        c = Client(HTTP_HOST='financiera.testserver')
-        self.assertEqual(c.get('/devoluciones/detalle/').status_code, 302)
-        c.login(username='logis', password='pass')
-        self.assertEqual(c.get('/devoluciones/detalle/').status_code, 302)
