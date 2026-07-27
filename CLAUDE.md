@@ -1175,7 +1175,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 982 tests OK
+python manage.py test                        # baseline: 1004 tests OK
 python manage.py runserver
 ```
 
@@ -1247,7 +1247,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   una arista al grafo y las copias locales que ya aplicaron la original fallan con
   `InconsistentMigrationHistory`, así que en una migración ya publicada `atomic = False` es
   la salida sin daños colaterales.
-- Ejecuta `python manage.py test` y compara con el baseline (982 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (1004 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
   fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran
