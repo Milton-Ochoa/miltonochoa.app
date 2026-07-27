@@ -18,6 +18,7 @@ from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 from logistica.inventario.models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Salida, Stock, Tercero, Traslado)
 from logistica.inventario.services import registrar_entrada
+from logistica.inventario.tests.utils import crear_item
 
 _STORAGE_LOCAL = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
@@ -38,10 +39,8 @@ class _BaseMovimientosTest(TestCase):
         self.categoria = Categoria.objects.create(nombre='Papelería')
         self.bodega = Bodega.objects.create(nombre='Principal')
         self.bodega2 = Bodega.objects.create(nombre='Sucursal')
-        self.item = Item.objects.create(codigo='RES-01', nombre='Resma carta',
-                                        categoria=self.categoria)
-        self.item2 = Item.objects.create(codigo='MAR-01', nombre='Marcadores',
-                                         categoria=self.categoria)
+        self.item = crear_item(categoria=self.categoria, referencia='Resma carta')
+        self.item2 = crear_item(categoria=self.categoria, referencia='Marcadores')
 
     def _mensajes(self, response):
         return [str(m) for m in response.context['messages']]

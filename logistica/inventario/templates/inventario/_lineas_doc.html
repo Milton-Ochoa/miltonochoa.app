@@ -24,7 +24,7 @@ este parcial debe incluir también inventario/_select2.html al final del content
                 <select name="linea_item" class="form-select select2-busqueda" required>
                     <option value="">— Artículo —</option>
                     {% for it in items %}
-                    <option value="{{ it.pk }}" {% if l.item_id == it.pk|stringformat:'s' %}selected{% endif %}>{{ it.codigo }} - {{ it.nombre }}</option>
+                    <option value="{{ it.pk }}" {% if l.item_id == it.pk|stringformat:'s' %}selected{% endif %}>{{ it.nombre }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -53,7 +53,7 @@ este parcial debe incluir también inventario/_select2.html al final del content
                 <select name="linea_item" class="form-select select2-busqueda" required>
                     <option value="">— Artículo —</option>
                     {% for it in items %}
-                    <option value="{{ it.pk }}">{{ it.codigo }} - {{ it.nombre }}</option>
+                    <option value="{{ it.pk }}">{{ it.nombre }}</option>
                     {% endfor %}
                 </select>
             </div>

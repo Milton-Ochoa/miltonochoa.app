@@ -38,8 +38,23 @@ class Bodega(models.Model):
         return self.nombre
 
 
+# Grados escolares del material: 0° (transición) a 11°. Todo material existe
+# en los 12 grados — no hay material "sin grado".
+GRADO_MIN, GRADO_MAX = 0, 11
+GRADOS = tuple(range(GRADO_MIN, GRADO_MAX + 1))
+
+
 class Item(models.Model):
-    """Artículo de inventario. Todo se maneja por cantidad (sin seriales)."""
+    """Unidad de inventario: un material en UN grado. Todo se maneja por
+    cantidad (sin seriales).
+
+    El "material" (lo que el usuario reconoce como artículo) NO tiene tabla
+    propia: es la pareja **(categoría = modelo del material, referencia)**
+    repetida en los 12 grados. Por eso el alta crea siempre el juego completo
+    y los campos compartidos (unidad, descripción, mínimo, valor, activo) se
+    editan en grupo desde la UI. El grado vive aquí —y no en un modelo hijo—
+    porque es lo que se mueve: stock, kardex y documentos son por grado.
+    """
 
     class UnidadMedida(models.TextChoices):
         UNIDAD  = 'UNIDAD',  'Unidad'
@@ -47,10 +62,12 @@ class Item(models.Model):
         CAJA    = 'CAJA',    'Caja'
         RESMA   = 'RESMA',   'Resma'
 
-    codigo = models.CharField(max_length=30, unique=True)
-    nombre = models.CharField(max_length=200, db_index=True)
     categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT,
                                   related_name='items')
+    # Variante dentro de la categoría (p. ej. "Cuadernillo A"). Puede ir vacía:
+    # hay categorías con un único material y sin referencia interna.
+    referencia = models.CharField(max_length=100, blank=True, default='')
+    grado = models.PositiveSmallIntegerField()
     unidad_medida = models.CharField(max_length=10, choices=UnidadMedida.choices,
                                      default=UnidadMedida.UNIDAD)
     descripcion = models.TextField(blank=True)
@@ -64,11 +81,39 @@ class Item(models.Model):
 
     class Meta:
         db_table = 'log_articulos'
-        ordering = ['nombre']
+        ordering = ['categoria__nombre', 'referencia', 'grado']
         verbose_name = 'Artículo'
+        constraints = [
+            models.UniqueConstraint(fields=['categoria', 'referencia', 'grado'],
+                                    name='unique_item_material_grado'),
+            # PositiveSmallIntegerField ya impide negativos; falta el techo.
+            models.CheckConstraint(condition=models.Q(grado__lte=GRADO_MAX),
+                                   name='item_grado_valido'),
+        ]
 
     def __str__(self):
-        return f'{self.codigo} - {self.nombre}'
+        return self.nombre
+
+    @property
+    def material(self):
+        """Nombre del material SIN el grado: la fila que ve el usuario."""
+        return f'{self.categoria.nombre} {self.referencia}'.strip()
+
+    @property
+    def nombre(self):
+        """Etiqueta completa (material + grado). Derivada, ya no es campo: el
+        ledger, los mensajes de dominio y las plantillas la siguen usando."""
+        return f'{self.material} — {self.grado_display}'
+
+    @property
+    def grado_display(self):
+        return f'{self.grado}°'
+
+    @property
+    def clave_material(self):
+        """Identifica al MATERIAL (no a esta fila) en los formularios; la
+        deshace `forms.parsear_clave_material`."""
+        return f'{self.categoria_id}:{self.referencia}'
 
 
 class Tercero(models.Model):

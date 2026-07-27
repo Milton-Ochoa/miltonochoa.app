@@ -32,18 +32,18 @@
             <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaStock">
                 <thead class="table-dark">
                     <tr>
-                        <th style="width: 12%;">Código</th>
-                        <th style="width: 34%;">Artículo</th>
-                        <th style="width: 16%;">Categoría</th>
+                        <th style="width: 18%;">Categoría</th>
+                        <th style="width: 22%;">Referencia</th>
+                        <th style="width: 6%;">Grado</th>
                         <th style="width: 18%;">Bodega</th>
                         <th style="width: 9%; text-align: right;">Cantidad</th>
                         <th style="width: 9%; text-align: right;">Mínimo global</th>
                         <th style="width: 8%;"></th>
                     </tr>
                     <tr class="fila-filtros">
-                        <th><input type="text" data-filtro="codigo"></th>
-                        <th><input type="text" data-filtro="nombre"></th>
                         <th><input type="text" data-filtro="categoria"></th>
+                        <th><input type="text" data-filtro="referencia"></th>
+                        <th><input type="text" data-filtro="grado"></th>
                         <th><input type="text" data-filtro="bodega"></th>
                         <th></th>
                         <th></th>
@@ -53,18 +53,18 @@
                 <tbody>
                     {% for s in filas %}
                     <tr data-fila
-                        data-codigo="{{ s.item.codigo|lower }}"
-                        data-nombre="{{ s.item.nombre|lower }}"
                         data-categoria="{{ s.item.categoria.nombre|lower }}"
+                        data-referencia="{{ s.item.referencia|lower }}"
+                        data-grado="{{ s.item.grado_display }}"
                         data-bodega="{{ s.bodega.nombre|lower }}">
-                        <td>{{ s.item.codigo }}</td>
+                        <td>{{ s.item.categoria.nombre }}</td>
                         <td>
-                            <strong>{{ s.item.nombre }}</strong>
+                            <strong>{{ s.item.referencia|default:'—' }}</strong>
                             {% if s.item_id in bajo_minimo_ids %}
                             <span class="badge bg-danger ms-1">Bajo mínimo</span>
                             {% endif %}
                         </td>
-                        <td>{{ s.item.categoria.nombre }}</td>
+                        <td>{{ s.item.grado_display }}</td>
                         <td>{{ s.bodega.nombre }}</td>
                         <td class="text-end fw-bold">{{ s.cantidad }}</td>
                         <td class="text-end">{% if s.item.stock_minimo %}{{ s.item.stock_minimo }}{% else %}—{% endif %}</td>

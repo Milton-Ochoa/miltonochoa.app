@@ -17,6 +17,7 @@ from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
 from logistica.inventario.models import Bodega, Categoria, Item, Movimiento, Prestamo, Tercero
 from logistica.inventario.services import crear_prestamo, registrar_entrada
+from logistica.inventario.tests.utils import crear_item
 
 XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -43,11 +44,10 @@ class _BaseReportesTest(TestCase):
         self.bodega_b = Bodega.objects.create(nombre='Anexa')
         # stock_minimo=10: con 3 de la entrada + 4 del préstamo recibido el
         # total queda en 7 → bajo mínimo (el mínimo es GLOBAL, suma de bodegas).
-        self.marcador = Item.objects.create(codigo='MAR-01', nombre='Marcador',
-                                            categoria=cat, stock_minimo=10,
-                                            valor_unitario=2000)
-        self.resma = Item.objects.create(codigo='RES-01', nombre='Resma',
-                                         categoria=cat)
+        self.marcador = crear_item(categoria=cat, referencia='Marcador',
+                                   grado=3, stock_minimo=10,
+                                   valor_unitario=2000)
+        self.resma = crear_item(categoria=cat, referencia='Resma', grado=4)
         registrar_entrada(bodega=self.bodega_a,
                           lineas=[(self.marcador, 3), (self.resma, 10)],
                           usuario=self.user, proveedor='ACME')
@@ -150,14 +150,16 @@ class ExportStockTest(_BaseReportesTest):
         filas = _filas_xlsx(r)
         # Filas de Stock existentes: marcador@A, resma@A, marcador@B
         self.assertEqual(len(filas), 3)
-        codigos = {f[0] for f in filas}
-        self.assertEqual(codigos, {'MAR-01', 'RES-01'})
+        # (Categoría, Referencia, Grado) identifican el artículo
+        self.assertEqual({(f[0], f[1], f[2]) for f in filas},
+                         {('Papelería', 'Marcador', '3°'),
+                          ('Papelería', 'Resma', '4°')})
 
     def test_filtro_de_bodega(self):
         r = self.client.post('/stock/exportar/', {'bodega': self.bodega_b.pk})
         filas = _filas_xlsx(r)
         self.assertEqual(len(filas), 1)
-        self.assertEqual(filas[0][0], 'MAR-01')
+        self.assertEqual((filas[0][1], filas[0][2]), ('Marcador', '3°'))
         self.assertEqual(filas[0][4], 'Anexa')
 
     def test_valor_total_referencial(self):

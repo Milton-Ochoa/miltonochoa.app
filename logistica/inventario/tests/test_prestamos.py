@@ -16,6 +16,7 @@ from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 from logistica.inventario.models import (Bodega, Categoria, Devolucion, Item, Movimiento,
                      Prestamo, Stock, Tercero)
 from logistica.inventario.services import crear_prestamo, registrar_entrada, registrar_salida
+from logistica.inventario.tests.utils import crear_item
 
 
 class _BasePrestamosTest(TestCase):
@@ -30,10 +31,8 @@ class _BasePrestamosTest(TestCase):
         self.categoria = Categoria.objects.create(nombre='Papelería')
         self.bodega = Bodega.objects.create(nombre='Principal')
         self.bodega2 = Bodega.objects.create(nombre='Sucursal')
-        self.item = Item.objects.create(codigo='RES-01', nombre='Resma carta',
-                                        categoria=self.categoria)
-        self.item2 = Item.objects.create(codigo='MAR-01', nombre='Marcadores',
-                                         categoria=self.categoria)
+        self.item = crear_item(categoria=self.categoria, referencia='Resma carta')
+        self.item2 = crear_item(categoria=self.categoria, referencia='Marcadores')
         self.tercero = Tercero.objects.create(nombre='Colegio Norte',
                                               documento='900123')
         self.manana = timezone.localdate() + timedelta(days=1)

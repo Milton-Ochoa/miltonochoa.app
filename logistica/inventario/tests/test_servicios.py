@@ -17,6 +17,7 @@ from logistica.inventario.services import (ErrorDevolucion, StockInsuficiente, c
                        registrar_ajuste, registrar_devolucion,
                        registrar_entrada, registrar_salida,
                        registrar_traslado)
+from logistica.inventario.tests.utils import crear_item
 
 
 class ServiciosBase(TestCase):
@@ -26,11 +27,11 @@ class ServiciosBase(TestCase):
         cls.cat = Categoria.objects.create(nombre='Material académico')
         cls.bodega_a = Bodega.objects.create(nombre='Bodega A')
         cls.bodega_b = Bodega.objects.create(nombre='Bodega B')
-        cls.item1 = Item.objects.create(codigo='LIB-001', nombre='Libro guía',
-                                        categoria=cls.cat)
-        cls.item2 = Item.objects.create(codigo='RES-001', nombre='Resma carta',
-                                        categoria=cls.cat,
-                                        unidad_medida=Item.UnidadMedida.RESMA)
+        cls.item1 = crear_item(categoria=cls.cat, referencia='Libro guía',
+                               grado=1)
+        cls.item2 = crear_item(categoria=cls.cat, referencia='Resma carta',
+                               grado=1,
+                               unidad_medida=Item.UnidadMedida.RESMA)
         cls.tercero = Tercero.objects.create(nombre='Asesor Pérez',
                                              documento='123456')
 
@@ -415,8 +416,7 @@ class ConsultasTests(ServiciosBase):
         self.item1.save()
         self.item2.stock_minimo = 5
         self.item2.save()
-        item3 = Item.objects.create(codigo='X-1', nombre='Sin mínimo',
-                                    categoria=self.cat)
+        item3 = crear_item(categoria=self.cat, referencia='Sin mínimo')
         self._entrada(self.item1, self.bodega_a, 1)
         self._entrada(self.item1, self.bodega_b, 2)
         self._entrada(self.item2, self.bodega_a, 6)
@@ -463,11 +463,19 @@ class ConsultasTests(ServiciosBase):
 
 
 class ConstraintTests(ServiciosBase):
-    def test_codigo_de_item_unico(self):
+    def test_material_por_grado_unico(self):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                Item.objects.create(codigo='LIB-001', nombre='Duplicado',
-                                    categoria=self.cat)
+                crear_item(categoria=self.cat, referencia='Libro guía', grado=1)
+
+    def test_mismo_material_en_otro_grado_convive(self):
+        otro = crear_item(categoria=self.cat, referencia='Libro guía', grado=2)
+        self.assertEqual(otro.nombre, 'Material académico Libro guía — 2°')
+
+    def test_grado_fuera_de_rango_rechazado(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                crear_item(categoria=self.cat, referencia='Fuera', grado=12)
 
     def test_documento_de_tercero_unico_solo_si_diligenciado(self):
         # Dos terceros sin documento conviven; documento repetido no.

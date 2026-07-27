@@ -327,7 +327,8 @@ Sistema de inventario por cantidades (sin seriales ni costos: el kardex es de
 **cantidades**, `Item.valor_unitario` es solo referencial para exports). Multi-bodega,
 préstamos **bidireccionales** (`Prestamo.direccion`: OTORGADO = prestamos nosotros,
 RECIBIDO = nos prestan) con devolución parcial, y ajustes con motivo obligatorio.
-Modelos en `logistica/inventario/models.py` (migración `log_inventario.0001_initial`):
+Modelos en `logistica/inventario/models.py` (migraciones `0001_initial` y
+`0002_item_material_grados`):
 
 | Modelo | Tabla | | Modelo | Tabla |
 |---|---|---|---|---|
@@ -343,6 +344,19 @@ Modelos en `logistica/inventario/models.py` (migración `log_inventario.0001_ini
 
 Reglas de oro (NO romper):
 
+- **`Item` = (categoría, referencia, grado)** — desde jul 2026 el artículo ya no tiene
+  `codigo` ni `nombre`: el **material** es la pareja (`categoria` = modelo del material,
+  `referencia`) y existe en los **12 grados** 0°–11° (`GRADOS` en `models.py`; no hay
+  material "sin grado"). Un `Item` es ese material EN UN grado — es lo que se mueve
+  (stock, kardex y líneas de documento son por grado). `UniqueConstraint(categoria,
+  referencia, grado)` + CHECK `grado <= 11`. `nombre`/`material`/`grado_display` son
+  **properties derivadas** (leen la categoría → `select_related('categoria')` en todo
+  queryset que las pinte). El alta (`material_guardar`, `MaterialForm`) crea los 12 Items
+  de golpe y la edición actualiza los campos compartidos (unidad, descripción, mínimo,
+  valor, activo) de **todo el grupo**; los forms identifican el material con la clave
+  `'<categoria_id>:<referencia>'` (`Item.clave_material` ⇄ `parsear_clave_material`). La
+  migración 0002 **borró los datos operativos** (items, stock, ledger, documentos) porque
+  un artículo viejo no dice a qué grado pertenece; catálogos conservados.
 - **`Movimiento` es un ledger append-only** (kardex): jamás vistas de edición/borrado;
   los errores se corrigen con contramovimiento/ajuste. Cada fila guarda
   `saldo_resultante` (saldo de item×bodega tras aplicar, calculado bajo lock) → kardex

@@ -23,8 +23,8 @@
                     <tr>
                         <th style="width: 12%;">Fecha</th>
                         <th style="width: 15%;">Tipo</th>
-                        <th style="width: 9%;">Código</th>
-                        <th style="width: 19%;">Artículo</th>
+                        <th style="width: 12%;">Categoría</th>
+                        <th style="width: 16%;">Artículo</th>
                         <th style="width: 12%;">Bodega</th>
                         <th style="width: 7%; text-align: right;">Cantidad</th>
                         <th style="width: 7%; text-align: right;">Saldo</th>
@@ -42,7 +42,7 @@
                                 {% endfor %}
                             </select>
                         </th>
-                        <th><input type="text" data-filtro="codigo"></th>
+                        <th><input type="text" data-filtro="categoria"></th>
                         <th><input type="text" data-filtro="articulo"></th>
                         <th><input type="text" data-filtro="bodega"></th>
                         <th></th>
@@ -55,13 +55,13 @@
                     <tr data-fila
                         data-fecha="{{ m.creado_en|date:'Y-m-d' }}"
                         data-tipo="{{ m.tipo|lower }}"
-                        data-codigo="{{ m.item.codigo|lower }}"
+                        data-categoria="{{ m.item.categoria.nombre|lower }}"
                         data-articulo="{{ m.item.nombre|lower }}"
                         data-bodega="{{ m.bodega.nombre|lower }}"
                         data-detalle="{{ m.detalle|lower }}">
                         <td>{{ m.creado_en|date:'Y-m-d H:i' }}</td>
                         <td>{{ m.get_tipo_display }}</td>
-                        <td>{{ m.item.codigo }}</td>
+                        <td>{{ m.item.categoria.nombre }}</td>
                         <td>
                             <a href="{% url 'log_item_kardex' m.item_id %}" title="Kardex del artículo">{{ m.item.nombre }}</a>
                         </td>

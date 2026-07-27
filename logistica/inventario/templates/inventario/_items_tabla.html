@@ -24,9 +24,9 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
         <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaItems">
             <thead class="table-dark">
                 <tr>
-                    <th style="width: 10%;">Código</th>
-                    <th style="width: 24%;">Artículo</th>
-                    <th style="width: 14%;">Categoría</th>
+                    <th style="width: 16%;">Categoría</th>
+                    <th style="width: 22%;">Referencia</th>
+                    <th style="width: 6%;">Grado</th>
                     <th style="width: 9%;">Unidad</th>
                     <th style="width: 12%; text-align: right;">Existencia</th>
                     <th style="width: 8%; text-align: right;">Mínimo</th>
@@ -35,9 +35,9 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
                     <th style="width: 7%; text-align: center;">Acciones</th>
                 </tr>
                 <tr class="fila-filtros">
-                    <th><input type="text" data-filtro="codigo"></th>
-                    <th><input type="text" data-filtro="nombre"></th>
                     <th><input type="text" data-filtro="categoria"></th>
+                    <th><input type="text" data-filtro="referencia"></th>
+                    <th><input type="text" data-filtro="grado"></th>
                     <th><input type="text" data-filtro="unidad"></th>
                     <th></th>
                     <th></th>
@@ -49,15 +49,15 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
             <tbody>
                 {% for it in items %}
                 <tr data-fila
-                    data-codigo="{{ it.codigo|lower }}"
-                    data-nombre="{{ it.nombre|lower }}"
                     data-categoria="{{ it.categoria.nombre|lower }}"
+                    data-referencia="{{ it.referencia|lower }}"
+                    data-grado="{{ it.grado_display }}"
                     data-unidad="{{ it.get_unidad_medida_display|lower }}"
                     data-estado="{% if it.activo %}activo{% else %}inactivo{% endif %}"
                     {% if not it.activo %}class="opacity-50"{% endif %}>
-                    <td>{{ it.codigo }}</td>
-                    <td><strong>{{ it.nombre }}</strong></td>
                     <td>{{ it.categoria.nombre }}</td>
+                    <td><strong>{{ it.referencia|default:'—' }}</strong></td>
+                    <td>{{ it.grado_display }}</td>
                     <td>{{ it.get_unidad_medida_display }}</td>
                     <td class="text-end">
                         {{ it.stock_total }}
@@ -76,11 +76,12 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
                            title="Kardex del artículo">
                             <i class="fas fa-book"></i>
                         </a>
+                        {# Edita el MATERIAL entero (los 12 grados), no solo esta fila #}
                         <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
                                 onclick="abrirItemModal(this)"
-                                data-id="{{ it.pk }}"
-                                data-codigo="{{ it.codigo }}"
-                                data-nombre="{{ it.nombre }}"
+                                title="Editar el material (todos sus grados)"
+                                data-material="{{ it.clave_material }}"
+                                data-referencia="{{ it.referencia }}"
                                 data-categoria="{{ it.categoria_id }}"
                                 data-unidad="{{ it.unidad_medida }}"
                                 data-descripcion="{{ it.descripcion }}"
@@ -94,7 +95,7 @@ Fase 6 pueda intercalar su modal de exportación entre la tabla y el script.
                 {% empty %}
                 <tr>
                     <td colspan="9" class="text-center text-muted py-4">
-                        <i class="fas fa-box-open me-1"></i> No hay artículos todavía. Crea el primero con "Nuevo artículo".
+                        <i class="fas fa-box-open me-1"></i> No hay materiales todavía. Crea el primero con "Nuevo material".
                     </td>
                 </tr>
                 {% endfor %}
