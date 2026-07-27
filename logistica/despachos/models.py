@@ -126,10 +126,12 @@ class OrdenDespacho(models.Model):
     alerta_remision = models.BooleanField(default=False)
 
     # --- Denormalizaciones del import (para tablero/alertas sin joins) -------
-    # ≥1 línea EVALUACIÓN (material). Una orden 100% FORMACIÓN no es despachable.
+    # ≥1 línea EVALUACIÓN (material). Una orden 100% FORMACIÓN no es despachable
+    # (no alerta ni cuenta en el badge), pero SÍ aparece en el tablero.
     es_despachable = models.BooleanField(default=True)
     n_lineas = models.PositiveIntegerField(default=0)  # solo material
-    resumen_articulos = models.CharField(max_length=300, blank=True)
+    # Incluye TODAS las líneas (también FORMACIÓN) → más largo que antes.
+    resumen_articulos = models.CharField(max_length=500, blank=True)
 
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
@@ -152,6 +154,18 @@ class OrdenDespacho(models.Model):
         """`resumen_articulos` partido por artículo ('3× A; 2× B' → ['3× A',
         '2× B']) para mostrar uno por línea en el tablero."""
         return [p.strip() for p in self.resumen_articulos.split(';') if p.strip()]
+
+    @property
+    def articulos_nombres(self):
+        """Nombres de artículo sin la cantidad ('17× SIMULACRO 5' → 'SIMULACRO
+        5'). Alimenta el filtro tipo Excel de la columna Artículos, que agrupa
+        por NOMBRE: la cadena con cantidad es distinta en cada orden y no serviría
+        como valor de filtro."""
+        nombres = []
+        for parte in self.articulos_lista:
+            _, sep, nombre = parte.partition('× ')
+            nombres.append(nombre if sep else parte)
+        return nombres
 
     @property
     def colegio(self):

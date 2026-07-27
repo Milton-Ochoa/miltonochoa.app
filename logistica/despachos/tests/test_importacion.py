@@ -83,17 +83,20 @@ class CreacionInicialTest(_BaseImport):
 
     def test_orden_100_formacion_no_es_despachable(self):
         self._importar([
-            _fila(id_orden='PPAL-9', cod_articulo='H1', categoria='FORMACIÓN'),
+            _fila(id_orden='PPAL-9', cod_articulo='H1', descripcion='HORAS CLASE',
+                  categoria='FORMACIÓN', cantidad='3,00'),
         ])
         o = OrdenDespacho.objects.get(id_orden='PPAL-9')
         self.assertFalse(o.es_despachable)
         self.assertEqual(o.n_lineas, 0)
-        self.assertEqual(o.resumen_articulos, '')
+        # Pero SÍ tiene resumen: el tablero la muestra y el filtro de artículos
+        # necesita su nombre para poder ocultarla.
+        self.assertEqual(o.resumen_articulos, '3× HORAS CLASE')
         # La línea FORMACIÓN igual se guarda (histórico), marcada no-material.
         self.assertEqual(o.lineas.count(), 1)
         self.assertFalse(o.lineas.first().es_material)
 
-    def test_orden_mixta_solo_material_en_resumen(self):
+    def test_orden_mixta_resume_material_y_formacion(self):
         self._importar([
             _fila(id_orden='PPAL-1', cod_articulo='727', descripcion='SIMULACRO 5',
                   categoria='EVALUACIÓN', cantidad='5,00'),
@@ -102,9 +105,27 @@ class CreacionInicialTest(_BaseImport):
         ])
         o = OrdenDespacho.objects.get(id_orden='PPAL-1')
         self.assertTrue(o.es_despachable)
+        # Los contadores siguen siendo solo de material…
         self.assertEqual(o.n_lineas, 1)
-        self.assertEqual(o.resumen_articulos, '5× SIMULACRO 5')
+        # …pero el resumen lista TODAS las líneas.
+        self.assertEqual(o.resumen_articulos, '5× SIMULACRO 5; 2× HORAS CLASE')
         self.assertEqual(o.lineas.count(), 2)
+
+    def test_resumen_corta_en_limite_de_articulo(self):
+        # Con muchas líneas el resumen se trunca, pero NUNCA a mitad de un nombre
+        # (el filtro del tablero deriva sus opciones de esta cadena).
+        self._importar([
+            _fila(id_orden='PPAL-1', cod_articulo=f'A{i}',
+                  descripcion='ARTICULO DE NOMBRE LARGO ' + str(i), cantidad='1,00')
+            for i in range(40)
+        ])
+        o = OrdenDespacho.objects.get(id_orden='PPAL-1')
+        self.assertLessEqual(len(o.resumen_articulos), 500)
+        nombres = o.articulos_nombres
+        self.assertTrue(nombres)
+        for nombre in nombres:
+            self.assertTrue(nombre.startswith('ARTICULO DE NOMBRE LARGO '), nombre)
+            self.assertTrue(nombre.split()[-1].isdigit(), nombre)
 
 
 class IdempotenciaTest(_BaseImport):

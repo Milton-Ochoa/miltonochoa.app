@@ -6,6 +6,7 @@ directo para controlar cada estado con precisión (patrón `test_tablero.py`).
 """
 import io
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from django.contrib.auth.models import Group, User
 from django.test import Client, RequestFactory, TestCase
@@ -15,7 +16,8 @@ from openpyxl import load_workbook
 
 from core.areas import GRUPO_STAFF_LOGISTICA
 from logistica.despachos.context_processors import alertas_despachos
-from logistica.despachos.models import AsignacionBodega, OrdenDespacho
+from logistica.despachos.models import (AsignacionBodega, LineaOrden,
+                                        OrdenDespacho)
 from usuarios.models import ModuloUsuario
 
 _TABLERO = '/despachos/'
@@ -140,6 +142,58 @@ class ExportTest(_BaseLogistica):
         self.assertEqual(_ordenes(f_cliente='colegio uno'), set())
         # o2 sin centro_costos → casa por cliente (fallback).
         self.assertEqual(_ordenes(f_cliente='colegio dos'), {'PPAL-11'})
+
+    def test_export_filtra_por_articulos_seleccionados(self):
+        # El embudo manda los nombres MARCADOS; el match va contra las líneas.
+        LineaOrden.objects.create(orden=self.o1, cod_articulo='727',
+                                  descripcion='SIMULACRO 5', categoria='EVALUACIÓN',
+                                  cantidad=Decimal('2'), es_material=True)
+        LineaOrden.objects.create(orden=self.o2, cod_articulo='H1',
+                                  descripcion='HORAS CLASE', categoria='FORMACIÓN',
+                                  cantidad=Decimal('5'), es_material=False)
+        resp = self.client.post(_EXPORTAR, {
+            'tab': 'abiertas', 'f_articulos_on': '1',
+            'f_articulos_sel': 'SIMULACRO 5'})
+        self.assertEqual({f[0] for f in self._leer(resp)[1:]}, {'PPAL-10'})
+
+    def test_export_articulos_casa_por_codigo_sin_descripcion(self):
+        # Sin descripción el resumen usa el código → el filtro debe casar por ahí.
+        LineaOrden.objects.create(orden=self.o1, cod_articulo='727', descripcion='',
+                                  categoria='EVALUACIÓN', cantidad=Decimal('2'))
+        LineaOrden.objects.create(orden=self.o2, cod_articulo='H1', descripcion='',
+                                  categoria='FORMACIÓN', cantidad=Decimal('5'))
+        resp = self.client.post(_EXPORTAR, {
+            'tab': 'abiertas', 'f_articulos_on': '1', 'f_articulos_sel': '727'})
+        self.assertEqual({f[0] for f in self._leer(resp)[1:]}, {'PPAL-10'})
+
+    def test_export_articulos_sin_duplicar_ordenes(self):
+        # Dos líneas seleccionadas de la MISMA orden no la duplican (distinct).
+        LineaOrden.objects.create(orden=self.o1, cod_articulo='727',
+                                  descripcion='SIMULACRO 5', cantidad=Decimal('2'))
+        LineaOrden.objects.create(orden=self.o1, cod_articulo='728',
+                                  descripcion='PENSAR 3', cantidad=Decimal('1'))
+        resp = self.client.post(_EXPORTAR, {
+            'tab': 'abiertas', 'f_articulos_on': '1',
+            'f_articulos_sel': 'SIMULACRO 5;PENSAR 3'})
+        ordenes = [f[0] for f in self._leer(resp)[1:]]
+        self.assertEqual(ordenes, ['PPAL-10'])
+
+    def test_export_sin_flag_no_filtra_articulos(self):
+        # Sin el flag de filtro activo, el campo vacío NO recorta nada.
+        resp = self.client.post(_EXPORTAR, {'tab': 'abiertas', 'f_articulos_sel': ''})
+        self.assertEqual({f[0] for f in self._leer(resp)[1:]},
+                         {'PPAL-10', 'PPAL-11'})
+
+    def test_export_con_todo_desmarcado_sale_vacio(self):
+        # Flag activo + selección vacía = el usuario desmarcó todo.
+        resp = self.client.post(_EXPORTAR, {
+            'tab': 'abiertas', 'f_articulos_on': '1', 'f_articulos_sel': ''})
+        self.assertEqual(self._leer(resp)[1:], [])
+
+    def test_export_abiertas_incluye_no_despachables(self):
+        _orden('PPAL-12', es_despachable=False, resumen='5× HORAS CLASE')
+        resp = self.client.post(_EXPORTAR, {'tab': 'abiertas'})
+        self.assertIn('PPAL-12', {f[0] for f in self._leer(resp)[1:]})
 
     def test_export_requiere_post(self):
         self.assertEqual(self.client.get(_EXPORTAR).status_code, 405)

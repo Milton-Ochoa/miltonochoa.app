@@ -45,6 +45,17 @@
     .tabla-desp td.col-art { overflow: visible; white-space: normal; vertical-align: top; line-height: 1.3; }
     /* Esquinas redondeadas (como las demás tablas): la tarjeta recorta el thead. */
     .card-tabla-desp { overflow: hidden; }
+    /* Embudo del filtro de artículos (en el <th> oscuro). */
+    .btn-embudo-art { border: 0; background: none; color: #adb5bd; padding: 0 2px; line-height: 1; }
+    .btn-embudo-art:hover { color: #fff; }
+    .btn-embudo-art.filtro-activo { color: #ffc107; }
+    {% comment %}
+      El panel va FUERA de la tabla y en `position: fixed`: anclado al <th> lo
+      recortarían el `.table-responsive` (scroll horizontal) y el `overflow:hidden`
+      de las celdas de la tabla.
+    {% endcomment %}
+    #panelFiltroArt { position: fixed; z-index: 1080; width: 320px; }
+    #panelFiltroArt .art-opcion-label { cursor: pointer; margin-bottom: 0; }
 </style>
 
 <div class="container-fluid py-3">
@@ -138,7 +149,13 @@
                         <th class="col-orden">N° orden</th>
                         <th class="col-cliente">Colegio</th>
                         <th class="col-bodega">Bodega</th>
-                        <th class="col-art">Artículos</th>
+                        <th class="col-art">
+                            Artículos
+                            <button type="button" id="btnEmbudoArt" class="btn-embudo-art"
+                                    title="Filtrar artículos">
+                                <i class="fas fa-filter"></i>
+                            </button>
+                        </th>
                         <th class="col-entrega">Entrega</th>
                         <th class="col-estado">Estado</th>
                         <th class="col-acciones">Acciones</th>
@@ -149,7 +166,8 @@
                         <th><input type="text" data-filtro="cliente"></th>
                         {# Pre-poblado con la bodega por defecto del usuario (borrable). #}
                         <th><input type="search" data-filtro="bodega" value="{{ bodega_default }}"></th>
-                        <th><input type="text" data-filtro="articulo"></th>
+                        {# Artículos no lleva input: su filtro es el embudo del encabezado. #}
+                        <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
@@ -159,11 +177,12 @@
                 <tbody id="cuerpoTablaDespachos">
                     {% for o in ordenes %}
                     {# data-cliente lleva el COLEGIO (centro de costos con fallback a cliente): el encabezado de la columna es "Colegio" y su filtro busca sobre ese texto. #}
-                    <tr class="fila-orden{% if tab != 'cerradas' and o.fecha_entrega %}{% if o.fecha_entrega < hoy %} fila-vencida{% elif o.fecha_entrega <= limite_proxima %} fila-proxima{% endif %}{% endif %}"
+                    {# El resaltado exige `es_despachable`: una orden 100% FORMACIÓN se ve, pero no alerta por vencimiento (no hay nada que despachar). #}
+                    <tr class="fila-orden{% if tab != 'cerradas' and o.es_despachable and o.fecha_entrega %}{% if o.fecha_entrega < hoy %} fila-vencida{% elif o.fecha_entrega <= limite_proxima %} fila-proxima{% endif %}{% endif %}"
                         data-orden="{{ o.id_orden|lower }}"
                         data-cliente="{{ o.colegio|lower }}"
                         data-bodega="{{ o.bodega|lower }}"
-                        data-articulo="{{ o.resumen_articulos|lower }}"
+                        data-artnombres="{{ o.articulos_nombres|join:';' }}"
                         data-entrega="{{ o.fecha_entrega|date:'Y-m-d' }}"
                         data-estado="{{ o.estado|lower }}">
                         <td><strong>{{ o.id_orden }}</strong></td>
@@ -234,6 +253,26 @@
 </div>
 
 {% comment %}
+  Panel del filtro tipo Excel de la columna Artículos. Vive fuera de la tabla (ver
+  el CSS de #panelFiltroArt); las opciones las pinta el JS de `_tabla_js.html` a
+  partir de los `data-artnombres` de las filas.
+{% endcomment %}
+<div id="panelFiltroArt" class="card shadow d-none">
+    <div class="card-body p-2">
+        <input type="search" id="artBuscar" class="form-control form-control-sm mb-2"
+               placeholder="Buscar artículo…" autocomplete="off">
+        <label class="form-check small art-opcion-label border-bottom pb-1 mb-1 d-block">
+            <input class="form-check-input" type="checkbox" id="artTodos">
+            <span class="fw-bold">(Seleccionar todo)</span>
+        </label>
+        <div id="artOpciones" style="max-height: 260px; overflow-y: auto;"></div>
+        <div class="d-flex justify-content-end mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="artCerrar">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+{% comment %}
   Un solo formulario oculto para TODAS las acciones de estado de la tabla (evita
   repetir el csrf_token en ~930 filas). Cada botón `.desp-accion` fija su action y
   la acción y lo envía; `next` conserva la tab/filtro actual al volver.
@@ -281,7 +320,9 @@
                 <input type="hidden" name="f_bodega"   id="despExpBodega">
                 <input type="hidden" name="f_ciudad"   id="despExpCiudad">
                 <input type="hidden" name="f_depto"    id="despExpDepto">
-                <input type="hidden" name="f_articulo" id="despExpArticulo">
+                {# Artículos: nombres marcados en el embudo + flag de filtro activo (vacío con el flag en 1 = nada seleccionado). #}
+                <input type="hidden" name="f_articulos_sel" id="despExpArticulosSel">
+                <input type="hidden" name="f_articulos_on"  id="despExpArticulosOn">
             </div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
@@ -308,7 +349,13 @@
         document.getElementById('despExpBodega').value   = val('.fila-filtros input[data-filtro="bodega"]');
         document.getElementById('despExpCiudad').value   = val('.fila-filtros input[data-filtro="ciudad"]');
         document.getElementById('despExpDepto').value    = val('.fila-filtros input[data-filtro="depto"]');
-        document.getElementById('despExpArticulo').value = val('.fila-filtros input[data-filtro="articulo"]');
+        {% comment %}
+          El embudo de artículos lo expone `_tabla_js.html` (incluido más abajo,
+          pero ya evaluado cuando se envía el form): null = sin filtro.
+        {% endcomment %}
+        var sel = window.despArticulosSeleccionados ? window.despArticulosSeleccionados() : null;
+        document.getElementById('despExpArticulosOn').value  = sel ? '1' : '';
+        document.getElementById('despExpArticulosSel').value = sel ? sel.join(';') : '';
     });
 })();
 </script>

@@ -59,6 +59,9 @@ _CAMPOS_LINEA_UPDATE = ('articulo', 'cod_articulo', 'descripcion', 'categoria',
 
 _BATCH = 500
 
+# Debe coincidir con `OrdenDespacho.resumen_articulos.max_length`.
+MAX_RESUMEN = 500
+
 
 def _aware(dt):
     """Datetime naive → aware en la zona por defecto. El parser (módulo puro, sin
@@ -109,17 +112,34 @@ def _cant_str(cantidad):
     return format(c.normalize(), 'f')
 
 
+def _resumen(partes):
+    """Une las partes del resumen sin pasar de `max_length`, cortando SIEMPRE en
+    el límite de un artículo: el filtro de la columna Artículos deriva sus
+    opciones de esta cadena, y un último elemento partido a la mitad crearía una
+    opción falsa que no casaría con ninguna línea al exportar."""
+    resumen = ''
+    for parte in partes:
+        candidato = f'{resumen}; {parte}' if resumen else parte
+        if len(candidato) > MAX_RESUMEN:
+            break
+        resumen = candidato
+    return resumen
+
+
 def _denormalizar(incoming):
     """(es_despachable, n_lineas, resumen_articulos) desde las filas de la orden.
-    Solo cuentan las líneas de material (categoría ≠ FORMACIÓN).
+
+    `es_despachable` y `n_lineas` cuentan SOLO material (categoría ≠ FORMACIÓN).
+    El resumen, en cambio, incluye TODAS las líneas: el tablero muestra ahora
+    también las órdenes 100% FORMACIÓN, y el filtro de artículos necesita ver
+    HORAS CLASE para poder ocultarlas.
 
     El resumen usa la DESCRIPCIÓN del artículo (más legible en el tablero que el
     código); cae al código si la descripción viene vacía."""
     material = [f for f in incoming if not _es_formacion(f.categoria)]
     partes = [f'{_cant_str(f.cantidad)}× {f.descripcion or f.cod_articulo}'
-              for f in material]
-    resumen = '; '.join(partes)[:300]
-    return bool(material), len(material), resumen
+              for f in incoming]
+    return bool(material), len(material), _resumen(partes)
 
 
 # ---------------------------------------------------------------------------
