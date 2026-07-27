@@ -16,9 +16,10 @@ from django.db import models, transaction
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import (Devolucion, Entrada, EntradaLinea, Item, Movimiento,
-                     Prestamo, PrestamoLinea, Salida, SalidaLinea, Stock,
-                     Traslado, TrasladoLinea)
+from .models import (Devolucion, DevolucionColegio, DevolucionColegioLinea,
+                     Entrada, EntradaLinea, Item, Movimiento, Prestamo,
+                     PrestamoLinea, Salida, SalidaLinea, Stock, Traslado,
+                     TrasladoLinea)
 
 
 class StockInsuficiente(Exception):
@@ -53,7 +54,7 @@ def _stock_bloqueado(item, bodega):
 
 def _aplicar_movimiento(*, item, bodega, tipo, cantidad, usuario, detalle='',
                         entrada=None, salida=None, prestamo=None,
-                        devolucion=None, traslado=None):
+                        devolucion=None, traslado=None, devolucion_colegio=None):
     """Núcleo privado: aplica un movimiento al stock y lo asienta en el ledger.
 
     Valida cantidad > 0 y no-negativos, actualiza Stock con expresión F()
@@ -76,6 +77,7 @@ def _aplicar_movimiento(*, item, bodega, tipo, cantidad, usuario, detalle='',
         saldo_resultante=nuevo_saldo, detalle=detalle[:250], creado_por=usuario,
         entrada=entrada, salida=salida, prestamo=prestamo,
         devolucion=devolucion, traslado=traslado,
+        devolucion_colegio=devolucion_colegio,
     )
 
 
@@ -238,6 +240,35 @@ def registrar_devolucion(*, prestamo, lineas, usuario, observaciones=''):
     else:
         prestamo.estado = Prestamo.Estado.PARCIAL
     prestamo.save(update_fields=['estado', 'cerrado_en'])
+    return devolucion
+
+
+@transaction.atomic
+def registrar_devolucion_colegio(*, bodega, lineas, usuario, fecha_recibido,
+                                 colegio, codigo_colegio='', regional='',
+                                 ejecutivo='', observaciones=''):
+    """Material que un colegio devuelve sin usar. ``lineas`` = [(Item, cantidad)].
+
+    Molde de `registrar_entrada` (suma stock con rastro en el ledger), pero con
+    la cabecera comercial de la hoja del usuario (colegio, regional, ejecutivo)
+    para que financiera pueda ajustar cobros a partir de lo devuelto.
+    """
+    if not lineas:
+        raise ValueError('La devolución necesita al menos una línea.')
+    devolucion = DevolucionColegio.objects.create(
+        fecha_recibido=fecha_recibido, colegio=colegio,
+        codigo_colegio=codigo_colegio, regional=regional, ejecutivo=ejecutivo,
+        bodega=bodega, observaciones=observaciones, creado_por=usuario)
+    detalle = f'Devolución de colegio #{devolucion.pk} — {colegio}'
+    for item, cantidad in lineas:
+        # El movimiento primero: valida cantidad y deja el error de dominio
+        # antes de que el CHECK de la línea lo vuelva un IntegrityError.
+        _aplicar_movimiento(item=item, bodega=bodega,
+                            tipo=Movimiento.Tipo.DEV_COLEGIO,
+                            cantidad=cantidad, usuario=usuario,
+                            detalle=detalle, devolucion_colegio=devolucion)
+        DevolucionColegioLinea.objects.create(devolucion=devolucion, item=item,
+                                              cantidad=cantidad)
     return devolucion
 
 

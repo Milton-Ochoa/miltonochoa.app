@@ -186,11 +186,12 @@ class Movimiento(models.Model):
         TRASLADO_ENT   = 'TRASLADO_ENT',   'Traslado (entrada)'
         AJUSTE_POS     = 'AJUSTE_POS',     'Ajuste positivo'
         AJUSTE_NEG     = 'AJUSTE_NEG',     'Ajuste negativo'
+        DEV_COLEGIO    = 'DEV_COLEGIO',    'Devolución de colegio'
 
     # Tipos que SUMAN stock; el resto resta. El signo lo da el tipo: `cantidad`
     # siempre es > 0.
     TIPOS_POSITIVOS = {Tipo.ENTRADA, Tipo.DEVOLUCION, Tipo.PREST_RECIBIDO,
-                       Tipo.TRASLADO_ENT, Tipo.AJUSTE_POS}
+                       Tipo.TRASLADO_ENT, Tipo.AJUSTE_POS, Tipo.DEV_COLEGIO}
 
     item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name='movimientos')
     bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT, related_name='movimientos')
@@ -212,6 +213,10 @@ class Movimiento(models.Model):
                                    blank=True, related_name='movimientos')
     traslado = models.ForeignKey('Traslado', on_delete=models.PROTECT, null=True,
                                  blank=True, related_name='movimientos')
+    devolucion_colegio = models.ForeignKey('DevolucionColegio',
+                                           on_delete=models.PROTECT, null=True,
+                                           blank=True,
+                                           related_name='movimientos')
 
     # Snapshot legible del contexto (proveedor, tercero, motivo…): el ledger se
     # entiende solo, sin abrir el documento.
@@ -487,3 +492,54 @@ class Devolucion(models.Model):
 
     def __str__(self):
         return f'Devolución #{self.pk} del préstamo #{self.prestamo_id}'
+
+
+class DevolucionColegio(models.Model):
+    """Material despachado que un colegio devuelve sin usar (suma al stock).
+
+    El colegio va como TEXTO, no como FK: los colegios de despachos viven en el
+    ERP externo (`OrdenDespacho.cliente`/`centro_costos`) y ni siquiera son los
+    mismos de `configuracion.Colegio`. La UI autocompleta con los clientes del
+    ERP pero acepta texto libre. Financiera lo consulta en solo lectura para
+    ajustar cobros; por eso NO hay valores monetarios aquí.
+    """
+
+    fecha_recibido = models.DateField()
+    colegio = models.CharField(max_length=200)
+    codigo_colegio = models.CharField(max_length=60, blank=True)
+    regional = models.CharField(max_length=120, blank=True)
+    # Asesor comercial responsable de la cuenta (el "Ejecutivo" de la hoja).
+    ejecutivo = models.CharField(max_length=200, blank=True)
+    bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT,
+                               related_name='devoluciones_colegio')
+    observaciones = models.TextField(blank=True)
+    creado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                   blank=True,
+                                   related_name='devoluciones_colegio')
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'log_devoluciones_colegios'
+        ordering = ['-fecha_recibido', '-id']
+        verbose_name = 'Devolución de colegio'
+        verbose_name_plural = 'Devoluciones de colegios'
+
+    def __str__(self):
+        return f'Devolución #{self.pk} — {self.colegio}'
+
+
+class DevolucionColegioLinea(models.Model):
+    devolucion = models.ForeignKey(DevolucionColegio, on_delete=models.CASCADE,
+                                   related_name='lineas')
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name='+')
+    cantidad = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'log_devoluciones_colegios_lineas'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0),
+                                   name='devolucion_colegio_linea_positiva'),
+        ]
+
+    def __str__(self):
+        return f'{self.cantidad} × {self.item}'

@@ -1,0 +1,78 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Devolución #{{ devolucion.pk }}{% endblock %}
+
+{% block content %}
+<style>
+    .tabla-grados { table-layout: fixed; width: 100%; }
+    .tabla-grados th.col-grado, .tabla-grados td.col-grado {
+        text-align: center; font-size: 0.8rem; padding: 0.3rem 0.15rem;
+    }
+</style>
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-xl-11">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <strong><i class="fas fa-rotate-left me-1 text-warning"></i> Devolución #{{ devolucion.pk }}</strong>
+                    <a href="{% url 'log_devoluciones_lista' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body py-2">
+                    <div class="row g-2 small">
+                        <div class="col-md-3"><strong>Recibido:</strong> {{ devolucion.fecha_recibido|date:'Y-m-d' }}</div>
+                        <div class="col-md-5"><strong>Colegio:</strong> {{ devolucion.colegio }}</div>
+                        <div class="col-md-2"><strong>Código:</strong> {{ devolucion.codigo_colegio|default:'—' }}</div>
+                        <div class="col-md-2"><strong>Regional:</strong> {{ devolucion.regional|default:'—' }}</div>
+                        <div class="col-md-4"><strong>Ejecutivo:</strong> {{ devolucion.ejecutivo|default:'—' }}</div>
+                        <div class="col-md-4"><strong>Bodega:</strong> {{ devolucion.bodega.nombre }}</div>
+                        <div class="col-md-4">
+                            <strong>Registró:</strong> {{ devolucion.creado_por.username|default:'—' }}
+                            <span class="text-muted">({{ devolucion.creado_en|date:'Y-m-d H:i' }})</span>
+                        </div>
+                        <div class="col-12"><strong>Observaciones:</strong> {{ devolucion.observaciones|default:'—' }}</div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 tabla-grados">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 22%;">Categoría</th>
+                                <th style="width: 22%;">Referencia</th>
+                                {% for g in grados %}
+                                <th class="col-grado" style="width: 4%;">{{ g }}°</th>
+                                {% endfor %}
+                                <th class="col-grado" style="width: 8%;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in materiales %}
+                            <tr>
+                                <td>{{ m.categoria.nombre }}</td>
+                                <td>{{ m.referencia|default:'—' }}</td>
+                                {% for c in m.celdas %}
+                                <td class="col-grado">
+                                    {% if c.item %}
+                                    <a href="{% url 'log_item_kardex' c.item.pk %}" title="Kardex del grado {{ c.grado }}°">{{ c.cantidad }}</a>
+                                    {% else %}
+                                    <span class="text-muted">·</span>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                                <td class="col-grado fw-bold">{{ m.total }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{{ grados|length|add:3 }}" class="text-center text-muted py-3">
+                                    Sin líneas.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
