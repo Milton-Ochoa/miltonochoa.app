@@ -36,9 +36,10 @@ from .services import (ReporteViejo, TransicionInvalida, importar_reporte,
 # Filtros de columna del tablero (name en el POST del export → campo del modelo).
 # `f_cliente` (columna "Colegio") NO está aquí: se filtra sobre `centro_costos` con
 # fallback a `cliente`, que no es un simple `icontains` (ver `tablero_exportar`).
+# La columna Artículos tampoco: su filtro es una SELECCIÓN de nombres, no texto.
 FILTROS_COLUMNA = {
     'f_orden': 'id_orden', 'f_bodega': 'bodega',
-    'f_ciudad': 'ciudad', 'f_depto': 'departamento', 'f_articulo': 'resumen_articulos',
+    'f_ciudad': 'ciudad', 'f_depto': 'departamento',
 }
 
 # Tabs del tablero (querystring `?tab=`).
@@ -65,8 +66,12 @@ def _queryset_tab(tab, *, desde=None, hasta=None):
     """Queryset base de cada tab (misma lógica que comparten tablero y export).
     `desde`/`hasta` solo aplican a la tab "cerradas" (rango de `fecha_orden`)."""
     if tab == 'abiertas':
+        # TODAS las órdenes abiertas, también las 100% FORMACIÓN (HORAS CLASE):
+        # el usuario quiere verlas y ocultarlas a voluntad con el filtro de la
+        # columna Artículos. El badge de vencidas sí sigue mirando solo las
+        # despachables (`context_processors`).
         return OrdenDespacho.objects.filter(
-            estado__in=OrdenDespacho.ESTADOS_ABIERTOS, es_despachable=True)
+            estado__in=OrdenDespacho.ESTADOS_ABIERTOS)
     if tab == 'sin_remision':
         return OrdenDespacho.objects.filter(estado=OrdenDespacho.Estado.DESPACHADA)
     qs = OrdenDespacho.objects.filter(estado__in=OrdenDespacho.ESTADOS_TERMINALES)
@@ -100,7 +105,7 @@ def tablero(request):
 
     # Contadores de las tabs de trabajo (cheap COUNTs, cubiertos por el índice).
     n_abiertas = OrdenDespacho.objects.filter(
-        estado__in=OrdenDespacho.ESTADOS_ABIERTOS, es_despachable=True).count()
+        estado__in=OrdenDespacho.ESTADOS_ABIERTOS).count()
     n_sin_remision = OrdenDespacho.objects.filter(
         estado=OrdenDespacho.Estado.DESPACHADA).count()
 
@@ -296,6 +301,21 @@ def tablero_exportar(request):
         ordenes = ordenes.filter(
             Q(centro_costos__icontains=colegio)
             | Q(centro_costos='', cliente__icontains=colegio))
+
+    # Filtro tipo Excel de la columna Artículos: el JS manda los NOMBRES marcados
+    # (`f_articulos_sel`, separados por ';') y un flag de "filtro activo" — sin el
+    # flag no se puede distinguir "sin filtro" de "todo desmarcado". El match va
+    # contra las LÍNEAS y es EXACTO: un `icontains` sobre `resumen_articulos`
+    # colisionaría entre nombres que son subcadena de otros.
+    if request.POST.get('f_articulos_on') == '1':
+        crudo = request.POST.get('f_articulos_sel') or ''
+        sel = [n.strip() for n in crudo.split(';') if n.strip()]
+        if sel:
+            ordenes = ordenes.filter(
+                Q(lineas__descripcion__in=sel)
+                | Q(lineas__descripcion='', lineas__cod_articulo__in=sel)).distinct()
+        else:
+            ordenes = ordenes.none()
 
     # Rango de fecha de entrega (atajos/rango client-side de las tabs de trabajo).
     ent_desde = _parse_fecha(request.POST.get('ent_desde'))

@@ -49,6 +49,16 @@ class OrdenDespachoTest(TestCase):
             ['3× LIBRO A', '2× LIBRO B'])
         self.assertEqual(OrdenDespacho(resumen_articulos='').articulos_lista, [])
 
+    def test_articulos_nombres_quita_la_cantidad(self):
+        self.assertEqual(
+            OrdenDespacho(resumen_articulos='3× LIBRO A; 2× LIBRO B').articulos_nombres,
+            ['LIBRO A', 'LIBRO B'])
+        # Sin el prefijo de cantidad, el nombre es la parte completa.
+        self.assertEqual(
+            OrdenDespacho(resumen_articulos='LIBRO SUELTO').articulos_nombres,
+            ['LIBRO SUELTO'])
+        self.assertEqual(OrdenDespacho(resumen_articulos='').articulos_nombres, [])
+
     def test_colegio_usa_centro_costos_con_fallback(self):
         # El colegio vive en 'Centro de costos'; si está vacío, cae al 'Cliente'.
         self.assertEqual(

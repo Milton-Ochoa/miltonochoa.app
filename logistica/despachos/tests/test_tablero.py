@@ -79,14 +79,14 @@ class TabsTest(_BaseLogistica):
                                  fecha_orden=_aware(2026, 7, 15))
         self.o_anulada = _orden('PPAL-5', estado=OrdenDespacho.Estado.ANULADA,
                                 fecha_orden=_aware(2026, 7, 16))
-        # 100% FORMACIÓN → no despachable, fuera de "abiertas".
+        # 100% FORMACIÓN → no despachable, pero SÍ aparece en "abiertas".
         self.o_formacion = _orden('PPAL-6', estado=OrdenDespacho.Estado.PENDIENTE,
-                                  es_despachable=False, resumen='')
+                                  es_despachable=False, resumen='5× HORAS CLASE')
 
-    def test_abiertas_solo_pendiente_y_alistada_despachables(self):
+    def test_abiertas_incluye_las_no_despachables(self):
         ordenes = self.client.get(_TABLERO + '?tab=abiertas').context['ordenes']
         ids = {o.id_orden for o in ordenes}
-        self.assertEqual(ids, {'PPAL-1', 'PPAL-2'})
+        self.assertEqual(ids, {'PPAL-1', 'PPAL-2', 'PPAL-6'})
 
     def test_abiertas_es_el_default(self):
         r1 = self.client.get(_TABLERO)
@@ -112,8 +112,32 @@ class TabsTest(_BaseLogistica):
 
     def test_contadores_por_tab(self):
         ctx = self.client.get(_TABLERO).context
-        self.assertEqual(ctx['n_abiertas'], 2)
+        # El contador de la tab espeja lo que se lista (incluida PPAL-6).
+        self.assertEqual(ctx['n_abiertas'], 3)
         self.assertEqual(ctx['n_sin_remision'], 1)
+
+
+class ResaltadoTest(_BaseLogistica):
+    """Una orden 100% FORMACIÓN se ve en el tablero, pero no alerta por
+    vencimiento: no hay material que despachar."""
+
+    def setUp(self):
+        super().setUp()
+        ayer = timezone.localdate() - timedelta(days=1)
+        _orden('PPAL-20', fecha_entrega=ayer)
+        _orden('PPAL-21', fecha_entrega=ayer, es_despachable=False,
+               resumen='5× HORAS CLASE')
+
+    def test_solo_la_despachable_se_resalta(self):
+        html = self.client.get(_TABLERO).content.decode()
+        # Una sola fila roja (la despachable vencida); la otra se lista sin marca.
+        self.assertEqual(html.count('class="fila-orden fila-vencida"'), 1)
+        self.assertIn('PPAL-21', html)
+
+    def test_los_nombres_de_articulo_van_en_la_fila(self):
+        # `data-artnombres` alimenta el filtro tipo Excel de la columna.
+        html = self.client.get(_TABLERO).content.decode()
+        self.assertIn('data-artnombres="HORAS CLASE"', html)
 
 
 class SaltoRapidoTest(_BaseLogistica):

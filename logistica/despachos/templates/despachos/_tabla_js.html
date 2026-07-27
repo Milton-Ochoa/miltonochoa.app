@@ -18,6 +18,36 @@
     var inpDesde = document.getElementById('despDesde');
     var inpHasta = document.getElementById('despHasta');
 
+    // ── Filtro tipo Excel de la columna Artículos ─────────────────────────────
+    // Se persisten los EXCLUIDOS (no los marcados): así los artículos que
+    // aparezcan en cargas futuras nacen visibles en vez de quedar ocultos por una
+    // selección vieja.
+    var LS_ART = 'desp_filtro_articulos_v1';
+    var excluidos = new Set();
+    try {
+        var guardado = JSON.parse(localStorage.getItem(LS_ART) || '[]');
+        if (Array.isArray(guardado)) guardado.forEach(function (n) { excluidos.add(n); });
+    } catch (e) { /* localStorage bloqueado o dato corrupto: filtro sin persistir */ }
+
+    var nombresArt = new Map();      // nombre en minúscula → texto original
+    var artsPorFila = new Map();     // tr → [nombre en minúscula, …]
+    filas.forEach(function (tr) {
+        var lowers = [];
+        (tr.dataset.artnombres || '').split(';').forEach(function (n) {
+            var nombre = n.trim();
+            if (!nombre) return;
+            var low = nombre.toLowerCase();
+            if (!nombresArt.has(low)) nombresArt.set(low, nombre);
+            lowers.push(low);
+        });
+        artsPorFila.set(tr, lowers);
+    });
+
+    function guardarExcluidos() {
+        try { localStorage.setItem(LS_ART, JSON.stringify(Array.from(excluidos))); }
+        catch (e) { /* sin persistencia; el filtro sigue vivo en memoria */ }
+    }
+
     // ── Utilidades de fecha (operan sobre strings ISO 'YYYY-MM-DD') ──
     function d(iso) { var p = iso.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
     function iso(dt) {
@@ -44,6 +74,10 @@
                 if (desde && ent < desde) return false;
                 if (hasta && ent > hasta) return false;
             }
+            // Basta con que UN artículo de la orden siga marcado para verla; una
+            // orden sin artículos nunca se oculta por este filtro.
+            var arts = artsPorFila.get(tr) || [];
+            if (arts.length && arts.every(function (n) { return excluidos.has(n); })) return false;
             return true;
         });
     }
@@ -134,6 +168,115 @@
             pagina = 1; render();
         });
     });
+
+    // ── Panel del embudo de artículos ──
+    var btnEmbudo = document.getElementById('btnEmbudoArt');
+    var panelArt  = document.getElementById('panelFiltroArt');
+    var inpArtBuscar = document.getElementById('artBuscar');
+    var chkArtTodos  = document.getElementById('artTodos');
+    var contOpciones = document.getElementById('artOpciones');
+
+    function nombresListados() {
+        var q = inpArtBuscar ? inpArtBuscar.value.trim().toLowerCase() : '';
+        return Array.from(nombresArt.keys())
+            .filter(function (low) { return !q || low.indexOf(q) !== -1; })
+            .sort();
+    }
+
+    function pintarOpciones() {
+        if (!contOpciones) return;
+        var listados = nombresListados();
+        contOpciones.innerHTML = '';
+        listados.forEach(function (low) {
+            var label = document.createElement('label');
+            label.className = 'form-check small art-opcion-label d-block';
+            var inp = document.createElement('input');
+            inp.className = 'form-check-input art-opcion';
+            inp.type = 'checkbox';
+            inp.checked = !excluidos.has(low);
+            inp.dataset.nombre = low;
+            var span = document.createElement('span');
+            span.textContent = ' ' + nombresArt.get(low);
+            label.appendChild(inp);
+            label.appendChild(span);
+            contOpciones.appendChild(label);
+
+            inp.addEventListener('change', function () {
+                if (inp.checked) excluidos.delete(low); else excluidos.add(low);
+                guardarExcluidos();
+                sincronizarTodos();
+                actualizarEmbudo();
+                pagina = 1; render();
+            });
+        });
+        sincronizarTodos();
+    }
+
+    function sincronizarTodos() {
+        if (!chkArtTodos) return;
+        var listados = nombresListados();
+        var marcados = listados.filter(function (low) { return !excluidos.has(low); });
+        chkArtTodos.checked = listados.length > 0 && marcados.length === listados.length;
+        chkArtTodos.indeterminate = marcados.length > 0 && marcados.length < listados.length;
+    }
+
+    function actualizarEmbudo() {
+        if (!btnEmbudo) return;
+        var activo = false;
+        nombresArt.forEach(function (_, low) { if (excluidos.has(low)) activo = true; });
+        btnEmbudo.classList.toggle('filtro-activo', activo);
+        btnEmbudo.title = activo ? 'Filtro de artículos activo' : 'Filtrar artículos';
+    }
+
+    if (chkArtTodos) {
+        chkArtTodos.addEventListener('change', function () {
+            // Aplica solo a lo que el buscador esté mostrando (como en Excel).
+            nombresListados().forEach(function (low) {
+                if (chkArtTodos.checked) excluidos.delete(low); else excluidos.add(low);
+            });
+            guardarExcluidos();
+            pintarOpciones();
+            actualizarEmbudo();
+            pagina = 1; render();
+        });
+    }
+    if (inpArtBuscar) inpArtBuscar.addEventListener('input', pintarOpciones);
+
+    if (btnEmbudo && panelArt) {
+        btnEmbudo.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (!panelArt.classList.contains('d-none')) {
+                panelArt.classList.add('d-none');
+                return;
+            }
+            var r = btnEmbudo.getBoundingClientRect();
+            panelArt.style.top = (r.bottom + 4) + 'px';
+            panelArt.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 332)) + 'px';
+            panelArt.classList.remove('d-none');
+            pintarOpciones();
+        });
+        panelArt.addEventListener('click', function (e) { e.stopPropagation(); });
+        document.addEventListener('click', function () { panelArt.classList.add('d-none'); });
+        var btnCerrarArt = document.getElementById('artCerrar');
+        if (btnCerrarArt) {
+            btnCerrarArt.addEventListener('click', function () { panelArt.classList.add('d-none'); });
+        }
+    }
+
+    {% comment %}
+      Contrato con el modal de exportar (tablero.html): devuelve los nombres
+      MARCADOS en su forma original, o null si el filtro no está activo.
+    {% endcomment %}
+    window.despArticulosSeleccionados = function () {
+        var seleccion = [], hayExcluido = false;
+        nombresArt.forEach(function (original, low) {
+            if (excluidos.has(low)) hayExcluido = true;
+            else seleccion.push(original);
+        });
+        return hayExcluido ? seleccion : null;
+    };
+
+    actualizarEmbudo();
 
     // ── Buscador "Ir a orden" (client-side navega al ?q= del server) ──
     var buscarOrden = document.getElementById('despBuscarOrden');
