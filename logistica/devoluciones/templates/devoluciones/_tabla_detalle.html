@@ -1,0 +1,134 @@
+{% comment %}
+Tabla "Detalle por material": una fila por (devolución, material) con sus 12
+grados en columnas — EXACTAMENTE el layout del Excel, en pantalla (el usuario
+no debe tener que descargar la hoja solo para ver el detalle).
+
+La comparten logística y financiera: el contexto lo arma
+`logistica.devoluciones.views.contexto_detalle` (`filas` + `grados`).
+
+Parámetros (include ... with):
+  - con_detalle: True para enlazar cada fila con su devolución (solo logística;
+    financiera no tiene vista de detalle por devolución).
+{% endcomment %}
+<style>
+    {% comment %} Columnas dinámicas: el ancho lo decide el contenido y las 12 de grado se quedan mínimas. {% endcomment %}
+    .tabla-det { table-layout: auto; width: 100%; }
+    .tabla-det th, .tabla-det td {
+        font-size: 0.82rem; padding: 0.35rem 0.5rem; white-space: nowrap;
+    }
+    .tabla-det th.col-grado, .tabla-det td.col-grado {
+        text-align: center; width: 1%; padding: 0.35rem 0.25rem;
+    }
+    .tabla-det td.col-grado.vacia { color: #adb5bd; }
+    .tabla-det tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-det tr.fila-filtros th input,
+    .tabla-det tr.fila-filtros th select {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+    .tabla-det tr.no-valida { background-color: #fff5f5; }
+</style>
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 tabla-det" id="tablaDetalleDev">
+            <thead class="table-dark">
+                <tr>
+                    <th>Recibido</th>
+                    <th>Colegio</th>
+                    <th>Código</th>
+                    <th>Regional</th>
+                    <th>Ejecutivo</th>
+                    <th>Bodega</th>
+                    <th>Estado</th>
+                    <th>Categoría</th>
+                    <th>Referencia</th>
+                    {% for g in grados %}
+                    <th class="col-grado">{{ g }}°</th>
+                    {% endfor %}
+                    <th class="col-grado">Total</th>
+                    <th>Observaciones</th>
+                </tr>
+                <tr class="fila-filtros">
+                    <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
+                    <th><input type="text" data-filtro="colegio"></th>
+                    <th><input type="text" data-filtro="codigo"></th>
+                    <th><input type="text" data-filtro="regional"></th>
+                    <th><input type="text" data-filtro="ejecutivo"></th>
+                    <th><input type="text" data-filtro="bodega"></th>
+                    <th>
+                        {% comment %} Los valores no pueden ser subcadena uno del otro: el filtro compara con indexOf. {% endcomment %}
+                        <select data-filtro="estado">
+                            <option value="">Todas</option>
+                            <option value="valida">Válidas</option>
+                            <option value="rechazada">No válidas</option>
+                        </select>
+                    </th>
+                    <th><input type="text" data-filtro="categoria"></th>
+                    <th><input type="text" data-filtro="referencia"></th>
+                    <th class="col-grado" colspan="{{ grados|length|add:1 }}"></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in filas %}
+                <tr data-fila{% if not f.devolucion.valida %} class="no-valida"{% endif %}
+                    data-fecha="{{ f.devolucion.fecha_recibido|date:'Y-m-d' }}"
+                    data-colegio="{{ f.devolucion.colegio|lower }}"
+                    data-codigo="{{ f.devolucion.codigo_colegio|lower }}"
+                    data-regional="{{ f.devolucion.regional|lower }}"
+                    data-ejecutivo="{{ f.devolucion.ejecutivo|lower }}"
+                    data-bodega="{{ f.devolucion.bodega.nombre|lower }}"
+                    data-estado="{% if f.devolucion.valida %}valida{% else %}rechazada{% endif %}"
+                    data-categoria="{{ f.categoria.nombre|lower }}"
+                    data-referencia="{{ f.referencia|lower }}">
+                    <td>{{ f.devolucion.fecha_recibido|date:'Y-m-d' }}</td>
+                    <td>
+                        {% if con_detalle %}
+                        <a href="{% url 'log_devoluciones_detalle' f.devolucion.pk %}"
+                           title="Ver la devolución #{{ f.devolucion.pk }}">{{ f.devolucion.colegio }}</a>
+                        {% else %}{{ f.devolucion.colegio }}{% endif %}
+                    </td>
+                    <td>{{ f.devolucion.codigo_colegio|default:'—' }}</td>
+                    <td>{{ f.devolucion.regional|default:'—' }}</td>
+                    <td>{{ f.devolucion.ejecutivo|default:'—' }}</td>
+                    <td>{{ f.devolucion.bodega.nombre }}</td>
+                    <td>
+                        {% if f.devolucion.valida %}
+                        <span class="badge bg-success">Válida</span>
+                        {% else %}
+                        <span class="badge bg-danger" title="{{ f.devolucion.motivo_no_valida }}">No válida</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ f.categoria.nombre }}</td>
+                    <td>{{ f.referencia|default:'—' }}</td>
+                    {% for c in f.celdas %}
+                    <td class="col-grado{% if not c.item %} vacia{% endif %}">
+                        {% if c.item %}{{ c.cantidad }}{% else %}·{% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="col-grado fw-bold">{{ f.total }}</td>
+                    <td>
+                        {% if not f.devolucion.valida %}
+                        <span class="text-danger">Rechazada: {{ f.devolucion.motivo_no_valida }}</span>
+                        {% if f.devolucion.observaciones %} — {% endif %}
+                        {% endif %}
+                        {{ f.devolucion.observaciones|default_if_none:'' }}
+                        {% if f.devolucion.valida and not f.devolucion.observaciones %}—{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="{{ grados|length|add:11 }}" class="text-center text-muted py-4">
+                        <i class="fas fa-rotate-left me-1"></i> Sin devoluciones registradas todavía.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+        <small class="text-muted">Mostrando <span id="tablaDetalleDev_contador">0</span> de {{ filas|length }} filas</small>
+        <nav><ul class="pagination pagination-sm mb-0" id="tablaDetalleDev_paginas"></ul></nav>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaDetalleDev' por_pagina=25 %}

@@ -50,6 +50,29 @@
                         </div>
                     </div>
 
+                    {% comment %} Devolución no válida: se recibió pero no se acepta — queda el registro, sin tocar existencias. {% endcomment %}
+                    <div class="border rounded p-2 mb-3 bg-light">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="no_valida"
+                                   id="id_no_valida" onchange="toggleNoValida(this)"
+                                   {% if form.no_valida.value %}checked{% endif %}>
+                            <label class="form-check-label fw-bold" for="id_no_valida">
+                                Devolución no válida (no suma a existencias)
+                            </label>
+                        </div>
+                        <div id="bloqueMotivo" class="mt-2 {% if not form.no_valida.value %}d-none{% endif %}">
+                            <label class="form-label mb-1" for="id_motivo_no_valida">Motivo del rechazo *</label>
+                            {{ form.motivo_no_valida }}
+                            <small class="text-muted">
+                                Queda registrado que el material llegó y por qué no se aceptó
+                                (dañado, marcado, incompleto…), pero no entra al inventario.
+                            </small>
+                            {% for e in form.motivo_no_valida.errors %}
+                            <div class="text-danger small">{{ e }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
                     {% include 'inventario/_lineas_material.html' %}
 
                     <div class="text-end mt-3">
@@ -62,10 +85,17 @@
             <p class="text-muted small mt-2 mb-0">
                 <i class="fas fa-circle-info me-1"></i>
                 Lo devuelto se suma a la bodega elegida y queda en el kardex como
-                "Devolución de colegio".
+                "Devolución de colegio" — salvo que se marque como <strong>no
+                válida</strong>, en cuyo caso solo queda el registro.
             </p>
         </div>
     </div>
 </div>
 {% include 'inventario/_select2.html' %}
+<script>
+// El motivo solo se pide al rechazar; el server lo vuelve a exigir (no confía en el JS).
+function toggleNoValida(chk) {
+    document.getElementById('bloqueMotivo').classList.toggle('d-none', !chk.checked);
+}
+</script>
 {% endblock %}

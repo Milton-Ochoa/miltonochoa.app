@@ -521,6 +521,65 @@ class DevolucionColegioTests(ServiciosBase):
         self.assertEqual(tipos, [Movimiento.Tipo.DEV_COLEGIO])
 
 
+class DevolucionColegioNoValidaTests(ServiciosBase):
+    """Devolución recibida pero NO aceptada: queda el registro, no el stock."""
+
+    def _devolver(self, lineas, **kw):
+        datos = {'fecha_recibido': date(2026, 7, 20), 'colegio': 'Colegio Norte'}
+        datos.update(kw)
+        return registrar_devolucion_colegio(bodega=self.bodega_a, lineas=lineas,
+                                            usuario=self.user, **datos)
+
+    def test_no_suma_stock_ni_deja_movimientos(self):
+        dev = self._devolver([(self.item1, 6), (self.item2, 2)], valida=False,
+                             motivo_no_valida='Material rayado')
+        self.assertFalse(dev.valida)
+        self.assertEqual(dev.motivo_no_valida, 'Material rayado')
+        # El registro de lo que llegó SÍ queda…
+        self.assertEqual(dev.lineas.count(), 2)
+        # …pero no toca inventario ni kardex.
+        self.assertEqual(self._stock(self.item1, self.bodega_a), 0)
+        self.assertEqual(Movimiento.objects.count(), 0)
+
+    def test_no_altera_el_stock_existente(self):
+        self._entrada(self.item1, self.bodega_a, 4)
+        self._devolver([(self.item1, 3)], valida=False, motivo_no_valida='Dañado')
+        self.assertEqual(self._stock(self.item1, self.bodega_a), 4)
+
+    def test_motivo_obligatorio(self):
+        with self.assertRaises(ValueError):
+            self._devolver([(self.item1, 1)], valida=False,
+                           motivo_no_valida='   ')
+        self.assertEqual(DevolucionColegio.objects.count(), 0)
+
+    def test_cantidad_invalida_revierte_todo(self):
+        """Sin movimiento que valide la cantidad, el servicio la valida igual."""
+        with self.assertRaises(ValueError):
+            self._devolver([(self.item1, 3), (self.item2, 0)], valida=False,
+                           motivo_no_valida='Incompleto')
+        self.assertEqual(DevolucionColegio.objects.count(), 0)
+
+    def test_valida_ignora_el_motivo(self):
+        dev = self._devolver([(self.item1, 1)], motivo_no_valida='sobra')
+        self.assertTrue(dev.valida)
+        self.assertEqual(dev.motivo_no_valida, '')
+
+    def test_check_de_bd_exige_motivo(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                DevolucionColegio.objects.create(
+                    fecha_recibido=date(2026, 7, 20), colegio='X',
+                    bodega=self.bodega_a, valida=False)
+
+    def test_se_puede_borrar_porque_no_movio_stock(self):
+        """Sin movimientos no hay PROTECT que lo impida (a diferencia de una
+        devolución válida): un rechazo mal capturado se puede deshacer."""
+        dev = self._devolver([(self.item1, 1)], valida=False,
+                             motivo_no_valida='Dañado')
+        dev.delete()
+        self.assertEqual(DevolucionColegio.objects.count(), 0)
+
+
 class ConstraintTests(ServiciosBase):
     def test_material_por_grado_unico(self):
         with self.assertRaises(IntegrityError):

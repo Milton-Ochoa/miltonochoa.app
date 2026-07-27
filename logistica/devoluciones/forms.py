@@ -31,6 +31,12 @@ class DevolucionColegioForm(_BootstrapForm):
                                 required=False)
     bodega = forms.ModelChoiceField(label='Bodega de ingreso', queryset=None,
                                     empty_label='— Bodega —')
+    # El material llegó pero no se acepta: queda el registro (qué vino y por
+    # qué se rechazó) sin sumar a existencias.
+    no_valida = forms.BooleanField(
+        label='Devolución no válida (no suma a existencias)', required=False)
+    motivo_no_valida = forms.CharField(
+        label='Motivo del rechazo', max_length=250, required=False)
     observaciones = forms.CharField(label='Observaciones', required=False,
                                     widget=forms.Textarea(attrs={'rows': 2}))
 
@@ -41,3 +47,17 @@ class DevolucionColegioForm(_BootstrapForm):
 
     def clean_colegio(self):
         return (self.cleaned_data.get('colegio') or '').strip()
+
+    def clean_motivo_no_valida(self):
+        return (self.cleaned_data.get('motivo_no_valida') or '').strip()
+
+    def clean(self):
+        """El motivo es obligatorio al rechazar (el servicio y el CHECK de BD lo
+        vuelven a exigir; aquí es para que el error salga en el campo)."""
+        datos = super().clean()
+        if datos.get('no_valida') and not datos.get('motivo_no_valida'):
+            self.add_error('motivo_no_valida',
+                           'Indica por qué la devolución no es válida.')
+        elif not datos.get('no_valida'):
+            datos['motivo_no_valida'] = ''
+        return datos
