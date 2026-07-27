@@ -650,53 +650,43 @@ Devoluciones.xlsx` del usuario (la columna "Registro Effi" se **omite** a propó
   movimiento no hay quien lo haga) para que el error sea de dominio y no un IntegrityError.
 - **UI de logística** (`logistica/devoluciones/`, label `log_devoluciones`, **sin modelos**,
   prefijo `/devoluciones/`, names `log_devoluciones_*`, gate `solo_logistica`): `lista`
-  (resumen: una fila por devolución, con filtros + paginación client-side), `detallado`
-  (`/devoluciones/detalle/`, **todo el detalle en pantalla**), `nueva` (cabecera por
+  (una fila por devolución, con filtros + paginación client-side), `nueva` (cabecera por
   `DevolucionColegioForm` + líneas con el parcial compartido
   `inventario/_lineas_material.html`, `con_bodega=False` porque la bodega es de la devolución
   completa; el bloque "no válida" es un checkbox + motivo que el JS solo muestra/oculta),
   `detalle` (pivote de UNA devolución) y `exportar`. El **colegio es texto libre** con
   `<datalist>` alimentado por `_colegios_erp()` (distinct de `OrdenDespacho.centro_costos`,
   con `cliente` de respaldo — criterio de `colegio_erp`): el que devuelve puede no estar en
-  el ERP.
-- **Detalle por material en pantalla** (el usuario NO debe tener que bajar el Excel para
-  verlo): parcial compartido `devoluciones/_tabla_detalle.html` con el **mismo layout de la
-  hoja** (una fila por devolución y material, 12 columnas de grado, total, estado y
-  observaciones), filtros por columna + paginación client-side. Lo pintan las dos áreas
-  (`log_devoluciones_detallado` y `fin_devoluciones_detallado`) desde
-  `views.contexto_detalle()`; `con_detalle=True` enlaza con la devolución (solo logística,
-  que es quien tiene esa vista). Cada lista lleva un btn-group Resumen ⇄ Detalle por
-  material. OJO con el filtro de estado: los valores son `valida`/`rechazada` porque el
-  motor compara con `indexOf` y `"no-valida"` contendría `"valida"`.
+  el ERP. **NO hay vista de "detalle por material" en pantalla**: se intentó (jul 2026) y el
+  usuario la rechazó — el detalle por material y grado se consulta **descargando el Excel**.
 - **Excel compartido** en `logistica/devoluciones/export.py` (NO en `views.py`, porque
   financiera lo reutiliza tal cual): `COLUMNAS`/`ANCHOS`, `materiales_devueltos(devolucion)`
   (pivote por material, suma el mismo material capturado en dos filas),
-  `filas_detalle(devoluciones)` (**fuente única** del layout: la alimenta tanto la tabla en
-  pantalla como el Excel, así no pueden divergir), `filas_export(devoluciones)` y
-  `generar_excel_devoluciones(devoluciones)` → bytes. Layout = Fecha de recibido, Colegio,
-  Código, Regional, Ejecutivo, Categoría, Referencia, 0°…11°, Total, Estado, Motivo del
-  rechazo, Observaciones; un grado no devuelto sale **vacío**, no en 0. El queryset que se le
-  pase necesita `prefetch_related('lineas__item__categoria')` (las properties del material
-  leen la categoría). También son públicos `devoluciones_anotadas()`, `contexto_detalle()` y
-  `devoluciones_para_export(post)` (filtros `desde`/`hasta` sobre `fecha_recibido`,
-  `colegio` icontains y `estado` = `validas`/`no_validas`, vacío = todas) — financiera los
-  importa para no divergir de logística. El modal de exportar también es compartido
-  (`devoluciones/_modal_exportar.html`, parámetro `accion_url`).
+  `filas_export(devoluciones)` y `generar_excel_devoluciones(devoluciones)` → bytes. Layout =
+  Fecha de recibido, Colegio, Código, Regional, Ejecutivo, Categoría, Referencia, 0°…11°,
+  Total, Estado, Motivo del rechazo, Observaciones; un grado no devuelto sale **vacío**, no
+  en 0. El queryset que se le pase necesita `prefetch_related('lineas__item__categoria')`
+  (las properties del material leen la categoría). También son públicos
+  `devoluciones_anotadas()` y `devoluciones_para_export(post)` (filtros `desde`/`hasta` sobre
+  `fecha_recibido`, `colegio` icontains y `estado` = `validas`/`no_validas`, vacío = todas) —
+  financiera los importa para no divergir de logística. El modal de exportar también es
+  compartido (`devoluciones/_modal_exportar.html`, parámetro `accion_url`). En las listas, el
+  filtro de estado usa los valores `valida`/`rechazada`: el motor compara con `indexOf` y
+  `"no-valida"` contendría `"valida"`.
 - **UI de financiera** (`financiera/devoluciones/`, label `fin_devoluciones`, **sin modelos**,
-  gate local `solo_financiera`): `fin_devoluciones_lista` y `fin_devoluciones_detallado`
-  (ambas `@require_GET`) + `fin_devoluciones_exportar` (`@require_POST`, es un POST "de
-  lectura"). No hay alta ni edición: registrar es competencia de logística. Templates
-  `financiera/devoluciones.html` y `financiera/devoluciones_detalle.html` extienden
-  `base_financiera.html` y **NO llevan bloques de `messages`** (contrato del área).
+  gate local `solo_financiera`): solo `fin_devoluciones_lista` (`@require_GET`) y
+  `fin_devoluciones_exportar` (`@require_POST`, es un POST "de lectura"). No hay alta ni
+  detalle: registrar es competencia de logística. Template `financiera/devoluciones.html`
+  extiende `base_financiera.html` y **NO lleva bloques de `messages`** (contrato del área).
 - **Permisos** (`core/modulos.py`): `Modulo('devoluciones', 'Devoluciones de colegios',
   ('/devoluciones/',), ('/devoluciones/exportar/',))` en **las dos** áreas. En logística
   LECTURA = lista/detalle/export y COMPLETO añade registrar; en financiera, al no haber
   escrituras, LECTURA y COMPLETO se comportan igual. Ítem de primer nivel en
   `base_logistica.html` (tras Despachos) y en `base_financiera.html`, icono `fa-rotate-left`.
 - **Tests:** `logistica/devoluciones/tests/test_devoluciones.py` (gates, alta por grados, no
-  válidas, detalle por material, export, autocompletado del ERP),
-  `financiera/devoluciones/tests.py` (gate por área, solo lectura, detalle en pantalla,
-  mismo layout de Excel) y el servicio en `logistica/inventario/tests/test_servicios.py`.
+  válidas, detalle, export, autocompletado del ERP), `financiera/devoluciones/tests.py` (gate
+  por área, solo lectura, mismo layout de Excel) y el servicio en
+  `logistica/inventario/tests/test_servicios.py`.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 
@@ -1175,7 +1165,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 1004 tests OK
+python manage.py test                        # baseline: 996 tests OK
 python manage.py runserver
 ```
 
@@ -1247,7 +1237,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   una arista al grafo y las copias locales que ya aplicaron la original fallan con
   `InconsistentMigrationHistory`, así que en una migración ya publicada `atomic = False` es
   la salida sin daños colaterales.
-- Ejecuta `python manage.py test` y compara con el baseline (1004 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (996 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
   fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran
