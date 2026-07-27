@@ -21,26 +21,18 @@
         border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
     }
     .tabla-inv tbody tr.no-valida { background-color: #fff5f5; }
+    {% comment %} Esquinas redondeadas (como las demás tablas): la tarjeta recorta el thead oscuro. {% endcomment %}
+    .card-tabla { overflow: hidden; }
 </style>
 <div class="container-fluid py-3">
-    <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Vista de devoluciones">
-        <a href="{% url 'fin_devoluciones_lista' %}" class="btn btn-secondary active" aria-current="page">
-            <i class="fas fa-list me-1"></i> Resumen
-        </a>
-        <a href="{% url 'fin_devoluciones_detallado' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-table-cells me-1"></i> Detalle por material
-        </a>
-    </div>
     <div class="alert alert-light border small py-2 mb-3">
         <i class="fas fa-circle-info text-primary me-1"></i>
         Consulta del material que los colegios devolvieron sin usar. El registro lo
         hace logística; aquí la información es de <strong>solo lectura</strong>. El
-        detalle por material y grado se ve en
-        <a href="{% url 'fin_devoluciones_detallado' %}">Detalle por material</a>
-        (y también sale en el Excel). Las <strong>no válidas</strong> se recibieron
-        pero no se aceptaron: no cuentan como material devuelto.
+        detalle por material y grado sale en el Excel. Las <strong>no válidas</strong>
+        se recibieron pero no se aceptaron: no cuentan como material devuelto.
     </div>
-    <div class="card shadow-sm">
+    <div class="card shadow-sm card-tabla">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaDevoluciones">
                 <thead class="table-dark">
