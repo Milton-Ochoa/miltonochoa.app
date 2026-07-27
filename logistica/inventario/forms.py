@@ -5,15 +5,16 @@ renderizan los widgets tal cual y un JS mínimo los rellena al editar (por id
 `id_<campo>`). Los toggles de activo/activa y el borrado NO van por form: son
 acciones POST propias de cada vista (con sus guards).
 
-Documentos (Fase 4): forms de CABECERA solamente (Entrada/Salida/Traslado).
-Las líneas NO van por form: el parcial `inventario/_lineas_doc.html` manda
-`linea_item`/`linea_cantidad` (listas paralelas) y `parsear_lineas` las
-convierte server-side en [(Item, cantidad)] — mismo patrón que los gastos de
-viáticos. Los documentos los crean SIEMPRE los servicios, nunca un form.save().
+Documentos: forms de CABECERA solamente (Entrada/Salida/Traslado/Préstamo).
+Las líneas NO van por form: el parcial `inventario/_lineas_material.html` manda
+`linea_material` + `linea_g0`…`linea_g11` (listas paralelas) y
+`parsear_lineas_material` las convierte server-side en [(Item, cantidad)] —
+mismo patrón que los gastos de viáticos. Los documentos los crean SIEMPRE los
+servicios, nunca un form.save().
 """
 from django import forms
 
-from .models import Bodega, Categoria, Item, Prestamo, Tercero
+from .models import GRADOS, Bodega, Categoria, Item, Prestamo, Tercero
 
 
 class _BootstrapMixin:
@@ -233,46 +234,86 @@ class PrestamoForm(_BootstrapForm):
         _con_buscador(self.fields['tercero'])
 
 
-def parsear_lineas(post, *, con_bodega=False):
-    """Convierte el POST del parcial `_lineas_doc.html` en líneas de servicio.
+def _cantidad_de_celda(crudo, grado):
+    """Valor de una celda de grado: None si viene vacía, entero > 0 si trae
+    cantidad. El 0 se trata como "ese grado no va" (es lo que el usuario
+    escribe al corregirse), no como error."""
+    crudo = crudo.strip()
+    if not crudo:
+        return None
+    try:
+        cantidad = int(crudo)
+    except ValueError:
+        raise ValueError(f'Hay una cantidad inválida en el grado {grado}°.')
+    if cantidad < 0:
+        raise ValueError('Las cantidades deben ser mayores que cero.')
+    return cantidad or None
 
-    Lee las listas paralelas `linea_item`/`linea_cantidad` (y `linea_bodega`
-    si `con_bodega` — lo usará el form de préstamos en F5) y devuelve
-    [(Item, cantidad)] o [(Item, Bodega, cantidad)]. Las filas totalmente
-    vacías se ignoran (las deja el botón −); cualquier otra inconsistencia
-    lanza ValueError con mensaje legible para `messages.error`.
+
+def parsear_lineas_material(post, *, con_bodega=False):
+    """Convierte el POST de `_lineas_material.html` en líneas de servicio.
+
+    Cada fila del formulario es un MATERIAL con sus 12 cantidades por grado
+    (como la hoja de cálculo del usuario), pero la unidad que se mueve sigue
+    siendo el `Item` por grado: una fila se EXPANDE a una línea de servicio
+    por grado con cantidad > 0. Lee las listas paralelas `linea_material`
+    (clave `'<categoria_id>:<referencia>'`), `linea_g0`…`linea_g11` y
+    `linea_bodega` (solo si `con_bodega`, préstamos).
+
+    Devuelve [(Item, cantidad)] o [(Item, Bodega, cantidad)] — el contrato que
+    ya esperan los servicios, que NO cambian. Las filas totalmente vacías se
+    ignoran (las deja el botón −); cualquier otra inconsistencia lanza
+    ValueError con mensaje legible para `messages.error`.
     """
-    ids = post.getlist('linea_item')
-    cantidades = post.getlist('linea_cantidad')
-    bodegas = post.getlist('linea_bodega') if con_bodega else [''] * len(ids)
+    claves = post.getlist('linea_material')
+    # Una columna por grado; cada lista es paralela a `claves` por índice de fila.
+    columnas = {grado: post.getlist(f'linea_g{grado}') for grado in GRADOS}
+    bodegas = post.getlist('linea_bodega') if con_bodega else [''] * len(claves)
 
     lineas = []
-    for item_id, cant, bodega_id in zip(ids, cantidades, bodegas):
-        item_id, cant, bodega_id = item_id.strip(), cant.strip(), bodega_id.strip()
-        if not item_id and not cant:
+    for fila, clave in enumerate(claves):
+        clave = clave.strip()
+        cantidades = {}
+        for grado in GRADOS:
+            columna = columnas[grado]
+            crudo = columna[fila] if fila < len(columna) else ''
+            cantidad = _cantidad_de_celda(crudo, grado)
+            if cantidad is not None:
+                cantidades[grado] = cantidad
+
+        if not clave and not cantidades:
             continue
-        if not item_id:
-            raise ValueError('Hay una línea sin artículo seleccionado.')
-        try:
-            cantidad = int(cant)
-        except ValueError:
-            raise ValueError('Hay una línea con cantidad inválida.')
-        if cantidad <= 0:
-            raise ValueError('Las cantidades deben ser mayores que cero.')
-        if not item_id.isdigit():
-            raise ValueError('Hay una línea con un artículo inválido o inactivo.')
-        item = Item.objects.filter(pk=item_id, activo=True).first()
-        if item is None:
-            raise ValueError('Hay una línea con un artículo inválido o inactivo.')
+        if not clave:
+            raise ValueError('Hay una línea sin material seleccionado.')
+
+        par = parsear_clave_material(clave)
+        if par is None:
+            raise ValueError('Hay una línea con un material inválido o inactivo.')
+        categoria_id, referencia = par
+        items = {i.grado: i for i in Item.objects.filter(
+            categoria_id=categoria_id, referencia=referencia, activo=True)}
+        if not items:
+            raise ValueError('Hay una línea con un material inválido o inactivo.')
+        etiqueta = next(iter(items.values())).material
+        if not cantidades:
+            raise ValueError(f'La línea de "{etiqueta}" no tiene cantidades: '
+                             f'escribe al menos un grado.')
+
+        bodega = None
         if con_bodega:
-            if not bodega_id.isdigit():
-                raise ValueError('Hay una línea sin bodega válida.')
-            bodega = Bodega.objects.filter(pk=bodega_id, activa=True).first()
+            bodega_id = (bodegas[fila] if fila < len(bodegas) else '').strip()
+            bodega = (Bodega.objects.filter(pk=bodega_id, activa=True).first()
+                      if bodega_id.isdigit() else None)
             if bodega is None:
                 raise ValueError('Hay una línea sin bodega válida.')
-            lineas.append((item, bodega, cantidad))
-        else:
-            lineas.append((item, cantidad))
+
+        for grado, cantidad in sorted(cantidades.items()):
+            item = items.get(grado)
+            if item is None:
+                raise ValueError(f'"{etiqueta}" no existe en el grado {grado}°.')
+            lineas.append((item, bodega, cantidad) if con_bodega
+                          else (item, cantidad))
+
     if not lineas:
         raise ValueError('El documento necesita al menos una línea.')
     return lineas

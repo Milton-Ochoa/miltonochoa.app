@@ -3,11 +3,12 @@ Buscador dinámico para los selects del inventario (mismo Select2 + tema
 Bootstrap 5 que usa programación en colegios/dashboard.html). Inclúyelo UNA
 vez al final del bloque content de la página y marca cada <select> con la
 clase `select2-busqueda`. La búsqueda matchea el TEXTO de la opción, así que
-con labels "categoría referencia — grado" (Item.__str__) o "nombre (documento)"
-(Tercero.__str__) se busca por cualquiera de sus partes sin código extra.
+con labels "categoría referencia" (el material de las líneas) o "nombre
+(documento)" (Tercero.__str__) se busca por cualquiera de sus partes sin
+código extra.
 
 Expone window.invSelect2(el) para inicializar selects creados después del
-load (las filas clonadas de _lineas_doc.html).
+load (las filas clonadas de _lineas_material.html).
 {% endcomment %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />

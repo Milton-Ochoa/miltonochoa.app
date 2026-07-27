@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 from .adjuntos import validar_adjunto
 from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
                     PrestamoForm, SalidaForm, TerceroForm, TrasladoForm,
-                    parsear_clave_material, parsear_lineas)
+                    parsear_clave_material, parsear_lineas_material)
 from .models import (GRADOS, AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
@@ -290,29 +290,50 @@ def stock(request):
 
 
 # ---------------------------------------------------------------------------
-# Documentos: entradas, salidas, traslados (Fase 4)
+# Documentos: entradas, salidas, traslados, préstamos
 #
-# Patrón común: la cabecera la valida un form, las líneas las parsea
-# `parsear_lineas` y el documento lo crea SIEMPRE el servicio de dominio
-# (atómico: si una línea falla, nada queda escrito). En error se re-renderiza
-# el form con las líneas que traía el POST (`lineas_previas`) para no perder
-# lo digitado; en éxito, POST-redirect al detalle con toast.
+# Patrón común: la cabecera la valida un form, las líneas (un material con sus
+# 12 cantidades por grado) las parsea `parsear_lineas_material` —que las expande
+# a una línea de servicio por grado— y el documento lo crea SIEMPRE el servicio
+# de dominio (atómico: si una línea falla, nada queda escrito). En error se
+# re-renderiza el form con las filas que traía el POST (`lineas_previas`) para
+# no perder lo digitado; en éxito, POST-redirect al detalle con toast.
 # ---------------------------------------------------------------------------
 
-def _lineas_previas(post, *, con_bodega=False):
-    """Las líneas crudas del POST, para repintar `_lineas_doc.html` tras un error."""
-    items = post.getlist('linea_item')
-    cantidades = post.getlist('linea_cantidad')
-    bodegas = post.getlist('linea_bodega') if con_bodega else [''] * len(items)
-    return [{'item_id': i, 'cantidad': c, 'bodega_id': b}
-            for i, c, b in zip(items, cantidades, bodegas)]
+def _fila_material_blanco():
+    return {'material': '', 'bodega_id': '',
+            'celdas': [{'grado': g, 'valor': ''} for g in GRADOS]}
 
 
-def _items_para_lineas():
-    # select_related: la etiqueta de cada opción es `Item.nombre`, que lee la
-    # categoría (un N+1 por línea sin esto).
-    return (Item.objects.filter(activo=True).select_related('categoria')
-            .order_by('categoria__nombre', 'referencia', 'grado'))
+def _lineas_previas_material(post=None, *, con_bodega=False):
+    """Filas crudas para pintar `_lineas_material.html`.
+
+    Con `post` repite lo digitado (re-render tras error); sin él devuelve una
+    fila en blanco. Garantiza SIEMPRE al menos una fila: el JS del parcial
+    clona la primera como plantilla y sin ninguna no podría agregar líneas.
+    """
+    if post is None:
+        return [_fila_material_blanco()]
+    claves = post.getlist('linea_material')
+    columnas = {g: post.getlist(f'linea_g{g}') for g in GRADOS}
+    bodegas = post.getlist('linea_bodega') if con_bodega else []
+    filas = []
+    for i, clave in enumerate(claves):
+        filas.append({
+            'material': clave,
+            'bodega_id': bodegas[i] if i < len(bodegas) else '',
+            'celdas': [{'grado': g,
+                        'valor': columnas[g][i] if i < len(columnas[g]) else ''}
+                       for g in GRADOS],
+        })
+    return filas or [_fila_material_blanco()]
+
+
+def _materiales_para_lineas():
+    """Los MATERIALES activos para el select de líneas (una opción por
+    (categoría, referencia), no por grado). `select_related` obligatorio: la
+    etiqueta y la clave leen la categoría."""
+    return agrupar_materiales(_items_activos())
 
 
 @solo_logistica
@@ -332,7 +353,7 @@ def entrada_nueva(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             entrada = registrar_entrada(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
                 usuario=request.user,
@@ -346,8 +367,10 @@ def entrada_nueva(request):
             return redirect('log_entradas_detalle', pk=entrada.pk)
     return render(request, 'inventario/entrada_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -419,7 +442,7 @@ def salida_nueva(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             salida = registrar_salida(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
                 usuario=request.user,
@@ -434,8 +457,10 @@ def salida_nueva(request):
             return redirect('log_salidas_detalle', pk=salida.pk)
     return render(request, 'inventario/salida_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -465,7 +490,7 @@ def traslado_nuevo(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             traslado = registrar_traslado(
                 bodega_origen=form.cleaned_data['bodega_origen'],
                 bodega_destino=form.cleaned_data['bodega_destino'],
@@ -479,8 +504,10 @@ def traslado_nuevo(request):
             return redirect('log_traslados_detalle', pk=traslado.pk)
     return render(request, 'inventario/traslado_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -517,7 +544,7 @@ def prestamo_nuevo(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
-            lineas = parsear_lineas(request.POST, con_bodega=True)
+            lineas = parsear_lineas_material(request.POST, con_bodega=True)
             prestamo = crear_prestamo(
                 tercero=form.cleaned_data['tercero'],
                 fecha_compromiso=form.cleaned_data['fecha_compromiso'],
@@ -532,10 +559,12 @@ def prestamo_nuevo(request):
             return redirect('log_prestamos_detalle', pk=prestamo.pk)
     return render(request, 'inventario/prestamo_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
         'bodegas': Bodega.objects.filter(activa=True).order_by('nombre'),
-        'lineas_previas': (_lineas_previas(request.POST, con_bodega=True)
-                           if request.method == 'POST' else []),
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None,
+            con_bodega=True),
     })
 
 
@@ -636,6 +665,7 @@ def movimientos(request):
         'movimientos': lista,
         'tope': MOVIMIENTOS_MAX_FILAS,
         'tipos': Movimiento.Tipo.choices,
+        'grados': GRADOS,
     })
 
 

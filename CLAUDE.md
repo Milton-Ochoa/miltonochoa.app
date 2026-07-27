@@ -383,12 +383,19 @@ Reglas de oro (NO romper):
 - **Snapshots de texto** (patrón `CancelacionClase`): `Salida.tercero_nombre`,
   `Prestamo.tercero_nombre/_documento` — los documentos sobreviven al borrado del
   `Tercero` (FK `SET_NULL`).
-- **UI de documentos (F4):** las vistas de entradas/salidas/traslados validan la cabecera
-  con un form (`EntradaForm`/`SalidaForm`/`TrasladoForm` en `forms.py`) y las líneas con
-  `forms.parsear_lineas` (lee las listas paralelas `linea_item`/`linea_cantidad` —y
-  `linea_bodega` con `con_bodega=True`, para préstamos— del parcial compartido
-  `inventario/_lineas_doc.html`); el documento lo crea SIEMPRE el servicio. En error se
-  re-renderiza el form conservando las líneas del POST; en éxito, POST-redirect al detalle.
+- **UI de documentos (captura por grados):** las vistas de entradas/salidas/traslados validan
+  la cabecera con un form (`EntradaForm`/`SalidaForm`/`TrasladoForm` en `forms.py`) y las
+  líneas con `forms.parsear_lineas_material`, que lee las listas paralelas del parcial
+  compartido `inventario/_lineas_material.html`: **una fila = un MATERIAL con sus 12
+  cantidades por grado** (`linea_material` con la clave `'<categoria_id>:<referencia>'` +
+  `linea_g0`…`linea_g11`, y `linea_bodega` con `con_bodega=True` para préstamos). El parser
+  **expande** cada fila a una línea de servicio por grado con cantidad > 0 → `services.py`
+  NO cambió (sigue recibiendo `[(Item, cant)]`). Grado en blanco o en 0 = ese grado no va;
+  fila con material y todo en 0 → error legible; fila totalmente vacía se ignora. Las filas
+  del re-render las produce `views._lineas_previas_material` (siempre ≥1 fila: el JS del
+  parcial clona la primera como plantilla prístina). El documento lo crea SIEMPRE el
+  servicio. En error se re-renderiza el form conservando lo digitado; en éxito,
+  POST-redirect al detalle.
   El ajuste va por modal en `stock.html` (pide cantidad ABSOLUTA + motivo). Los **adjuntos de
   entrada** se validan con `adjuntos.validar_adjunto` (PDF/JPG/PNG ≤10 MB) y se descargan
   SIEMPRE proxiados (`log_entrada_adjunto_descargar`, `?inline=1` abre en pestaña), nunca
@@ -396,8 +403,9 @@ Reglas de oro (NO romper):
   histórico completo saldrá por el export de la F6.
 - **UI de préstamos (F5):** alta con `PrestamoForm` (cabecera: dirección con texto de ayuda
   dinámico, tercero obligatorio —con alta al vuelo, mismo modal del AJAX de F3—, fecha
-  compromiso) + `_lineas_doc.html` con `con_bodega=True` (líneas item+bodega+cantidad,
-  parseadas con `parsear_lineas(..., con_bodega=True)`); mismo patrón de re-render en error.
+  compromiso) + `_lineas_material.html` con `con_bodega=True` (una bodega por fila, que
+  heredan todos los grados de esa fila; `parsear_lineas_material(..., con_bodega=True)`);
+  mismo patrón de re-render en error.
   La **devolución** va por modal en el detalle (`log_prestamo_devolver`, POST con listas
   paralelas `dev_linea_id`/`dev_cantidad` — solo se envían las líneas con pendiente > 0;
   vacío/0 = esa línea no devuelve): NO pide bodega (opera sobre la de cada línea) y el

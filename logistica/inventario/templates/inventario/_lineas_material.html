@@ -1,0 +1,142 @@
+{% comment %}
+Líneas de documento por MATERIAL con las 12 cantidades por grado (patrón de la
+hoja de cálculo del usuario). Lo usan entradas, salidas, traslados y préstamos.
+
+Parámetros (include ... with):
+  - materiales: filas de `pivote.agrupar_materiales` (clave_material + material).
+  - grados: la tupla GRADOS (0..11) para las cabeceras.
+  - lineas_previas: filas a pintar; SIEMPRE al menos una (la vista las produce
+    con `_lineas_previas_material`, que en GET devuelve una en blanco). Cada una
+    es {material, bodega_id, celdas: [{grado, valor}]}.
+  - con_bodega: opcional; añade un select de bodega POR LÍNEA (préstamos).
+  - bodegas: queryset de bodegas activas (solo si con_bodega).
+
+Contrato del POST (lo lee forms.parsear_lineas_material con getlist):
+  name="linea_material" + name="linea_g0"…"linea_g11" [+ name="linea_bodega"] —
+  listas paralelas por índice de fila. Cada fila manda SIEMPRE sus 12 celdas
+  (vacías incluidas) para que el paralelismo por índice no se rompa.
+
+Los selects llevan `select2-busqueda`: la página que incluye este parcial debe
+incluir también inventario/_select2.html al final del content.
+{% endcomment %}
+<style>
+    .tabla-lineas { table-layout: fixed; width: 100%; }
+    .tabla-lineas th, .tabla-lineas td { padding: 0.25rem 0.2rem; vertical-align: middle; }
+    .tabla-lineas th.col-grado { text-align: center; font-size: 0.75rem; }
+    .tabla-lineas td.col-grado input {
+        width: 100%; text-align: center; padding: 2px 1px; font-size: 0.8rem;
+    }
+    {% comment %} Sin esto los spinners nativos comen el ancho útil de 12 celdas. {% endcomment %}
+    .tabla-lineas input[type=number] { -moz-appearance: textfield; }
+    .tabla-lineas input[type=number]::-webkit-outer-spin-button,
+    .tabla-lineas input[type=number]::-webkit-inner-spin-button {
+        -webkit-appearance: none; margin: 0;
+    }
+</style>
+<div class="mb-3" id="lineas-widget">
+    <label class="form-label fw-bold mb-1">Materiales y cantidades por grado</label>
+    <p class="text-muted small mb-2">
+        <i class="fas fa-circle-info me-1"></i>
+        Una fila por material: escribe la cantidad en los grados que apliquen y
+        deja los demás en blanco. Cada grado con cantidad genera su propio
+        movimiento en el kardex.
+    </p>
+    <div class="table-responsive">
+        <table class="table table-sm tabla-lineas mb-1">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width: {% if con_bodega %}26%{% else %}38%{% endif %};">Material</th>
+                    {% if con_bodega %}<th style="width: 14%;">Bodega</th>{% endif %}
+                    {% for g in grados %}
+                    <th class="col-grado" style="width: 4.2%;">{{ g }}°</th>
+                    {% endfor %}
+                    <th style="width: 5%;"></th>
+                </tr>
+            </thead>
+            <tbody id="lineas-filas">
+                {% for l in lineas_previas %}
+                <tr class="linea-fila">
+                    <td>
+                        {% comment %} Sin `required`: una fila en blanco de más es válida (el server la ignora) y un select oculto por Select2 no puede mostrar el aviso nativo del navegador. {% endcomment %}
+                        <select name="linea_material" class="form-select form-select-sm select2-busqueda">
+                            <option value="">— Material —</option>
+                            {% for m in materiales %}
+                            <option value="{{ m.clave_material }}" {% if l.material == m.clave_material %}selected{% endif %}>{{ m.material }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    {% if con_bodega %}
+                    <td>
+                        <select name="linea_bodega" class="form-select form-select-sm select2-busqueda">
+                            <option value="">— Bodega —</option>
+                            {% for b in bodegas %}
+                            <option value="{{ b.pk }}" {% if l.bodega_id == b.pk|stringformat:'s' %}selected{% endif %}>{{ b.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    {% endif %}
+                    {% for c in l.celdas %}
+                    <td class="col-grado">
+                        <input type="number" name="linea_g{{ c.grado }}" class="form-control form-control-sm"
+                               min="0" step="1" value="{{ c.valor }}" title="Grado {{ c.grado }}°">
+                    </td>
+                    {% endfor %}
+                    <td class="text-end">
+                        <button type="button" class="btn btn-outline-danger btn-sm linea-quitar" title="Quitar línea">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="linea-agregar">
+        <i class="fas fa-plus me-1"></i> Agregar material
+    </button>
+</div>
+
+<script>
+(function () {
+    var filas   = document.getElementById('lineas-filas');
+    var agregar = document.getElementById('linea-agregar');
+    if (!filas || !agregar) return;
+
+    // Plantilla prístina capturada ANTES de que Select2 transforme los selects
+    // (este script corre al parsear; el init de _select2.html corre en el
+    // DOM-ready). Clonar una fila ya select2-izada deja widgets muertos.
+    var plantilla = filas.querySelector('.linea-fila').cloneNode(true);
+    plantilla.querySelectorAll('input').forEach(function (inp) { inp.value = ''; });
+    plantilla.querySelectorAll('option[selected]').forEach(function (o) { o.removeAttribute('selected'); });
+    plantilla.querySelectorAll('select').forEach(function (sel) { sel.value = ''; });
+
+    function nuevaFila() {
+        var fila = plantilla.cloneNode(true);
+        filas.appendChild(fila);
+        fila.querySelectorAll('select.select2-busqueda').forEach(function (sel) {
+            if (window.invSelect2) window.invSelect2(sel);
+        });
+        return fila;
+    }
+
+    agregar.addEventListener('click', function () {
+        var fila = nuevaFila();
+        var sel = fila.querySelector('select');
+        if (window.jQuery && jQuery(sel).hasClass('select2-hidden-accessible')) {
+            jQuery(sel).select2('open');
+        } else if (sel) {
+            sel.focus();
+        }
+    });
+
+    filas.addEventListener('click', function (e) {
+        var btn = e.target.closest('.linea-quitar');
+        if (!btn) return;
+        // No dejar el formulario sin filas: si era la última, se repone una en
+        // blanco desde la plantilla (vaciar un select2 in-place requiere pasar
+        // por la API de jQuery; reponer la fila es más simple y equivalente).
+        btn.closest('.linea-fila').remove();
+        if (!filas.querySelector('.linea-fila')) nuevaFila();
+    });
+})();
+</script>

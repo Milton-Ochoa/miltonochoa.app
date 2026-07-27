@@ -25,7 +25,8 @@
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th>Artículo</th>
+                            <th>Categoría</th>
+                            <th>Referencia</th>
                             <th>Grado</th>
                             <th class="text-end">Cantidad</th>
                             <th></th>
@@ -34,7 +35,8 @@
                     <tbody>
                         {% for l in entrada.lineas.all %}
                         <tr>
-                            <td>{{ l.item.material }}</td>
+                            <td>{{ l.item.categoria.nombre }}</td>
+                            <td>{{ l.item.referencia|default:'—' }}</td>
                             <td>{{ l.item.grado_display }}</td>
                             <td class="text-end fw-bold">{{ l.cantidad }}</td>
                             <td class="text-end">
