@@ -1,0 +1,54 @@
+{% comment %}
+Modal de exportación a Excel de las devoluciones. Compartido por las 4 vistas
+(resumen y detalle × logística y financiera): los filtros del POST los aplica
+`devoluciones_para_export`, así que no pueden divergir entre áreas.
+
+Parámetros (include ... with):
+  - accion_url: nombre de la URL del export del área ('log_…' o 'fin_…').
+{% endcomment %}
+<div class="modal fade" id="modalExportarDevoluciones" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url accion_url %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar devoluciones</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Una fila por devolución y material, con las cantidades por grado
+                    (mismo formato de la hoja de registro y de la vista
+                    <strong>Detalle por material</strong>).
+                </p>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="exp_desde">Recibido desde</label>
+                        <input type="date" name="desde" id="exp_desde" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="exp_hasta">Recibido hasta</label>
+                        <input type="date" name="hasta" id="exp_hasta" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label mb-1" for="exp_colegio">Colegio <small class="text-muted">(opcional)</small></label>
+                        <input type="text" name="colegio" id="exp_colegio" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label mb-1" for="exp_estado">Estado</label>
+                        <select name="estado" id="exp_estado" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                            <option value="validas">Solo válidas</option>
+                            <option value="no_validas">Solo no válidas</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

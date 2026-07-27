@@ -246,27 +246,44 @@ def registrar_devolucion(*, prestamo, lineas, usuario, observaciones=''):
 @transaction.atomic
 def registrar_devolucion_colegio(*, bodega, lineas, usuario, fecha_recibido,
                                  colegio, codigo_colegio='', regional='',
-                                 ejecutivo='', observaciones=''):
+                                 ejecutivo='', observaciones='', valida=True,
+                                 motivo_no_valida=''):
     """Material que un colegio devuelve sin usar. ``lineas`` = [(Item, cantidad)].
 
     Molde de `registrar_entrada` (suma stock con rastro en el ledger), pero con
     la cabecera comercial de la hoja del usuario (colegio, regional, ejecutivo)
     para que financiera pueda ajustar cobros a partir de lo devuelto.
+
+    Con ``valida=False`` el material se recibió pero NO se acepta: la devolución
+    y sus líneas quedan registradas (para saber qué llegó y por qué se rechazó)
+    pero **no se toca el stock ni el kardex** — por eso no hay movimientos. El
+    motivo es obligatorio en ese caso.
     """
     if not lineas:
         raise ValueError('La devolución necesita al menos una línea.')
+    motivo_no_valida = (motivo_no_valida or '').strip()
+    if not valida and not motivo_no_valida:
+        raise ValueError('Una devolución no válida requiere el motivo del rechazo.')
+    if valida:
+        motivo_no_valida = ''  # el motivo solo aplica al rechazo
     devolucion = DevolucionColegio.objects.create(
         fecha_recibido=fecha_recibido, colegio=colegio,
         codigo_colegio=codigo_colegio, regional=regional, ejecutivo=ejecutivo,
-        bodega=bodega, observaciones=observaciones, creado_por=usuario)
+        bodega=bodega, observaciones=observaciones, creado_por=usuario,
+        valida=valida, motivo_no_valida=motivo_no_valida)
     detalle = f'Devolución de colegio #{devolucion.pk} — {colegio}'
     for item, cantidad in lineas:
-        # El movimiento primero: valida cantidad y deja el error de dominio
-        # antes de que el CHECK de la línea lo vuelva un IntegrityError.
-        _aplicar_movimiento(item=item, bodega=bodega,
-                            tipo=Movimiento.Tipo.DEV_COLEGIO,
-                            cantidad=cantidad, usuario=usuario,
-                            detalle=detalle, devolucion_colegio=devolucion)
+        if valida:
+            # El movimiento primero: valida cantidad y deja el error de dominio
+            # antes de que el CHECK de la línea lo vuelva un IntegrityError.
+            _aplicar_movimiento(item=item, bodega=bodega,
+                                tipo=Movimiento.Tipo.DEV_COLEGIO,
+                                cantidad=cantidad, usuario=usuario,
+                                detalle=detalle, devolucion_colegio=devolucion)
+        elif cantidad <= 0:
+            # Sin movimiento no hay quien valide la cantidad: se hace aquí para
+            # que el error sea de dominio y no un IntegrityError del CHECK.
+            raise ValueError('La cantidad debe ser mayor que cero.')
         DevolucionColegioLinea.objects.create(devolucion=devolucion, item=item,
                                               cantidad=cantidad)
     return devolucion

@@ -512,6 +512,12 @@ class DevolucionColegio(models.Model):
     ejecutivo = models.CharField(max_length=200, blank=True)
     bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT,
                                related_name='devoluciones_colegio')
+    # Una devolución NO VÁLIDA se recibió físicamente pero no se acepta (material
+    # dañado, marcado, incompleto…): queda el registro de que llegó, pero NO
+    # suma a existencias ni deja movimientos en el kardex. El motivo es
+    # obligatorio en ese caso (el CHECK de abajo lo garantiza en BD).
+    valida = models.BooleanField(default=True)
+    motivo_no_valida = models.CharField(max_length=250, blank=True)
     observaciones = models.TextField(blank=True)
     creado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
                                    blank=True,
@@ -523,9 +529,21 @@ class DevolucionColegio(models.Model):
         ordering = ['-fecha_recibido', '-id']
         verbose_name = 'Devolución de colegio'
         verbose_name_plural = 'Devoluciones de colegios'
+        constraints = [
+            # Una no válida sin motivo no sirve de nada: el registro existe
+            # justamente para dejar dicho POR QUÉ no se aceptó.
+            models.CheckConstraint(
+                condition=(models.Q(valida=True)
+                           | ~models.Q(motivo_no_valida='')),
+                name='devolucion_colegio_no_valida_con_motivo'),
+        ]
 
     def __str__(self):
         return f'Devolución #{self.pk} — {self.colegio}'
+
+    @property
+    def estado_label(self):
+        return 'Válida' if self.valida else 'No válida'
 
 
 class DevolucionColegioLinea(models.Model):

@@ -23,7 +23,8 @@ from logistica.inventario.views import (_form_a_messages,
                                         _materiales_para_lineas,
                                         _respuesta_xlsx)
 
-from .export import generar_excel_devoluciones, materiales_devueltos
+from .export import (filas_detalle, generar_excel_devoluciones,
+                     materiales_devueltos)
 from .forms import DevolucionColegioForm
 
 
@@ -35,6 +36,19 @@ def devoluciones_anotadas():
                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0)))
 
 
+def contexto_detalle():
+    """Contexto de la tabla "Detalle por material" (una fila por devolución y
+    material, con sus 12 grados) — el mismo layout del Excel, en pantalla.
+
+    Público: las dos áreas pintan exactamente la misma tabla con el parcial
+    compartido `devoluciones/_tabla_detalle.html`.
+    """
+    devoluciones = (DevolucionColegio.objects
+                    .select_related('bodega', 'creado_por')
+                    .prefetch_related('lineas__item__categoria'))
+    return {'filas': filas_detalle(devoluciones), 'grados': GRADOS}
+
+
 def _fecha(post, nombre):
     try:
         return date.fromisoformat(post.get(nombre, ''))
@@ -43,7 +57,7 @@ def _fecha(post, nombre):
 
 
 def devoluciones_para_export(post):
-    """Queryset del export con sus filtros (rango de recibido + colegio).
+    """Queryset del export con sus filtros (rango de recibido, colegio, estado).
 
     Público por el mismo motivo que el builder del Excel: financiera exporta
     exactamente lo mismo, así que los filtros no pueden divergir entre áreas.
@@ -59,6 +73,13 @@ def devoluciones_para_export(post):
     colegio = (post.get('colegio') or '').strip()
     if colegio:
         qs = qs.filter(colegio__icontains=colegio)
+    # Vacío (o cualquier otro valor) = todas: el default no puede esconder
+    # registros sin que el usuario lo pida.
+    estado = (post.get('estado') or '').strip()
+    if estado == 'validas':
+        qs = qs.filter(valida=True)
+    elif estado == 'no_validas':
+        qs = qs.filter(valida=False)
     return qs
 
 
@@ -82,6 +103,12 @@ def lista(request):
 
 
 @solo_logistica
+def detallado(request):
+    """Todo el detalle en pantalla (lo que antes solo se veía bajando el Excel)."""
+    return render(request, 'devoluciones/detallado.html', contexto_detalle())
+
+
+@solo_logistica
 def nueva(request):
     """Alta con el mismo patrón que los documentos del inventario: cabecera por
     form, líneas por `parsear_lineas_material` (un material con sus 12 grados) y
@@ -99,14 +126,21 @@ def nueva(request):
                 fecha_recibido=datos['fecha_recibido'], colegio=datos['colegio'],
                 codigo_colegio=datos['codigo_colegio'],
                 regional=datos['regional'], ejecutivo=datos['ejecutivo'],
-                observaciones=datos['observaciones'])
+                observaciones=datos['observaciones'],
+                valida=not datos['no_valida'],
+                motivo_no_valida=datos['motivo_no_valida'])
         except ValueError as e:
             if str(e):
                 messages.error(request, str(e))
         else:
-            messages.success(
-                request, f'Devolución #{devolucion.pk} registrada: el material '
-                         f'ya está sumado a "{devolucion.bodega.nombre}".')
+            if devolucion.valida:
+                aviso = (f'el material ya está sumado a '
+                         f'"{devolucion.bodega.nombre}".')
+            else:
+                aviso = ('queda como NO VÁLIDA, así que no suma a existencias '
+                         'ni aparece en el kardex.')
+            messages.success(request,
+                             f'Devolución #{devolucion.pk} registrada: {aviso}')
             return redirect('log_devoluciones_detalle', pk=devolucion.pk)
     return render(request, 'devoluciones/form.html', {
         'form': form,

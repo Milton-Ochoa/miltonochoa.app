@@ -18,7 +18,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from core.areas import es_personal_financiera
 from logistica.devoluciones.export import generar_excel_devoluciones
-from logistica.devoluciones.views import (devoluciones_anotadas,
+from logistica.devoluciones.views import (contexto_detalle,
+                                          devoluciones_anotadas,
                                           devoluciones_para_export)
 from logistica.inventario.views import _respuesta_xlsx
 
@@ -31,6 +32,15 @@ def fin_devoluciones_lista(request):
     return render(request, 'financiera/devoluciones.html', {
         'devoluciones': devoluciones_anotadas(),
     })
+
+
+@solo_financiera
+@require_GET
+def fin_devoluciones_detallado(request):
+    """El detalle por material y grado en pantalla — misma tabla que logística
+    (parcial compartido) para no tener que bajar el Excel solo para verlo."""
+    return render(request, 'financiera/devoluciones_detalle.html',
+                  contexto_detalle())
 
 
 @solo_financiera

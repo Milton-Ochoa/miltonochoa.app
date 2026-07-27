@@ -86,7 +86,11 @@ Convención de la tabla:
     }
 
     inputs.forEach(function (inp) {
-        inp.addEventListener('input', function () { pagina = 1; render(); });
+        // 'change' además de 'input' para los <select> de filtro (los navegadores
+        // viejos no disparan 'input' al elegir opción).
+        ['input', 'change'].forEach(function (evt) {
+            inp.addEventListener(evt, function () { pagina = 1; render(); });
+        });
     });
 
     render();
