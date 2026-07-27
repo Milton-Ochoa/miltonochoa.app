@@ -9,11 +9,26 @@
 
 {% block content %}
 <style>
+    .tabla-inv { table-layout: fixed; width: 100%; }
+    .tabla-inv th, .tabla-inv td {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 0.85rem; padding: 0.4rem 0.5rem;
+    }
     .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
     .tabla-inv tr.fila-filtros th input {
         width: 100%; font-size: 0.78rem; padding: 2px 6px;
         border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
     }
+    {% comment %} 12 columnas de grado: cada celda es un botón de ajuste compacto. {% endcomment %}
+    .tabla-inv th.col-grado, .tabla-inv td.col-grado {
+        text-align: center; padding: 0.25rem 0.1rem; font-size: 0.8rem;
+    }
+    .tabla-inv td.col-grado button {
+        width: 100%; border: 0; background: transparent; padding: 2px 0;
+        border-radius: 4px; color: inherit; font-size: 0.8rem;
+    }
+    .tabla-inv td.col-grado button:hover { background: #fff3cd; }
+    .tabla-inv td.col-grado.vacia { color: #adb5bd; }
 </style>
 <div class="container-fluid py-3">
 
@@ -27,64 +42,63 @@
     </div>
     {% endif %}
 
+    <div class="alert alert-light border py-2 small text-muted">
+        <i class="fas fa-sliders me-1"></i>
+        Haz clic en la existencia de un grado para ajustarla o ver su kardex.
+    </div>
+
     <div class="card shadow-sm">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaStock">
                 <thead class="table-dark">
                     <tr>
-                        <th style="width: 18%;">Categoría</th>
-                        <th style="width: 22%;">Referencia</th>
-                        <th style="width: 6%;">Grado</th>
-                        <th style="width: 18%;">Bodega</th>
-                        <th style="width: 9%; text-align: right;">Cantidad</th>
-                        <th style="width: 9%; text-align: right;">Mínimo global</th>
-                        <th style="width: 8%;"></th>
+                        <th style="width: 16%;">Categoría</th>
+                        <th style="width: 18%;">Referencia</th>
+                        <th style="width: 14%;">Bodega</th>
+                        {% for g in grados %}
+                        <th class="col-grado" style="width: 3.9%;">{{ g }}°</th>
+                        {% endfor %}
+                        <th style="width: 8%; text-align: right;">Total</th>
+                        <th style="width: 8%; text-align: right;">Mínimo global</th>
                     </tr>
                     <tr class="fila-filtros">
                         <th><input type="text" data-filtro="categoria"></th>
                         <th><input type="text" data-filtro="referencia"></th>
-                        <th><input type="text" data-filtro="grado"></th>
                         <th><input type="text" data-filtro="bodega"></th>
-                        <th></th>
+                        <th class="col-grado" colspan="{{ grados|length }}"></th>
                         <th></th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for s in filas %}
+                    {% for f in filas %}
                     <tr data-fila
-                        data-categoria="{{ s.item.categoria.nombre|lower }}"
-                        data-referencia="{{ s.item.referencia|lower }}"
-                        data-grado="{{ s.item.grado_display }}"
-                        data-bodega="{{ s.bodega.nombre|lower }}">
-                        <td>{{ s.item.categoria.nombre }}</td>
+                        data-categoria="{{ f.categoria.nombre|lower }}"
+                        data-referencia="{{ f.referencia|lower }}"
+                        data-bodega="{{ f.bodega.nombre|lower }}">
+                        <td>{{ f.categoria.nombre }}</td>
                         <td>
-                            <strong>{{ s.item.referencia|default:'—' }}</strong>
-                            {% if s.item_id in bajo_minimo_ids %}
-                            <span class="badge bg-danger ms-1">Bajo mínimo</span>
-                            {% endif %}
+                            <strong>{{ f.referencia|default:'—' }}</strong>
                         </td>
-                        <td>{{ s.item.grado_display }}</td>
-                        <td>{{ s.bodega.nombre }}</td>
-                        <td class="text-end fw-bold">{{ s.cantidad }}</td>
-                        <td class="text-end">{% if s.item.stock_minimo %}{{ s.item.stock_minimo }}{% else %}—{% endif %}</td>
-                        <td class="text-end text-nowrap">
-                            <a href="{% url 'log_item_kardex' s.item_id %}?bodega={{ s.bodega_id }}"
-                               class="btn btn-outline-secondary btn-sm" title="Kardex en esta bodega">
-                                <i class="fas fa-book"></i>
-                            </a>
-                            <button type="button" class="btn btn-outline-warning btn-sm" title="Ajustar stock"
-                                    onclick="abrirAjuste(this)"
-                                    data-item-id="{{ s.item_id }}" data-item-nombre="{{ s.item.nombre }}"
-                                    data-bodega-id="{{ s.bodega_id }}" data-bodega-nombre="{{ s.bodega.nombre }}"
-                                    data-cantidad="{{ s.cantidad }}">
-                                <i class="fas fa-sliders"></i>
-                            </button>
+                        <td>{{ f.bodega.nombre }}</td>
+                        {% for c in f.celdas %}
+                        <td class="col-grado{% if not c.item %} vacia{% endif %}{% if c.item.pk in bajo_minimo_ids %} text-danger fw-bold{% endif %}">
+                            {% if c.item %}
+                            <button type="button" onclick="abrirAjuste(this)"
+                                    title="Ajustar {{ f.material }} — {{ c.grado }}° en {{ f.bodega.nombre }}"
+                                    data-item-id="{{ c.item.pk }}" data-item-nombre="{{ c.item.nombre }}"
+                                    data-bodega-id="{{ f.bodega.pk }}" data-bodega-nombre="{{ f.bodega.nombre }}"
+                                    data-cantidad="{{ c.cantidad }}"
+                                    data-kardex="{% url 'log_item_kardex' c.item.pk %}?bodega={{ f.bodega.pk }}">{{ c.cantidad }}</button>
+                            {% else %}—{% endif %}
                         </td>
+                        {% endfor %}
+                        <td class="text-end fw-bold">{{ f.total }}</td>
+                        <td class="text-end">{% if f.muestra.stock_minimo %}{{ f.muestra.stock_minimo }}{% else %}—{% endif %}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">
+                        <td colspan="{{ grados|length|add:5 }}" class="text-center text-muted py-4">
                             <i class="fas fa-warehouse me-1"></i>
                             Sin existencias todavía: se llenan con las
                             <a href="{% url 'log_entradas_nueva' %}">entradas</a>.
@@ -120,6 +134,10 @@
                 <p class="mb-2">
                     <strong id="ajuste_item_nombre"></strong> en <strong id="ajuste_bodega_nombre"></strong>
                     — cantidad actual: <span class="badge bg-secondary" id="ajuste_actual"></span>
+                    <a href="#" id="ajuste_kardex" class="btn btn-outline-secondary btn-sm py-0 px-2 ms-2"
+                       title="Ver el kardex de este grado en esta bodega">
+                        <i class="fas fa-book"></i> Kardex
+                    </a>
                 </p>
                 <div class="mb-2">
                     <label class="form-label mb-1" for="ajuste_nueva">Nueva cantidad (valor final) *</label>
@@ -163,7 +181,8 @@
                     </select>
                 </div>
                 <small class="text-muted">
-                    Incluye el valor unitario referencial y el valor total estimado por fila.
+                    Una fila por material y bodega, con una columna por grado; incluye el valor
+                    unitario referencial y el valor total estimado de la fila.
                 </small>
             </div>
             <div class="modal-footer py-2">
@@ -188,6 +207,7 @@ function abrirAjuste(btn) {
     document.getElementById('ajuste_actual').textContent   = d.cantidad;
     document.getElementById('ajuste_nueva').value          = d.cantidad;
     document.getElementById('ajuste_motivo').value         = '';
+    document.getElementById('ajuste_kardex').href          = d.kardex;
     new bootstrap.Modal(document.getElementById('modalAjuste')).show();
 }
 </script>
