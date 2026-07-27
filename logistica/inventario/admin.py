@@ -1,6 +1,7 @@
 from django.contrib import admin
 
-from .models import (AdjuntoEntrada, Bodega, Categoria, Devolucion, Entrada,
+from .models import (AdjuntoEntrada, Bodega, Categoria, Devolucion,
+                     DevolucionColegio, DevolucionColegioLinea, Entrada,
                      EntradaLinea, Item, Movimiento, Prestamo, PrestamoLinea,
                      Salida, SalidaLinea, Stock, Tercero, Traslado,
                      TrasladoLinea)
@@ -19,10 +20,10 @@ class BodegaAdmin(admin.ModelAdmin):
 
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
-    list_display = ('codigo', 'nombre', 'categoria', 'unidad_medida',
+    list_display = ('categoria', 'referencia', 'grado', 'unidad_medida',
                     'stock_minimo', 'activo')
-    list_filter = ('categoria', 'activo')
-    search_fields = ('codigo', 'nombre')
+    list_filter = ('categoria', 'grado', 'activo')
+    search_fields = ('referencia', 'categoria__nombre')
 
 
 @admin.register(Tercero)
@@ -37,7 +38,7 @@ class StockAdmin(admin.ModelAdmin):
     Corregir un saldo desde aquí rompería el kardex — usar un ajuste."""
     list_display = ('item', 'bodega', 'cantidad')
     list_filter = ('bodega',)
-    search_fields = ('item__codigo', 'item__nombre')
+    search_fields = ('item__referencia', 'item__categoria__nombre')
 
     def has_add_permission(self, request):
         return False
@@ -56,7 +57,7 @@ class MovimientoAdmin(admin.ModelAdmin):
     list_display = ('creado_en', 'tipo', 'item', 'bodega', 'cantidad',
                     'saldo_resultante', 'detalle', 'creado_por')
     list_filter = ('tipo', 'bodega')
-    search_fields = ('item__codigo', 'item__nombre', 'detalle')
+    search_fields = ('item__referencia', 'item__categoria__nombre', 'detalle')
     date_hierarchy = 'creado_en'
 
     def has_add_permission(self, request):
@@ -130,3 +131,18 @@ class PrestamoAdmin(admin.ModelAdmin):
 @admin.register(Devolucion)
 class DevolucionAdmin(admin.ModelAdmin):
     list_display = ('id', 'prestamo', 'creado_por', 'creado_en')
+
+
+class DevolucionColegioLineaInline(admin.TabularInline):
+    model = DevolucionColegioLinea
+    extra = 0
+
+
+@admin.register(DevolucionColegio)
+class DevolucionColegioAdmin(admin.ModelAdmin):
+    list_display = ('id', 'fecha_recibido', 'colegio', 'regional', 'ejecutivo',
+                    'bodega', 'creado_por')
+    list_filter = ('bodega', 'regional')
+    search_fields = ('colegio', 'codigo_colegio', 'ejecutivo')
+    date_hierarchy = 'fecha_recibido'
+    inlines = [DevolucionColegioLineaInline]

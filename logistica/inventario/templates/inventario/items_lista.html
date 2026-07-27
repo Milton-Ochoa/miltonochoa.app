@@ -4,7 +4,7 @@
 {% block header_center %}
 <button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirItemModal(null)"
         {% if not hay_categorias %}disabled title="Crea primero una categoría"{% endif %}>
-    <i class="fas fa-plus me-1"></i> Nuevo artículo
+    <i class="fas fa-plus me-1"></i> Nuevo material
 </button>
 {% endblock %}
 
@@ -23,26 +23,23 @@
 </div>
 {% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaItems' %}
 
-{# ── Modal Nuevo/Editar artículo (un solo modal; JS lo rellena al editar) ── #}
+{% comment %}
+Modal Nuevo/Editar MATERIAL (un solo modal; JS lo rellena al editar). Un
+material = (categoría, referencia) con sus 12 grados: el alta los crea todos y
+la edición actualiza los campos compartidos de todo el grupo.
+{% endcomment %}
 <div class="modal fade" id="modalItem" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-        <form method="post" action="{% url 'log_item_guardar' %}" class="modal-content">
+        <form method="post" action="{% url 'log_material_guardar' %}" class="modal-content">
             {% csrf_token %}
-            <input type="hidden" name="item_id" id="item_id" value="">
+            {# Clave "<categoria_id>:<referencia>" del material que se edita; vacía = alta #}
+            <input type="hidden" name="material" id="material_clave" value="">
             <div class="modal-header">
-                <h5 class="modal-title" id="modalItemTitulo">Nuevo artículo</h5>
+                <h5 class="modal-title" id="modalItemTitulo">Nuevo material</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
                 <div class="row g-2">
-                    <div class="col-4">
-                        <label class="form-label mb-1" for="id_codigo">Código *</label>
-                        {{ form.codigo }}
-                    </div>
-                    <div class="col-8">
-                        <label class="form-label mb-1" for="id_nombre">Nombre *</label>
-                        {{ form.nombre }}
-                    </div>
                     <div class="col-7">
                         <label class="form-label mb-1" for="id_categoria">Categoría *</label>
                         {{ form.categoria }}
@@ -50,6 +47,11 @@
                     <div class="col-5">
                         <label class="form-label mb-1" for="id_unidad_medida">Unidad</label>
                         {{ form.unidad_medida }}
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label mb-1" for="id_referencia">Referencia</label>
+                        {{ form.referencia }}
+                        <small class="text-muted">El material se creará para los 12 grados (0°–11°)</small>
                     </div>
                     <div class="col-12">
                         <label class="form-label mb-1" for="id_descripcion">Descripción</label>
@@ -86,9 +88,8 @@
 <script>
 function abrirItemModal(btn) {
     var d = btn ? btn.dataset : null;
-    document.getElementById('item_id').value            = d ? d.id : '';
-    document.getElementById('id_codigo').value          = d ? d.codigo : '';
-    document.getElementById('id_nombre').value          = d ? d.nombre : '';
+    document.getElementById('material_clave').value     = d ? d.material : '';
+    document.getElementById('id_referencia').value      = d ? d.referencia : '';
     // La categoría es un select2: setear .value no refresca el texto visible.
     jQuery('#id_categoria').val(d ? d.categoria : '').trigger('change');
     document.getElementById('id_unidad_medida').value   = d ? d.unidad : 'UNIDAD';
@@ -96,7 +97,7 @@ function abrirItemModal(btn) {
     document.getElementById('id_stock_minimo').value    = d ? d.minimo : '0';
     document.getElementById('id_valor_unitario').value  = d ? d.valor : '';
     document.getElementById('id_activo').checked        = d ? d.activo === 'True' : true;
-    document.getElementById('modalItemTitulo').textContent = d ? 'Editar artículo' : 'Nuevo artículo';
+    document.getElementById('modalItemTitulo').textContent = d ? 'Editar material' : 'Nuevo material';
     new bootstrap.Modal(document.getElementById('modalItem')).show();
 }
 </script>

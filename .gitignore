@@ -17,3 +17,5 @@ db.sqlite3.*.bak
 graphify-out/
 # Arnés/artefactos de auditoría de rendimiento (local, no versionar)
 _audit_aamo/
+# docs/: reportes ERP de muestra (pesados, contienen datos reales) — NUNCA versionar
+docs/

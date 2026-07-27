@@ -1,0 +1,318 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Orden {{ orden.id_orden }}{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_despachos_tablero' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i> Volver al tablero
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1100px;">
+
+    {# ── Encabezado: n° orden + estado + alertas ── #}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <h4 class="mb-0 fw-bold">{{ orden.id_orden }}</h4>
+        {% if orden.estado == 'PENDIENTE' %}<span class="badge bg-secondary">Pendiente</span>
+        {% elif orden.estado == 'ALISTADA' %}<span class="badge bg-info text-dark">Alistada</span>
+        {% elif orden.estado == 'DESPACHADA' %}<span class="badge bg-primary">Despachada</span>
+        {% elif orden.estado == 'REMITIDA' %}<span class="badge bg-success">Remitida (cerrada en ERP)</span>
+        {% elif orden.estado == 'ANULADA' %}<span class="badge bg-dark">Anulada</span>
+        {% endif %}
+        {% if orden.vencida %}<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Vencida</span>{% endif %}
+        {% if orden.alerta_remision %}<span class="badge bg-danger">Falta remisión en ERP</span>{% endif %}
+        {% if orden.cerrada_sin_marcar %}<span class="badge bg-warning text-dark">Cerrada en ERP sin marcar</span>{% endif %}
+    </div>
+
+    <div class="row g-3">
+        {# ── Datos del cliente / ERP ── #}
+        <div class="col-lg-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-dark text-white py-2">
+                    <i class="fas fa-building me-1"></i> Colegio y orden (datos del ERP)
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-sm-4">Colegio</dt><dd class="col-sm-8">{{ orden.colegio|default:"—" }}</dd>
+                        <dt class="col-sm-4">Cliente</dt><dd class="col-sm-8">{{ orden.cliente|default:"—" }}</dd>
+                        <dt class="col-sm-4">ID. cliente</dt><dd class="col-sm-8">{{ orden.id_cliente|default:"—" }}</dd>
+                        <dt class="col-sm-4">Teléfono</dt><dd class="col-sm-8">{{ orden.telefono|default:"—" }}</dd>
+                        <dt class="col-sm-4">Departamento</dt><dd class="col-sm-8">{{ orden.departamento|default:"—" }}</dd>
+                        <dt class="col-sm-4">Ciudad</dt><dd class="col-sm-8">{{ orden.ciudad|default:"—" }}</dd>
+                        <dt class="col-sm-4">Dirección</dt><dd class="col-sm-8">{{ orden.direccion|default:"—" }}</dd>
+                        <dt class="col-sm-4">Bodega</dt><dd class="col-sm-8">{{ orden.bodega|default:"—" }}</dd>
+                        <dt class="col-sm-4">Sucursal</dt><dd class="col-sm-8">{{ orden.sucursal|default:"—" }}</dd>
+                        <dt class="col-sm-4">Vendedor</dt><dd class="col-sm-8">{{ orden.vendedor|default:"—" }}</dd>
+                        <dt class="col-sm-4">Fecha de orden</dt><dd class="col-sm-8">{{ orden.fecha_orden|date:"Y-m-d H:i"|default:"—" }}</dd>
+                        <dt class="col-sm-4">Fecha de entrega</dt>
+                        <dd class="col-sm-8">
+                            {{ orden.fecha_entrega|date:"Y-m-d"|default:"—" }}
+                            {% if orden.vencida %}<span class="text-danger fw-bold ms-1">(vencida)</span>{% endif %}
+                        </dd>
+                        <dt class="col-sm-4">Estado ERP</dt><dd class="col-sm-8">{{ orden.estado_orden_erp|default:"—" }}</dd>
+                        <dt class="col-sm-4">Facturación</dt><dd class="col-sm-8">{{ orden.estado_facturacion|default:"—" }}</dd>
+                        <dt class="col-sm-4">Vigencia</dt><dd class="col-sm-8">{{ orden.vigencia|default:"—" }}</dd>
+                        {% if orden.observacion %}
+                        <dt class="col-sm-4">Observación</dt><dd class="col-sm-8">{{ orden.observacion }}</dd>
+                        {% endif %}
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        {# ── Estado local de trabajo ── #}
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-dark text-white py-2">
+                    <i class="fas fa-clipboard-check me-1"></i> Estado de trabajo (AAMO)
+                </div>
+                <div class="card-body small">
+                    <p class="mb-2">
+                        <span class="text-muted">Alistada:</span>
+                        {% if orden.alistada_en %}
+                            {{ orden.alistada_en|date:"Y-m-d H:i" }}
+                            {% if orden.alistada_por %}por {{ orden.alistada_por.get_full_name|default:orden.alistada_por.username }}{% endif %}
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </p>
+                    <p class="mb-2">
+                        <span class="text-muted">Despachada:</span>
+                        {% if orden.despachada_en %}
+                            {{ orden.despachada_en|date:"Y-m-d H:i" }}
+                            {% if orden.despachada_por %}por {{ orden.despachada_por.get_full_name|default:orden.despachada_por.username }}{% endif %}
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </p>
+                    <p class="mb-0">
+                        <span class="text-muted">Cerrada en ERP:</span>
+                        {% if orden.cerrada_en %}{{ orden.cerrada_en|date:"Y-m-d H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}
+                    </p>
+
+                    {# ── Acciones de estado ── #}
+                    <hr class="my-2">
+                    {% if orden.terminal %}
+                        <p class="text-muted mb-0"><i class="fas fa-lock me-1"></i>Orden cerrada en el ERP: sin acciones de estado.</p>
+                    {% else %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if orden.estado == 'PENDIENTE' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline">
+                                {% csrf_token %}<input type="hidden" name="accion" value="alistar">
+                                <button class="btn btn-info btn-sm"><i class="fas fa-box me-1"></i>Alistar</button>
+                            </form>
+                        {% elif orden.estado == 'ALISTADA' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Marcar {{ orden.id_orden }} como despachada?');">
+                                {% csrf_token %}<input type="hidden" name="accion" value="despachar">
+                                <button class="btn btn-primary btn-sm"><i class="fas fa-truck me-1"></i>Despachar</button>
+                            </form>
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline">
+                                {% csrf_token %}<input type="hidden" name="accion" value="revertir">
+                                <button class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Volver a pendiente</button>
+                            </form>
+                        {% elif orden.estado == 'DESPACHADA' %}
+                            <form method="post" action="{% url 'log_despachos_estado' orden.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Revertir el despacho de {{ orden.id_orden }}?');">
+                                {% csrf_token %}<input type="hidden" name="accion" value="revertir">
+                                <button class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo me-1"></i>Revertir despacho</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Líneas de material ── #}
+    <div class="card shadow-sm mt-3">
+        <div class="card-header bg-dark text-white py-2">
+            <i class="fas fa-boxes me-1"></i> Material a despachar ({{ lineas_material|length }})
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.84rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Cód. artículo</th>
+                        <th>Descripción</th>
+                        <th class="text-end">Cantidad</th>
+                        <th>Cambio de material</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in lineas_material %}
+                    <tr {% if l.eliminada_erp %}class="table-warning"{% endif %}>
+                        <td>{{ l.cod_articulo }}</td>
+                        <td>{{ l.descripcion }}</td>
+                        <td class="text-end">{{ l.cantidad|floatformat:"-2" }}</td>
+                        <td>
+                            {% if l.tiene_cambio %}
+                                <span class="badge bg-primary">
+                                    {{ l.cod_articulo }} → {{ l.articulo_cambio.codigo }}
+                                    {% if l.cantidad_cambio is not None %}({{ l.cantidad_cambio|floatformat:"-2" }}){% endif %}
+                                </span>
+                                {% if l.pendiente_erp %}<span class="badge bg-warning text-dark ms-1">Pendiente en ERP</span>{% endif %}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                            {% if l.eliminada_erp %}<span class="badge bg-danger ms-1">Eliminada en ERP</span>{% endif %}
+
+                            {% if not orden.terminal %}
+                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                {% if l.tiene_cambio %}
+                                    <form method="post" action="{% url 'log_despachos_cambio_erp' l.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        {% if l.pendiente_erp %}
+                                            <input type="hidden" name="hecho" value="1">
+                                            <button class="btn btn-outline-success btn-sm py-0 px-1" title="Marcar el cambio como reflejado en el ERP">
+                                                <i class="fas fa-check me-1"></i>Hecho en ERP
+                                            </button>
+                                        {% else %}
+                                            <input type="hidden" name="hecho" value="0">
+                                            <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="Volver a marcar pendiente en el ERP">
+                                                <i class="fas fa-rotate-left me-1"></i>Pendiente ERP
+                                            </button>
+                                        {% endif %}
+                                    </form>
+                                    <form method="post" action="{% url 'log_despachos_cambio_quitar' l.pk %}" class="d-inline"
+                                          onsubmit="return confirm('¿Quitar el cambio de material de {{ l.cod_articulo }}?');">
+                                        {% csrf_token %}
+                                        <button class="btn btn-outline-danger btn-sm py-0 px-1" title="Quitar el cambio de material">
+                                            <i class="fas fa-times me-1"></i>Quitar
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline-primary btn-sm py-0 px-1 abrir-cambio"
+                                            data-url="{% url 'log_despachos_cambio' l.pk %}"
+                                            data-cod="{{ l.cod_articulo }}" data-cant="{{ l.cantidad|floatformat:'-2' }}">
+                                        <i class="fas fa-exchange-alt me-1"></i>Cambiar material
+                                    </button>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted py-3">Esta orden no tiene líneas de material.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# ── Líneas de FORMACIÓN (colapsadas: no son material despachable) ── #}
+    {% if lineas_formacion %}
+    <div class="card shadow-sm mt-3">
+        <div class="card-header bg-light py-2">
+            <a class="text-decoration-none text-dark d-block" data-bs-toggle="collapse" href="#colFormacion" role="button">
+                <i class="fas fa-graduation-cap me-1"></i>
+                Líneas de formación ({{ lineas_formacion|length }}) — no son material
+                <i class="fas fa-chevron-down float-end mt-1"></i>
+            </a>
+        </div>
+        <div class="collapse" id="colFormacion">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0" style="font-size: 0.84rem;">
+                    <thead class="table-light">
+                        <tr><th>Cód. artículo</th><th>Descripción</th><th class="text-end">Cantidad</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for l in lineas_formacion %}
+                        <tr>
+                            <td>{{ l.cod_articulo }}</td>
+                            <td>{{ l.descripcion }}</td>
+                            <td class="text-end">{{ l.cantidad|floatformat:"-2" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Historial de eventos (append-only) ── #}
+    <div class="card shadow-sm mt-3">
+        <div class="card-header bg-dark text-white py-2">
+            <i class="fas fa-history me-1"></i> Historial
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.83rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Evento</th>
+                        <th>Detalle</th>
+                        <th>Usuario</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in eventos %}
+                    <tr>
+                        <td class="text-nowrap">{{ e.creado_en|date:"Y-m-d H:i" }}</td>
+                        <td>{{ e.get_tipo_display }}</td>
+                        <td>{{ e.detalle }}</td>
+                        <td>{% if e.usuario %}{{ e.usuario.get_full_name|default:e.usuario.username }}{% else %}<span class="text-muted">Automático</span>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted py-3">Sin eventos registrados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if not orden.terminal %}
+{# ── Modal de cambio de material (compartido; el JS fija la línea destino) ── #}
+<div class="modal fade" id="modalCambio" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" id="formCambio" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exchange-alt me-2"></i>Cambio de material</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small mb-3">
+                    Artículo original: <strong id="cambioOriginal"></strong>.
+                    Se despachará el de reemplazo en su lugar; quedará
+                    <span class="badge bg-warning text-dark">Pendiente en ERP</span> hasta que lo confirmes.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label mb-1" for="cambioArticulo">Artículo de reemplazo *</label>
+                    <select name="articulo_id" id="cambioArticulo" class="form-select select2-busqueda" required>
+                        <option value="">— Selecciona un artículo —</option>
+                        {% for a in articulos %}<option value="{{ a.pk }}">{{ a }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label mb-1" for="cambioCantidad">Cantidad *</label>
+                    <input type="number" step="0.01" min="0.01" name="cantidad" id="cambioCantidad"
+                           class="form-control" required>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary btn-sm">Guardar cambio</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% include 'inventario/_select2.html' %}
+<script>
+(function () {
+    var modalEl = document.getElementById('modalCambio');
+    var form = document.getElementById('formCambio');
+    var sel = document.getElementById('cambioArticulo');
+    document.querySelectorAll('.abrir-cambio').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            form.action = btn.dataset.url;
+            document.getElementById('cambioOriginal').textContent = btn.dataset.cod;
+            document.getElementById('cambioCantidad').value = btn.dataset.cant;
+            // Reset del select2 (dispara el change de jQuery para limpiar el widget).
+            if (window.jQuery) { jQuery(sel).val('').trigger('change'); }
+            else { sel.value = ''; }
+            new bootstrap.Modal(modalEl).show();
+        });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

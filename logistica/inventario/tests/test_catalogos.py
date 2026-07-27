@@ -11,8 +11,9 @@ from django.test import Client, TestCase
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from logistica.inventario.models import Bodega, Categoria, Item, Stock, Tercero
+from logistica.inventario.models import GRADOS, Bodega, Categoria, Item, Stock, Tercero
 from logistica.inventario.services import registrar_entrada, registrar_salida
+from logistica.inventario.tests.utils import crear_item
 
 
 class _BaseCatalogosTest(TestCase):
@@ -88,7 +89,7 @@ class CategoriasTest(_BaseCatalogosTest):
 
     def test_eliminar_categoria_con_items_protegida(self):
         cat = Categoria.objects.create(nombre='Con items')
-        Item.objects.create(codigo='X1', nombre='Algo', categoria=cat)
+        crear_item(categoria=cat, referencia='Algo')
         r = self.client.post('/catalogos/categorias/',
                              {'accion': 'eliminar', 'categoria_id': cat.pk},
                              follow=True)
@@ -117,7 +118,7 @@ class BodegasTest(_BaseCatalogosTest):
     def test_guard_no_desactiva_bodega_con_stock(self):
         bodega = Bodega.objects.create(nombre='Con stock')
         cat = Categoria.objects.create(nombre='Cat')
-        item = Item.objects.create(codigo='A1', nombre='Cuaderno', categoria=cat)
+        item = crear_item(categoria=cat, referencia='Cuaderno')
         registrar_entrada(bodega=bodega, lineas=[(item, 5)], usuario=self.user)
 
         r = self.client.post('/catalogos/bodegas/',
@@ -132,7 +133,7 @@ class BodegasTest(_BaseCatalogosTest):
         bodega sí se puede desactivar (y luego reactivar)."""
         bodega = Bodega.objects.create(nombre='Transitoria')
         cat = Categoria.objects.create(nombre='Cat')
-        item = Item.objects.create(codigo='A1', nombre='Cuaderno', categoria=cat)
+        item = crear_item(categoria=cat, referencia='Cuaderno')
         registrar_entrada(bodega=bodega, lineas=[(item, 5)], usuario=self.user)
         registrar_salida(bodega=bodega, lineas=[(item, 5)], usuario=self.user)
 
@@ -147,48 +148,64 @@ class BodegasTest(_BaseCatalogosTest):
         self.assertTrue(bodega.activa)
 
 
-class ItemsTest(_BaseCatalogosTest):
+class MaterialesTest(_BaseCatalogosTest):
+    """El alta/edición es por MATERIAL = (categoría, referencia): una sola
+    pantalla crea o actualiza los 12 grados."""
 
     def setUp(self):
         super().setUp()
         self.cat = Categoria.objects.create(nombre='Papelería')
 
-    def _post_item(self, **extra):
-        datos = {'codigo': 'LAP-01', 'nombre': 'Lápiz HB',
-                 'categoria': self.cat.pk, 'unidad_medida': 'UNIDAD',
+    def _post_material(self, **extra):
+        datos = {'material': '', 'categoria': self.cat.pk,
+                 'referencia': 'Lápiz HB', 'unidad_medida': 'UNIDAD',
                  'descripcion': '', 'stock_minimo': 0, 'valor_unitario': '',
                  'activo': 'on'}
         datos.update(extra)
         return self.client.post('/articulos/guardar/', datos, follow=True)
 
-    def test_crear_item(self):
-        r = self._post_item()
-        item = Item.objects.get(codigo='LAP-01')
-        self.assertEqual(item.nombre, 'Lápiz HB')
-        self.assertTrue(item.activo)
+    def _clave(self, referencia='Lápiz HB'):
+        return f'{self.cat.pk}:{referencia}'
+
+    def test_crear_material_crea_los_doce_grados(self):
+        r = self._post_material()
+        items = Item.objects.filter(categoria=self.cat, referencia='Lápiz HB')
+        self.assertEqual(items.count(), len(GRADOS))
+        self.assertEqual(sorted(items.values_list('grado', flat=True)),
+                         list(GRADOS))
+        self.assertTrue(all(i.activo for i in items))
         self.assertTrue(any('creado' in m for m in self._mensajes(r)))
 
-    def test_codigo_duplicado_no_crea(self):
-        Item.objects.create(codigo='LAP-01', nombre='Otro', categoria=self.cat)
-        r = self._post_item()
+    def test_material_duplicado_no_crea(self):
+        crear_item(categoria=self.cat, referencia='Lápiz HB', grado=0)
+        r = self._post_material()
         self.assertEqual(Item.objects.count(), 1)
-        self.assertTrue(self._mensajes(r))  # error legible vía messages
+        self.assertTrue(any('Ya existe' in m for m in self._mensajes(r)))
 
-    def test_editar_item_y_desactivar(self):
-        item = Item.objects.create(codigo='LAP-01', nombre='Lápiz',
-                                   categoria=self.cat)
-        # Sin 'activo' en el POST (checkbox desmarcado) el item queda inactivo.
-        r = self._post_item(item_id=item.pk, nombre='Lápiz 2B',
-                            stock_minimo=10, activo='')
-        item.refresh_from_db()
-        self.assertEqual(item.nombre, 'Lápiz 2B')
-        self.assertEqual(item.stock_minimo, 10)
-        self.assertFalse(item.activo)
+    def test_editar_material_actualiza_todo_el_grupo(self):
+        self._post_material()
+        # Sin 'activo' en el POST (checkbox desmarcado) el grupo queda inactivo.
+        r = self._post_material(material=self._clave(), referencia='Lápiz 2B',
+                                stock_minimo=10, activo='')
+        grupo = Item.objects.filter(categoria=self.cat, referencia='Lápiz 2B')
+        self.assertEqual(grupo.count(), len(GRADOS))
+        self.assertTrue(all(i.stock_minimo == 10 and not i.activo
+                            for i in grupo))
+        self.assertFalse(Item.objects.filter(referencia='Lápiz HB').exists())
         self.assertTrue(any('actualizado' in m for m in self._mensajes(r)))
 
+    def test_renombrar_a_un_material_existente_no_pisa(self):
+        self._post_material()
+        self._post_material(referencia='Borrador')
+        r = self._post_material(material=self._clave('Borrador'),
+                                referencia='Lápiz HB')
+        self.assertTrue(any('Ya existe' in m for m in self._mensajes(r)))
+        self.assertEqual(
+            Item.objects.filter(referencia='Borrador').count(), len(GRADOS))
+
     def test_lista_muestra_stock_total_y_bajo_minimo(self):
-        item = Item.objects.create(codigo='LAP-01', nombre='Lápiz',
-                                   categoria=self.cat, stock_minimo=10)
+        item = crear_item(categoria=self.cat, referencia='Lápiz',
+                          stock_minimo=10)
         b1 = Bodega.objects.create(nombre='B1')
         b2 = Bodega.objects.create(nombre='B2')
         registrar_entrada(bodega=b1, lineas=[(item, 3)], usuario=self.user)
@@ -197,6 +214,100 @@ class ItemsTest(_BaseCatalogosTest):
         r = self.client.get('/articulos/')
         self.assertContains(r, 'Lápiz')
         self.assertContains(r, 'Bajo mínimo')  # 7 <= 10, suma de bodegas
+
+
+class PivotePorGradosTest(_BaseCatalogosTest):
+    """La lista de artículos y las existencias son PIVOTADAS: una fila por
+    material (categoría, referencia) con los 12 grados en columnas."""
+
+    def setUp(self):
+        super().setUp()
+        self.cat = Categoria.objects.create(nombre='Papelería')
+        self.bodega = Bodega.objects.create(nombre='Principal')
+
+    def _material_completo(self, referencia='Cuadernillo', **kw):
+        """Los 12 Items de un material, como los crea la UI de alta."""
+        return [crear_item(categoria=self.cat, referencia=referencia, grado=g,
+                           **kw) for g in GRADOS]
+
+    # ── Artículos ──────────────────────────────────────────────────────────
+
+    def test_lista_una_fila_por_material_con_doce_celdas(self):
+        items = self._material_completo()
+        registrar_entrada(bodega=self.bodega, lineas=[(items[3], 7)],
+                          usuario=self.user)
+        r = self.client.get('/articulos/')
+        materiales = r.context['materiales']
+        self.assertEqual(len(materiales), 1)
+        fila = materiales[0]
+        self.assertEqual([c['grado'] for c in fila['celdas']], list(GRADOS))
+        self.assertEqual(fila['celdas'][3]['cantidad'], 7)
+        self.assertEqual(fila['total'], 7)
+
+    def test_materiales_distintos_no_se_mezclan(self):
+        self._material_completo('Cuadernillo')
+        self._material_completo('Taller')
+        r = self.client.get('/articulos/')
+        self.assertEqual({f['referencia'] for f in r.context['materiales']},
+                         {'Cuadernillo', 'Taller'})
+
+    def test_celda_sin_item_queda_vacia(self):
+        crear_item(categoria=self.cat, referencia='Suelto', grado=5)
+        r = self.client.get('/articulos/')
+        celdas = r.context['materiales'][0]['celdas']
+        self.assertIsNotNone(celdas[5]['item'])
+        self.assertIsNone(celdas[0]['item'])
+
+    def test_alerta_de_bajo_minimo_en_la_fila(self):
+        items = self._material_completo(stock_minimo=10)
+        registrar_entrada(bodega=self.bodega, lineas=[(items[2], 2)],
+                          usuario=self.user)
+        r = self.client.get('/articulos/')
+        self.assertTrue(r.context['materiales'][0]['alerta'])
+        self.assertContains(r, 'Bajo mínimo')
+
+    # ── Existencias ────────────────────────────────────────────────────────
+
+    def test_existencias_una_fila_por_material_y_bodega(self):
+        items = self._material_completo()
+        anexa = Bodega.objects.create(nombre='Anexa')
+        registrar_entrada(bodega=self.bodega,
+                          lineas=[(items[0], 4), (items[1], 6)],
+                          usuario=self.user)
+        registrar_entrada(bodega=anexa, lineas=[(items[0], 5)],
+                          usuario=self.user)
+        r = self.client.get('/stock/')
+        filas = {f['bodega'].nombre: f for f in r.context['filas']}
+        self.assertEqual(len(filas), 2)
+        self.assertEqual(filas['Principal']['celdas'][0]['cantidad'], 4)
+        self.assertEqual(filas['Principal']['celdas'][1]['cantidad'], 6)
+        self.assertEqual(filas['Principal']['total'], 10)
+        self.assertEqual(filas['Anexa']['total'], 5)
+
+    def test_celda_sin_stock_trae_su_item_para_ajustar(self):
+        """Un grado sin fila de `Stock` igual es ajustable desde la celda: el
+        servicio crea la fila al aplicar el ajuste."""
+        items = self._material_completo()
+        registrar_entrada(bodega=self.bodega, lineas=[(items[0], 4)],
+                          usuario=self.user)
+        celdas = self.client.get('/stock/').context['filas'][0]['celdas']
+        self.assertEqual(celdas[7]['cantidad'], 0)
+        self.assertEqual(celdas[7]['item'].pk, items[7].pk)
+
+        self.client.post('/ajustes/nuevo/',
+                         {'item_id': items[7].pk, 'bodega_id': self.bodega.pk,
+                          'nueva_cantidad': 3, 'motivo': 'Conteo físico'})
+        self.assertEqual(
+            Stock.objects.get(item=items[7], bodega=self.bodega).cantidad, 3)
+
+    def test_bodega_sin_movimiento_del_material_no_aparece(self):
+        items = self._material_completo()
+        Bodega.objects.create(nombre='Vacía')
+        registrar_entrada(bodega=self.bodega, lineas=[(items[0], 1)],
+                          usuario=self.user)
+        r = self.client.get('/stock/')
+        self.assertEqual([f['bodega'].nombre for f in r.context['filas']],
+                         ['Principal'])
 
 
 class TercerosTest(_BaseCatalogosTest):
@@ -276,8 +387,7 @@ class StockViewTest(_BaseCatalogosTest):
         self.bodega = Bodega.objects.create(nombre='Principal')
 
     def test_existencias_sembradas_por_servicios(self):
-        item = Item.objects.create(codigo='RES-01', nombre='Resma carta',
-                                   categoria=self.cat)
+        item = crear_item(categoria=self.cat, referencia='Resma carta')
         registrar_entrada(bodega=self.bodega, lineas=[(item, 25)],
                           usuario=self.user)
         r = self.client.get('/stock/')
@@ -286,10 +396,10 @@ class StockViewTest(_BaseCatalogosTest):
         self.assertContains(r, '25')
 
     def test_resalta_bajo_minimo_y_respeta_minimo_cero(self):
-        con_minimo = Item.objects.create(codigo='A1', nombre='Con mínimo',
-                                         categoria=self.cat, stock_minimo=10)
-        sin_minimo = Item.objects.create(codigo='A2', nombre='Sin mínimo',
-                                         categoria=self.cat, stock_minimo=0)
+        con_minimo = crear_item(categoria=self.cat, referencia='Con mínimo',
+                                stock_minimo=10)
+        sin_minimo = crear_item(categoria=self.cat, referencia='Sin mínimo',
+                                stock_minimo=0)
         registrar_entrada(bodega=self.bodega,
                           lineas=[(con_minimo, 2), (sin_minimo, 1)],
                           usuario=self.user)
@@ -299,8 +409,7 @@ class StockViewTest(_BaseCatalogosTest):
         self.assertEqual(r.context['items_alerta'][0].pk, con_minimo.pk)
 
     def test_item_inactivo_no_aparece(self):
-        item = Item.objects.create(codigo='A1', nombre='Viejo',
-                                   categoria=self.cat)
+        item = crear_item(categoria=self.cat, referencia='Viejo')
         registrar_entrada(bodega=self.bodega, lineas=[(item, 5)],
                           usuario=self.user)
         item.activo = False

@@ -74,8 +74,8 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 |------|------------|:------:|----------|
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores, viáticos y **monitores/simulacros** (con su ciclo de pago propio). |
-| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** y **a monitores** (marcar pago + soportes + Excel) y **proyección de pagos** (costo estimado de clases programadas, solo lectura), con badges de pendientes. Acceso por grupo `area:financiera`. |
-| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega: catálogos, entradas/salidas/traslados, kardex inmutable, préstamos bidireccionales con devolución parcial, dashboard con alertas y exports a Excel. Acceso por grupo `area:logistica`. |
+| **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** y **a monitores** (marcar pago + soportes + Excel), **proyección de pagos** (costo estimado de clases programadas, solo lectura) y consulta de **devoluciones de colegios** (solo lectura), con badges de pendientes. Acceso por grupo `area:financiera`. |
+| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega por material y grado (catálogos, movimientos, kardex inmutable, préstamos), **personalización** de PDFs AcroForm por estudiante, **despachos** de material (tablero de órdenes del ERP externo, estados de trabajo, cambio de material, alertas y export) y **devoluciones de colegios** (material que vuelve sin usar, suma al inventario). Acceso por grupo `area:logistica`. |
 
 **Programación**, **Financiera** y **Logística** comparten el mismo *chrome* visual (sidebar,
 header, footer) definido en `templates/base_chrome.html`; cada área solo aporta su menú y
@@ -326,30 +326,55 @@ lectura). El badge del menú cuenta `ENVIADA` + `LEG_ENVIADA`.
   valor/hora, valor proyectado + fila TOTAL).
 - En el menú **Pagos → Proyección** (sin badge).
 
+### Devoluciones de colegios (solo lectura)
+
+- Consulta del material que los colegios devolvieron sin usar y que **registra logística**
+  (ver [Área Logística](#-área-logística)). Sirve para ajustar cobros y comisiones de los
+  asesores comerciales; **sin valores monetarios**, es un conteo de unidades por grado.
+- La lista trae los mismos filtros por columna y paginación que la de logística, y el
+  **export a Excel** produce exactamente la misma hoja (una fila por devolución y material,
+  con las cantidades por grado). Aquí **no** se registra ni se edita nada.
+- Ítem **Devoluciones** en el menú (sin badge).
+
 ---
 
 ## Área Logística
 
-El área **Logística** (`logistica.miltonochoa.app`) gestiona el **inventario** de la
-operación con la sub-app `logistica.inventario` (tablas con prefijo `log_`). Es un
-inventario **por cantidades** (sin seriales ni costos; el valor unitario de cada artículo
-es solo referencial para los exports), **multi-bodega** desde el día 1. Acceso por grupo
-`area:logistica`.
+El área **Logística** (`logistica.miltonochoa.app`) reúne cuatro sub-apps (tablas con prefijo
+`log_`): **inventario** (`logistica.inventario`), **personalización** de PDFs
+(`logistica.personalizacion`), **despachos** de material (`logistica.despachos`) y
+**devoluciones de colegios** (`logistica.devoluciones`). Acceso por grupo `area:logistica`.
+
+El **inventario** es **por cantidades** (sin seriales ni costos; el valor unitario de cada
+artículo es solo referencial para los exports), **multi-bodega** desde el día 1.
+
+### Material y grados
+
+El artículo del inventario **no** es una referencia suelta: un **material** es la pareja
+**(categoría = modelo del material, referencia)** y existe en los **12 grados 0°–11°**. Lo
+que se mueve —stock, kardex y líneas de documento— es el material **en un grado**.
+
+- Al crear un material se generan sus 12 grados de una vez; editarlo (unidad, descripción,
+  mínimo, valor, activo) afecta a todo el grupo.
+- Toda la UI está **pivotada como la hoja de cálculo del usuario**: una fila por material con
+  12 columnas de grado, tanto en artículos y existencias como en la captura de documentos
+  (una fila = un material con sus 12 cantidades) y en los Excel.
 
 ### Catálogos y existencias
 
-- **Artículos** (código único, categoría, unidad de medida, stock mínimo), **bodegas**
+- **Materiales** (categoría + referencia + grados, unidad de medida, stock mínimo), **bodegas**
   (soft-delete con guard: no se desactivan con existencias), **categorías** y **terceros**
   (destinatarios libres, con **alta al vuelo** desde los formularios de documentos).
-- **Existencias** por artículo × bodega, con resaltado de los artículos **bajo mínimo**
-  (mínimo global por artículo, suma de bodegas) y ajuste manual desde un modal
-  (cantidad absoluta + motivo obligatorio).
+- **Existencias** por (material, bodega) con una celda por grado: resalta los grados **bajo
+  mínimo** y cada celda abre el ajuste manual (cantidad absoluta + motivo obligatorio) y
+  enlaza al kardex de ese grado.
 
 ### Movimientos (kardex inmutable)
 
 - **Entradas** (con proveedor y **adjuntos** PDF/JPG/PNG ≤ 10 MB, descarga siempre
   proxiada), **salidas** (a tercero o texto libre, con motivo) y **traslados** entre
-  bodegas (atómicos: salida en origen + entrada en destino).
+  bodegas (atómicos: salida en origen + entrada en destino). Las líneas se capturan por
+  material y se expanden a un movimiento por grado con cantidad.
 - Todo movimiento queda en un **ledger append-only** (`Movimiento`): nunca se edita ni
   se borra; los errores se corrigen con contramovimiento o ajuste. Cada fila guarda el
   **saldo resultante** → kardex por artículo con saldo, filtrable por bodega y rango.
@@ -374,6 +399,56 @@ es solo referencial para los exports), **multi-bodega** desde el día 1. Acceso 
 - **Exports a Excel** con filtros: existencias (por bodega, con valor referencial),
   movimientos (histórico completo, por tipo y rango) y préstamos (dirección/estado/solo
   vencidos, con totales prestado/devuelto/pendiente).
+
+### Personalización de PDFs
+
+- Rellena campos **AcroForm** de plantillas PDF con **PyMuPDF** y une **una hoja por
+  estudiante** (tipos Simulacro / Pensar / Martes de Prueba, con distinto nº de campos por
+  hoja). Las plantillas se suben y gestionan; los estudiantes se cargan por **Excel** en cada
+  generación (nada se persiste).
+
+### Despachos de material
+
+El personal despacha material físico a colegios; las órdenes viven en un **ERP externo** del
+que se descarga a diario un reporte (`.xls` que en realidad es una tabla HTML de ~26 MB). AAMO
+lo importa y da el **tablero de órdenes por despachar**.
+
+- **Carga diaria idempotente**: se sube el reporte y un servicio transaccional hace el upsert
+  conservando las marcas locales, sincroniza líneas y cierra las órdenes anuladas. Rechaza un
+  archivo más viejo que la última carga.
+- **Tablero** con 3 pestañas (por despachar / despachadas sin remisión / cerradas), filtros por
+  columna y atajos de fecha (vencidas / próx. 7 días / hoy / semana / mes), resaltado de
+  vencidas y próximas, y salto rápido a una orden por su número.
+- **Filtro tipo Excel en la columna Artículos**: un embudo con buscador y checkboxes (uno por
+  artículo presente en el tablero) para ocultar lo que no se despacha desde ahí. La selección
+  se recuerda entre sesiones y el export respeta lo marcado.
+- **Estados de trabajo** Pendiente → Alistada → Despachada (+ terminales automáticos
+  Remitida / Anulada del import), con **verificación cruzada** contra el ERP (despachada aquí
+  sin remisión, o cerrada en el ERP sin marcar → alerta).
+- **Cambio de material** por línea (artículo de reemplazo + cantidad) con flag "pendiente de
+  actualizar en ERP".
+- **Badge** de órdenes vencidas en el menú, **export a Excel** del tablero con los filtros
+  vigentes (permitido en solo lectura) y **bodega por defecto** por usuario que pre-filtra el
+  tablero (la asigna el superusuario). Las líneas de categoría FORMACIÓN (horas clase) no son
+  material: su orden **aparece** en el tablero (el filtro de Artículos es quien la oculta),
+  pero no genera alertas ni cuenta para el badge.
+
+### Devoluciones de colegios
+
+Material despachado que un colegio **devuelve sin usar**. Se registra aquí y **suma
+automáticamente a las existencias**, dejando rastro en el kardex (movimiento "Devolución de
+colegio").
+
+- **Registro** con la cabecera comercial de la hoja del usuario (fecha de recibido, colegio,
+  código, regional, ejecutivo, bodega de ingreso y observaciones) y las cantidades por grado,
+  con el mismo formulario de captura por material del resto del inventario.
+- El **colegio se autocompleta** con los clientes que ya conoce el ERP de despachos, pero
+  acepta texto libre (quien devuelve puede no estar en el ERP).
+- **Lista** con filtros por columna y paginación, **detalle** pivotado por material y **export
+  a Excel** con el layout de la hoja de registro (fecha, colegio, código, regional, ejecutivo,
+  categoría, referencia, 0°–11°, total, observaciones), filtrable por rango de recibido y
+  colegio.
+- **Financiera lo ve en solo lectura** (ver [Área Financiera](#-área-financiera)).
 
 ---
 
@@ -432,18 +507,25 @@ AAMO/
 │   └── monitores/           #   Monitores + ColegioSimulacro + Simulacro + sus pagos (tablas prog_*)
 │
 ├── financiera/             # ÁREA financiera (financiera.miltonochoa.app)
-│   ├── urls.py              #   router del área (raíz /): viaticos + pagos + monitores
+│   ├── urls.py              #   router del área (raíz /): viaticos + pagos + monitores + devoluciones
 │   ├── viaticos/            #   Inicio + gestión: devolver/aprobar/pagar/editar + soportes + Excel
 │   ├── pagos/               #   Pagos a profesores: semanas enviadas → marcar + soportes + Excel
 │   │                        #   + proyección de pagos (clases programadas, solo lectura)
-│   └── monitores/           #   Pagos a monitores: semanas enviadas → marcar + soportes + Excel
-│                            #   (sin modelos propios — importan de programacion.*)
+│   ├── monitores/           #   Pagos a monitores: semanas enviadas → marcar + soportes + Excel
+│   └── devoluciones/        #   Consulta de devoluciones de colegios (solo lectura + Excel)
+│                            #   (sin modelos propios — importan de programacion.* y logistica.*)
 │
 ├── logistica/              # ÁREA logística (logistica.miltonochoa.app)
-│   ├── urls.py              #   router del área (raíz /): inventario
-│   └── inventario/          #   Inventario multi-bodega (label log_inventario, tablas log_*):
-│                            #   catálogos, kardex append-only, stock por servicios
-│                            #   transaccionales, préstamos bidireccionales, dashboard + exports
+│   ├── urls.py              #   router del área (raíz /): inventario + personalizacion
+│   │                        #   + despachos + devoluciones
+│   ├── inventario/          #   Inventario multi-bodega por material y grado (label log_inventario,
+│   │                        #   tablas log_*): catálogos, kardex append-only, stock por servicios
+│   │                        #   transaccionales, préstamos bidireccionales, dashboard + exports
+│   ├── personalizacion/     #   Relleno de PDFs AcroForm por estudiante (label log_personalizacion)
+│   ├── despachos/           #   Tablero de órdenes del ERP externo (label log_despachos):
+│   │                        #   import idempotente, estados, cambio de material, alertas, export
+│   └── devoluciones/        #   UI de las devoluciones de colegios (label log_devoluciones; el
+│                            #   dominio y la escritura al stock viven en inventario/)
 │
 ├── templates/              # Globales: base_chrome.html (chrome compartido), base.html
 │                           #   (menú programación), base_financiera.html (menú financiera),
@@ -639,6 +721,9 @@ python manage.py test colegios
 python manage.py test usuarios
 python manage.py test financiera.viaticos
 python manage.py test logistica.inventario
+python manage.py test logistica.despachos
+python manage.py test logistica.devoluciones
+python manage.py test financiera.devoluciones
 
 # Cobertura (requiere coverage)
 coverage run --source='.' manage.py test
@@ -646,13 +731,14 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 761 tests OK.**
+**Baseline actual: 982 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
 - App chica → un solo `tests.py`; app con varios dominios de test → paquete `tests/`
   (módulos `test_*.py`; hoy: `usuarios/`, `programacion/colegios/`,
-  `logistica/inventario/` y `logistica/personalizacion/`). Un módulo suelto se corre con
+  `logistica/inventario/`, `logistica/personalizacion/`, `logistica/despachos/` y
+  `logistica/devoluciones/`). Un módulo suelto se corre con
   `python manage.py test usuarios.tests.test_seguridad`.
 - BD de tests siempre SQLite y `BASE_DOMAIN=testserver` — forzados en `core/settings.py`.
 - Los tests **de área** usan `Client(HTTP_HOST='programacion.testserver')`; los del **apex**
@@ -804,7 +890,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 761 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 982 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.

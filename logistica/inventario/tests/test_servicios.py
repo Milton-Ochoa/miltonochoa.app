@@ -8,15 +8,17 @@ from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.test import TestCase
 
-from logistica.inventario.models import (Bodega, Categoria, Devolucion, Entrada, Item, Movimiento,
+from logistica.inventario.models import (Bodega, Categoria, Devolucion, DevolucionColegio, Entrada, Item, Movimiento,
                      Prestamo, PrestamoLinea, Salida, Stock, Tercero, Traslado)
 from logistica.inventario.services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, prestamos_vencidos,
                        registrar_ajuste, registrar_devolucion,
-                       registrar_entrada, registrar_salida,
-                       registrar_traslado)
+                       registrar_devolucion_colegio, registrar_entrada,
+                       registrar_salida, registrar_traslado)
+from logistica.inventario.tests.utils import crear_item
 
 
 class ServiciosBase(TestCase):
@@ -26,11 +28,11 @@ class ServiciosBase(TestCase):
         cls.cat = Categoria.objects.create(nombre='Material académico')
         cls.bodega_a = Bodega.objects.create(nombre='Bodega A')
         cls.bodega_b = Bodega.objects.create(nombre='Bodega B')
-        cls.item1 = Item.objects.create(codigo='LIB-001', nombre='Libro guía',
-                                        categoria=cls.cat)
-        cls.item2 = Item.objects.create(codigo='RES-001', nombre='Resma carta',
-                                        categoria=cls.cat,
-                                        unidad_medida=Item.UnidadMedida.RESMA)
+        cls.item1 = crear_item(categoria=cls.cat, referencia='Libro guía',
+                               grado=1)
+        cls.item2 = crear_item(categoria=cls.cat, referencia='Resma carta',
+                               grado=1,
+                               unidad_medida=Item.UnidadMedida.RESMA)
         cls.tercero = Tercero.objects.create(nombre='Asesor Pérez',
                                              documento='123456')
 
@@ -415,8 +417,7 @@ class ConsultasTests(ServiciosBase):
         self.item1.save()
         self.item2.stock_minimo = 5
         self.item2.save()
-        item3 = Item.objects.create(codigo='X-1', nombre='Sin mínimo',
-                                    categoria=self.cat)
+        item3 = crear_item(categoria=self.cat, referencia='Sin mínimo')
         self._entrada(self.item1, self.bodega_a, 1)
         self._entrada(self.item1, self.bodega_b, 2)
         self._entrada(self.item2, self.bodega_a, 6)
@@ -462,12 +463,78 @@ class ConsultasTests(ServiciosBase):
         self.assertFalse(cerrado.vencido)
 
 
+class DevolucionColegioTests(ServiciosBase):
+    """Material que un colegio devuelve sin usar: suma stock con rastro."""
+
+    def _devolver(self, lineas, **kw):
+        datos = {'fecha_recibido': date(2026, 7, 20), 'colegio': 'Colegio Norte'}
+        datos.update(kw)
+        return registrar_devolucion_colegio(bodega=self.bodega_a, lineas=lineas,
+                                            usuario=self.user, **datos)
+
+    def test_suma_stock_y_asienta_kardex(self):
+        dev = self._devolver([(self.item1, 6)], codigo_colegio='C-01',
+                             regional='Norte', ejecutivo='Ana Ruiz')
+        self.assertEqual(self._stock(self.item1, self.bodega_a), 6)
+        self.assertEqual(dev.lineas.count(), 1)
+        mov = Movimiento.objects.get()
+        self.assertEqual(mov.tipo, Movimiento.Tipo.DEV_COLEGIO)
+        self.assertEqual(mov.delta, 6)  # el tipo debe sumar
+        self.assertEqual(mov.saldo_resultante, 6)
+        self.assertEqual(mov.devolucion_colegio, dev)
+        self.assertIn('Colegio Norte', mov.detalle)
+        self.assertEqual(dev.regional, 'Norte')
+        self.assertEqual(dev.ejecutivo, 'Ana Ruiz')
+
+    def test_suma_sobre_lo_que_ya_habia(self):
+        self._entrada(self.item1, self.bodega_a, 4)
+        self._devolver([(self.item1, 3)])
+        self.assertEqual(self._stock(self.item1, self.bodega_a), 7)
+
+    def test_multilinea_un_movimiento_por_item(self):
+        dev = self._devolver([(self.item1, 2), (self.item2, 5)])
+        self.assertEqual(dev.lineas.count(), 2)
+        self.assertEqual(
+            Movimiento.objects.filter(devolucion_colegio=dev).count(), 2)
+
+    def test_cantidad_invalida_revierte_todo(self):
+        with self.assertRaises(ValueError):
+            self._devolver([(self.item1, 3), (self.item2, 0)])
+        # Ni documento ni la línea buena: el atomic revierte completo.
+        self.assertEqual(DevolucionColegio.objects.count(), 0)
+        self.assertEqual(Movimiento.objects.count(), 0)
+        self.assertEqual(self._stock(self.item1, self.bodega_a), 0)
+
+    def test_sin_lineas_rechazada(self):
+        with self.assertRaises(ValueError):
+            self._devolver([])
+
+    def test_no_se_puede_borrar_si_movio_stock(self):
+        dev = self._devolver([(self.item1, 1)])
+        with self.assertRaises(ProtectedError):
+            with transaction.atomic():
+                dev.delete()
+
+    def test_kardex_incluye_la_devolucion(self):
+        self._devolver([(self.item1, 2)])
+        tipos = [m.tipo for m in kardex(self.item1)]
+        self.assertEqual(tipos, [Movimiento.Tipo.DEV_COLEGIO])
+
+
 class ConstraintTests(ServiciosBase):
-    def test_codigo_de_item_unico(self):
+    def test_material_por_grado_unico(self):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                Item.objects.create(codigo='LIB-001', nombre='Duplicado',
-                                    categoria=self.cat)
+                crear_item(categoria=self.cat, referencia='Libro guía', grado=1)
+
+    def test_mismo_material_en_otro_grado_convive(self):
+        otro = crear_item(categoria=self.cat, referencia='Libro guía', grado=2)
+        self.assertEqual(otro.nombre, 'Material académico Libro guía — 2°')
+
+    def test_grado_fuera_de_rango_rechazado(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                crear_item(categoria=self.cat, referencia='Fuera', grado=12)
 
     def test_documento_de_tercero_unico_solo_si_diligenciado(self):
         # Dos terceros sin documento conviven; documento repetido no.

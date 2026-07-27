@@ -21,14 +21,15 @@
             <table class="table table-hover table-sm align-middle mb-0 tabla-inv" id="tablaMovs">
                 <thead class="table-dark">
                     <tr>
-                        <th style="width: 12%;">Fecha</th>
-                        <th style="width: 15%;">Tipo</th>
-                        <th style="width: 9%;">Código</th>
-                        <th style="width: 19%;">Artículo</th>
-                        <th style="width: 12%;">Bodega</th>
+                        <th style="width: 11%;">Fecha</th>
+                        <th style="width: 14%;">Tipo</th>
+                        <th style="width: 12%;">Categoría</th>
+                        <th style="width: 15%;">Referencia</th>
+                        <th style="width: 5%;">Grado</th>
+                        <th style="width: 11%;">Bodega</th>
                         <th style="width: 7%; text-align: right;">Cantidad</th>
                         <th style="width: 7%; text-align: right;">Saldo</th>
-                        <th style="width: 19%;">Detalle</th>
+                        <th style="width: 18%;">Detalle</th>
                     </tr>
                     <tr class="fila-filtros">
                         <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
@@ -42,8 +43,18 @@
                                 {% endfor %}
                             </select>
                         </th>
-                        <th><input type="text" data-filtro="codigo"></th>
-                        <th><input type="text" data-filtro="articulo"></th>
+                        <th><input type="text" data-filtro="categoria"></th>
+                        <th><input type="text" data-filtro="referencia"></th>
+                        <th>
+                            {# El value lleva el ° (como el data-grado de la fila): el filtro es #}
+                            {# por substring y un "1" pelado traería también 10° y 11°. #}
+                            <select data-filtro="grado">
+                                <option value="">Todos</option>
+                                {% for g in grados %}
+                                <option value="{{ g }}°">{{ g }}°</option>
+                                {% endfor %}
+                            </select>
+                        </th>
                         <th><input type="text" data-filtro="bodega"></th>
                         <th></th>
                         <th></th>
@@ -55,16 +66,18 @@
                     <tr data-fila
                         data-fecha="{{ m.creado_en|date:'Y-m-d' }}"
                         data-tipo="{{ m.tipo|lower }}"
-                        data-codigo="{{ m.item.codigo|lower }}"
-                        data-articulo="{{ m.item.nombre|lower }}"
+                        data-categoria="{{ m.item.categoria.nombre|lower }}"
+                        data-referencia="{{ m.item.referencia|lower }}"
+                        data-grado="{{ m.item.grado_display }}"
                         data-bodega="{{ m.bodega.nombre|lower }}"
                         data-detalle="{{ m.detalle|lower }}">
                         <td>{{ m.creado_en|date:'Y-m-d H:i' }}</td>
                         <td>{{ m.get_tipo_display }}</td>
-                        <td>{{ m.item.codigo }}</td>
+                        <td>{{ m.item.categoria.nombre }}</td>
                         <td>
-                            <a href="{% url 'log_item_kardex' m.item_id %}" title="Kardex del artículo">{{ m.item.nombre }}</a>
+                            <a href="{% url 'log_item_kardex' m.item_id %}" title="Kardex de este grado">{{ m.item.referencia|default:'—' }}</a>
                         </td>
+                        <td>{{ m.item.grado_display }}</td>
                         <td>{{ m.bodega.nombre }}</td>
                         <td class="text-end fw-bold {% if m.delta > 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if m.delta > 0 %}+{% endif %}{{ m.delta }}
@@ -74,7 +87,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td colspan="9" class="text-center text-muted py-4">
                             <i class="fas fa-right-left me-1"></i> El ledger está vacío: registra una entrada para empezar.
                         </td>
                     </tr>

@@ -94,8 +94,11 @@ INSTALLED_APPS = [
     'financiera.viaticos',
     'financiera.pagos',
     'financiera.monitores',
+    'financiera.devoluciones',
     'logistica.inventario',
     'logistica.personalizacion',
+    'logistica.despachos',
+    'logistica.devoluciones',
 ]
 
 MIDDLEWARE = [
@@ -135,6 +138,7 @@ TEMPLATES = [
                 'programacion.monitores.context_processors.simulacros_sin_monitor',
                 'programacion.monitores.context_processors.pagos_monitores_por_revisar',
                 'logistica.inventario.context_processors.alertas_inventario',
+                'logistica.despachos.context_processors.alertas_despachos',
             ],
         },
     },

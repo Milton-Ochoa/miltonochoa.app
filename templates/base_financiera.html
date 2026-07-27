@@ -70,6 +70,13 @@
             </div>
         </div>
         {% endif %}
+
+        {# Devoluciones de colegios: consulta de solo lectura (las registra logística). #}
+        {% if 'devoluciones' in mp %}
+        <a href="{% url 'fin_devoluciones_lista' %}" class="nav-item {% if request.resolver_match.url_name == 'fin_devoluciones_lista' %}active{% endif %}">
+            <i class="fas fa-rotate-left icon-main text-info"></i> Devoluciones
+        </a>
+        {% endif %}
         {% endwith %}
         {% endif %}
 {% endblock %}

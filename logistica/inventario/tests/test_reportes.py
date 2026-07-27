@@ -15,8 +15,10 @@ from openpyxl import load_workbook
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from logistica.inventario.models import Bodega, Categoria, Item, Movimiento, Prestamo, Tercero
+from logistica.inventario.models import (GRADOS, Bodega, Categoria, Item,
+                                         Movimiento, Prestamo, Tercero)
 from logistica.inventario.services import crear_prestamo, registrar_entrada
+from logistica.inventario.tests.utils import crear_item
 
 XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -25,6 +27,11 @@ def _filas_xlsx(response):
     """Filas de datos (sin cabecera) del xlsx de la respuesta."""
     ws = load_workbook(io.BytesIO(response.content)).active
     return list(ws.iter_rows(min_row=2, values_only=True))
+
+
+def _encabezados_xlsx(response):
+    ws = load_workbook(io.BytesIO(response.content)).active
+    return list(next(ws.iter_rows(min_row=1, max_row=1, values_only=True)))
 
 
 class _BaseReportesTest(TestCase):
@@ -43,11 +50,10 @@ class _BaseReportesTest(TestCase):
         self.bodega_b = Bodega.objects.create(nombre='Anexa')
         # stock_minimo=10: con 3 de la entrada + 4 del préstamo recibido el
         # total queda en 7 → bajo mínimo (el mínimo es GLOBAL, suma de bodegas).
-        self.marcador = Item.objects.create(codigo='MAR-01', nombre='Marcador',
-                                            categoria=cat, stock_minimo=10,
-                                            valor_unitario=2000)
-        self.resma = Item.objects.create(codigo='RES-01', nombre='Resma',
-                                         categoria=cat)
+        self.marcador = crear_item(categoria=cat, referencia='Marcador',
+                                   grado=3, stock_minimo=10,
+                                   valor_unitario=2000)
+        self.resma = crear_item(categoria=cat, referencia='Resma', grado=4)
         registrar_entrada(bodega=self.bodega_a,
                           lineas=[(self.marcador, 3), (self.resma, 10)],
                           usuario=self.user, proveedor='ACME')
@@ -143,29 +149,60 @@ class GatesExportsTest(_BaseReportesTest):
 
 
 class ExportStockTest(_BaseReportesTest):
+    """El export es PIVOTADO: una fila por (material, bodega) con una columna
+    por grado. Índices de columna (0-based): 0 Categoría, 1 Referencia,
+    2 Bodega, 3 Unidad, 4+g el grado g, 16 Total, 17 Mínimo, 18 Valor unitario,
+    19 Valor total."""
+
+    COL_GRADO_0, COL_TOTAL = 4, 16
+
+    def _col_grado(self, grado):
+        return self.COL_GRADO_0 + grado
+
+    def test_cabecera_pivotada(self):
+        r = self.client.post('/stock/exportar/')
+        cabecera = _encabezados_xlsx(r)
+        self.assertEqual(cabecera[:4], ['Categoría', 'Referencia', 'Bodega',
+                                        'Unidad'])
+        self.assertEqual(cabecera[self.COL_GRADO_0:self.COL_TOTAL],
+                         [f'{g}°' for g in GRADOS])
+        self.assertEqual(cabecera[self.COL_TOTAL], 'Total')
 
     def test_exporta_todas_las_bodegas(self):
         r = self.client.post('/stock/exportar/')
         self.assertEqual(r['Content-Type'], XLSX_MIME)
         filas = _filas_xlsx(r)
-        # Filas de Stock existentes: marcador@A, resma@A, marcador@B
+        # Una fila por (material, bodega): marcador@A, marcador@B, resma@A
         self.assertEqual(len(filas), 3)
-        codigos = {f[0] for f in filas}
-        self.assertEqual(codigos, {'MAR-01', 'RES-01'})
+        self.assertEqual({(f[0], f[1], f[2]) for f in filas},
+                         {('Papelería', 'Marcador', 'Principal'),
+                          ('Papelería', 'Marcador', 'Anexa'),
+                          ('Papelería', 'Resma', 'Principal')})
+
+    def test_cantidad_en_la_columna_de_su_grado(self):
+        r = self.client.post('/stock/exportar/', {'bodega': self.bodega_a.pk})
+        filas = {f[1]: f for f in _filas_xlsx(r)}
+        # El marcador es de 3° y la resma de 4°: cada cantidad en su columna.
+        self.assertEqual(filas['Marcador'][self._col_grado(3)], 3)
+        # La resma entró con 10 y salieron 2 en el préstamo otorgado.
+        self.assertEqual(filas['Resma'][self._col_grado(4)], 8)
+        # Un grado que el material no tiene va vacío, no en 0.
+        self.assertIsNone(filas['Marcador'][self._col_grado(4)])
 
     def test_filtro_de_bodega(self):
         r = self.client.post('/stock/exportar/', {'bodega': self.bodega_b.pk})
         filas = _filas_xlsx(r)
         self.assertEqual(len(filas), 1)
-        self.assertEqual(filas[0][0], 'MAR-01')
-        self.assertEqual(filas[0][4], 'Anexa')
+        self.assertEqual((filas[0][1], filas[0][2]), ('Marcador', 'Anexa'))
+        self.assertEqual(filas[0][self._col_grado(3)], 4)
 
     def test_valor_total_referencial(self):
         r = self.client.post('/stock/exportar/', {'bodega': self.bodega_b.pk})
         fila = _filas_xlsx(r)[0]
-        # 4 marcadores × $2000
-        self.assertEqual(fila[7], 2000)
-        self.assertEqual(fila[8], 8000)
+        # 4 marcadores × $2000 (el total de la fila, no de una celda)
+        self.assertEqual(fila[self.COL_TOTAL], 4)
+        self.assertEqual(fila[18], 2000)
+        self.assertEqual(fila[19], 8000)
 
 
 class ExportMovimientosTest(_BaseReportesTest):

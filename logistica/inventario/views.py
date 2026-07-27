@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 from django.contrib import messages
-from django.db import models
+from django.db import models, transaction
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
 from django.http import FileResponse, HttpResponse, JsonResponse
@@ -15,12 +15,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .adjuntos import validar_adjunto
-from .forms import (BodegaForm, CategoriaForm, EntradaForm, ItemForm,
+from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
                     PrestamoForm, SalidaForm, TerceroForm, TrasladoForm,
-                    parsear_lineas)
-from .models import (AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
+                    parsear_clave_material, parsear_lineas_material)
+from .models import (GRADOS, AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
                      Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
 from .permisos import solo_logistica
+from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, registrar_ajuste,
                        registrar_devolucion, registrar_entrada,
@@ -47,7 +48,8 @@ def home(request):
         'recibidos_abiertos': recibidos.count(),
         'recibidos_vencidos': recibidos.filter(fecha_compromiso__lt=hoy).count(),
         'ultimos_movimientos': (Movimiento.objects
-                                .select_related('item', 'bodega', 'creado_por')
+                                .select_related('item', 'item__categoria',
+                                                'bodega', 'creado_por')
                                 .order_by('-creado_en', '-id')[:10]),
     })
 
@@ -67,29 +69,68 @@ def _form_a_messages(request, form):
 
 @solo_logistica
 def items_lista(request):
+    """Catálogo pivotado: una fila por MATERIAL (categoría, referencia) con sus
+    12 grados en columnas — es como el usuario lo maneja en su Excel. El Item
+    por grado sigue siendo la unidad real (cada celda enlaza a su kardex)."""
     items = (Item.objects.select_related('categoria')
              .annotate(stock_total=Coalesce(models.Sum('stocks__cantidad'), 0))
-             .order_by('nombre'))
+             .order_by('categoria__nombre', 'referencia', 'grado'))
+    bajo_minimo_ids = set(items_bajo_minimo().values_list('pk', flat=True))
+    materiales = agrupar_materiales(items)
+    for fila in materiales:
+        # El mínimo es por item, pero la alerta se resume en la fila para no
+        # obligar a leer las 12 celdas.
+        fila['alerta'] = any(c['item'] and c['item'].pk in bajo_minimo_ids
+                             for c in fila['celdas'])
     return render(request, 'inventario/items_lista.html', {
-        'items': items,
-        'form': ItemForm(),
+        'materiales': materiales,
+        'grados': GRADOS,
+        'form': MaterialForm(),
         'hay_categorias': Categoria.objects.exists(),
-        'bajo_minimo_ids': set(items_bajo_minimo().values_list('pk', flat=True)),
+        'bajo_minimo_ids': bajo_minimo_ids,
     })
 
 
 @require_POST
 @solo_logistica
-def item_guardar(request):
-    item_id = request.POST.get('item_id') or None
-    instancia = get_object_or_404(Item, pk=item_id) if item_id else None
-    form = ItemForm(request.POST, instance=instancia)
-    if form.is_valid():
-        item = form.save()
-        verbo = 'actualizado' if instancia else 'creado'
-        messages.success(request, f'Artículo "{item.nombre}" {verbo}.')
-    else:
+def material_guardar(request):
+    """Alta/edición de un material completo: los 12 grados de una vez.
+
+    El alta es eager (crea los 12 `Item` aunque su stock nazca en 0) porque
+    los documentos necesitan el Item ya resuelto al capturar cantidades por
+    grado. La edición actualiza los campos compartidos de TODO el grupo.
+    """
+    original = parsear_clave_material(request.POST.get('material'))
+    form = MaterialForm(request.POST, original=original)
+    if not form.is_valid():
         _form_a_messages(request, form)
+        return redirect('log_items_lista')
+
+    datos = form.cleaned_data
+    compartidos = {
+        'unidad_medida': datos['unidad_medida'],
+        'descripcion': datos['descripcion'],
+        'stock_minimo': datos['stock_minimo'],
+        'valor_unitario': datos['valor_unitario'],
+        'activo': datos['activo'],
+    }
+    etiqueta = f'{datos["categoria"].nombre} {datos["referencia"]}'.strip()
+    if original is None:
+        with transaction.atomic():
+            Item.objects.bulk_create([
+                Item(categoria=datos['categoria'], referencia=datos['referencia'],
+                     grado=grado, **compartidos) for grado in GRADOS])
+        messages.success(request, f'Material "{etiqueta}" creado con sus '
+                                  f'{len(GRADOS)} grados.')
+    else:
+        cat_id, referencia = original
+        grupo = Item.objects.filter(categoria_id=cat_id, referencia=referencia)
+        if not grupo.exists():
+            messages.error(request, 'El material ya no existe.')
+            return redirect('log_items_lista')
+        grupo.update(categoria=datos['categoria'],
+                     referencia=datos['referencia'], **compartidos)
+        messages.success(request, f'Material "{etiqueta}" actualizado.')
     return redirect('log_items_lista')
 
 
@@ -218,18 +259,29 @@ def tercero_ajax_crear(request):
 # Existencias
 # ---------------------------------------------------------------------------
 
+def _items_activos():
+    """Todos los items activos: el pivote necesita el juego completo de grados
+    de cada material, no solo los que ya tienen existencia."""
+    return (Item.objects.filter(activo=True).select_related('categoria')
+            .order_by('categoria__nombre', 'referencia', 'grado'))
+
+
+def _stocks_visibles():
+    return (Stock.objects
+            .select_related('item', 'item__categoria', 'bodega')
+            .filter(item__activo=True))
+
+
 @solo_logistica
 def stock(request):
-    """Existencias por item×bodega (el denormalizado que mantienen los
-    servicios). Las filas en 0 se muestran a propósito: dicen "este item vivió
-    en esta bodega" y son el punto de entrada del ajuste (modal en F4)."""
-    filas = (Stock.objects
-             .select_related('item', 'item__categoria', 'bodega')
-             .filter(item__activo=True)
-             .order_by('item__nombre', 'bodega__nombre'))
+    """Existencias pivotadas: una fila por (material, bodega) con los 12 grados
+    en columnas. Cada celda abre el ajuste de ese Item×Bodega — también las que
+    están en 0 o sin fila de `Stock` todavía (el servicio la crea)."""
+    filas = agrupar_materiales_por_bodega(_items_activos(), _stocks_visibles())
     alertas = list(items_bajo_minimo())
     return render(request, 'inventario/stock.html', {
         'filas': filas,
+        'grados': GRADOS,
         'items_alerta': alertas,
         'bajo_minimo_ids': {item.pk for item in alertas},
         # Para el select del modal de exportar (también inactivas: tienen historial).
@@ -238,26 +290,50 @@ def stock(request):
 
 
 # ---------------------------------------------------------------------------
-# Documentos: entradas, salidas, traslados (Fase 4)
+# Documentos: entradas, salidas, traslados, préstamos
 #
-# Patrón común: la cabecera la valida un form, las líneas las parsea
-# `parsear_lineas` y el documento lo crea SIEMPRE el servicio de dominio
-# (atómico: si una línea falla, nada queda escrito). En error se re-renderiza
-# el form con las líneas que traía el POST (`lineas_previas`) para no perder
-# lo digitado; en éxito, POST-redirect al detalle con toast.
+# Patrón común: la cabecera la valida un form, las líneas (un material con sus
+# 12 cantidades por grado) las parsea `parsear_lineas_material` —que las expande
+# a una línea de servicio por grado— y el documento lo crea SIEMPRE el servicio
+# de dominio (atómico: si una línea falla, nada queda escrito). En error se
+# re-renderiza el form con las filas que traía el POST (`lineas_previas`) para
+# no perder lo digitado; en éxito, POST-redirect al detalle con toast.
 # ---------------------------------------------------------------------------
 
-def _lineas_previas(post, *, con_bodega=False):
-    """Las líneas crudas del POST, para repintar `_lineas_doc.html` tras un error."""
-    items = post.getlist('linea_item')
-    cantidades = post.getlist('linea_cantidad')
-    bodegas = post.getlist('linea_bodega') if con_bodega else [''] * len(items)
-    return [{'item_id': i, 'cantidad': c, 'bodega_id': b}
-            for i, c, b in zip(items, cantidades, bodegas)]
+def _fila_material_blanco():
+    return {'material': '', 'bodega_id': '',
+            'celdas': [{'grado': g, 'valor': ''} for g in GRADOS]}
 
 
-def _items_para_lineas():
-    return Item.objects.filter(activo=True).order_by('nombre')
+def _lineas_previas_material(post=None, *, con_bodega=False):
+    """Filas crudas para pintar `_lineas_material.html`.
+
+    Con `post` repite lo digitado (re-render tras error); sin él devuelve una
+    fila en blanco. Garantiza SIEMPRE al menos una fila: el JS del parcial
+    clona la primera como plantilla y sin ninguna no podría agregar líneas.
+    """
+    if post is None:
+        return [_fila_material_blanco()]
+    claves = post.getlist('linea_material')
+    columnas = {g: post.getlist(f'linea_g{g}') for g in GRADOS}
+    bodegas = post.getlist('linea_bodega') if con_bodega else []
+    filas = []
+    for i, clave in enumerate(claves):
+        filas.append({
+            'material': clave,
+            'bodega_id': bodegas[i] if i < len(bodegas) else '',
+            'celdas': [{'grado': g,
+                        'valor': columnas[g][i] if i < len(columnas[g]) else ''}
+                       for g in GRADOS],
+        })
+    return filas or [_fila_material_blanco()]
+
+
+def _materiales_para_lineas():
+    """Los MATERIALES activos para el select de líneas (una opción por
+    (categoría, referencia), no por grado). `select_related` obligatorio: la
+    etiqueta y la clave leen la categoría."""
+    return agrupar_materiales(_items_activos())
 
 
 @solo_logistica
@@ -277,7 +353,7 @@ def entrada_nueva(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             entrada = registrar_entrada(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
                 usuario=request.user,
@@ -291,8 +367,10 @@ def entrada_nueva(request):
             return redirect('log_entradas_detalle', pk=entrada.pk)
     return render(request, 'inventario/entrada_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -300,7 +378,7 @@ def entrada_nueva(request):
 def entrada_detalle(request, pk):
     entrada = get_object_or_404(
         Entrada.objects.select_related('bodega', 'creado_por')
-        .prefetch_related('lineas__item', 'adjuntos__subido_por'), pk=pk)
+        .prefetch_related('lineas__item__categoria', 'adjuntos__subido_por'), pk=pk)
     return render(request, 'inventario/entrada_detalle.html', {'entrada': entrada})
 
 
@@ -364,7 +442,7 @@ def salida_nueva(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             salida = registrar_salida(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
                 usuario=request.user,
@@ -379,8 +457,10 @@ def salida_nueva(request):
             return redirect('log_salidas_detalle', pk=salida.pk)
     return render(request, 'inventario/salida_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -388,7 +468,7 @@ def salida_nueva(request):
 def salida_detalle(request, pk):
     salida = get_object_or_404(
         Salida.objects.select_related('bodega', 'tercero', 'creado_por')
-        .prefetch_related('lineas__item'), pk=pk)
+        .prefetch_related('lineas__item__categoria'), pk=pk)
     return render(request, 'inventario/salida_detalle.html', {'salida': salida})
 
 
@@ -410,7 +490,7 @@ def traslado_nuevo(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
-            lineas = parsear_lineas(request.POST)
+            lineas = parsear_lineas_material(request.POST)
             traslado = registrar_traslado(
                 bodega_origen=form.cleaned_data['bodega_origen'],
                 bodega_destino=form.cleaned_data['bodega_destino'],
@@ -424,8 +504,10 @@ def traslado_nuevo(request):
             return redirect('log_traslados_detalle', pk=traslado.pk)
     return render(request, 'inventario/traslado_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
-        'lineas_previas': _lineas_previas(request.POST) if request.method == 'POST' else [],
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None),
     })
 
 
@@ -434,7 +516,7 @@ def traslado_detalle(request, pk):
     traslado = get_object_or_404(
         Traslado.objects.select_related('bodega_origen', 'bodega_destino',
                                         'creado_por')
-        .prefetch_related('lineas__item'), pk=pk)
+        .prefetch_related('lineas__item__categoria'), pk=pk)
     return render(request, 'inventario/traslado_detalle.html',
                   {'traslado': traslado})
 
@@ -462,7 +544,7 @@ def prestamo_nuevo(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
-            lineas = parsear_lineas(request.POST, con_bodega=True)
+            lineas = parsear_lineas_material(request.POST, con_bodega=True)
             prestamo = crear_prestamo(
                 tercero=form.cleaned_data['tercero'],
                 fecha_compromiso=form.cleaned_data['fecha_compromiso'],
@@ -477,10 +559,12 @@ def prestamo_nuevo(request):
             return redirect('log_prestamos_detalle', pk=prestamo.pk)
     return render(request, 'inventario/prestamo_form.html', {
         'form': form,
-        'items': _items_para_lineas(),
+        'materiales': _materiales_para_lineas(),
+        'grados': GRADOS,
         'bodegas': Bodega.objects.filter(activa=True).order_by('nombre'),
-        'lineas_previas': (_lineas_previas(request.POST, con_bodega=True)
-                           if request.method == 'POST' else []),
+        'lineas_previas': _lineas_previas_material(
+            request.POST if request.method == 'POST' else None,
+            con_bodega=True),
     })
 
 
@@ -488,9 +572,9 @@ def prestamo_nuevo(request):
 def prestamo_detalle(request, pk):
     prestamo = get_object_or_404(
         Prestamo.objects.select_related('tercero', 'creado_por')
-        .prefetch_related('lineas__item', 'lineas__bodega',
+        .prefetch_related('lineas__item__categoria', 'lineas__bodega',
                           'devoluciones__creado_por',
-                          'devoluciones__movimientos__item',
+                          'devoluciones__movimientos__item__categoria',
                           'devoluciones__movimientos__bodega'), pk=pk)
     return render(request, 'inventario/prestamo_detalle.html',
                   {'prestamo': prestamo})
@@ -575,12 +659,13 @@ MOVIMIENTOS_MAX_FILAS = 500
 @solo_logistica
 def movimientos(request):
     lista = (Movimiento.objects
-             .select_related('item', 'bodega', 'creado_por')
+             .select_related('item', 'item__categoria', 'bodega', 'creado_por')
              .order_by('-creado_en', '-id')[:MOVIMIENTOS_MAX_FILAS])
     return render(request, 'inventario/movimientos.html', {
         'movimientos': lista,
         'tope': MOVIMIENTOS_MAX_FILAS,
         'tipos': Movimiento.Tipo.choices,
+        'grados': GRADOS,
     })
 
 
@@ -680,34 +765,41 @@ def _fecha_post(request, nombre):
 @require_POST
 @solo_logistica
 def stock_exportar(request):
-    """Existencias actuales (items activos, incluidas filas en 0 como en la
-    vista). Filtro opcional de bodega. `valor_unitario` es referencial (el
-    kardex es de cantidades): se exporta junto al valor total estimado."""
-    filas_qs = (Stock.objects
-                .select_related('item', 'item__categoria', 'bodega')
-                .filter(item__activo=True)
-                .order_by('item__nombre', 'bodega__nombre'))
+    """Existencias pivotadas: una fila por (material, bodega) con los 12 grados
+    en columnas, igual que la pantalla y que la hoja de cálculo del usuario.
+    Filtro opcional de bodega. `valor_unitario` es referencial (el kardex es de
+    cantidades): se exporta junto al valor total estimado de la fila."""
+    stocks = _stocks_visibles()
     bodega_id = request.POST.get('bodega', '')
     if bodega_id.isdigit():
-        filas_qs = filas_qs.filter(bodega_id=bodega_id)
+        stocks = stocks.filter(bodega_id=bodega_id)
 
     filas = []
-    for s in filas_qs:
-        vu = s.item.valor_unitario
+    for fila in agrupar_materiales_por_bodega(_items_activos(), stocks):
+        item = fila['muestra']
+        vu = item.valor_unitario
         filas.append([
-            s.item.codigo, s.item.nombre, s.item.categoria.nombre,
-            s.item.get_unidad_medida_display(), s.bodega.nombre, s.cantidad,
-            s.item.stock_minimo or '',
+            fila['categoria'].nombre, fila['referencia'], fila['bodega'].nombre,
+            item.get_unidad_medida_display(),
+            # Celda vacía (no en 0) cuando el material no tiene ese grado: en la
+            # hoja se distingue "no existe" de "existe y está agotado".
+            *[c['cantidad'] if c['item'] else '' for c in fila['celdas']],
+            fila['total'], item.stock_minimo or '',
             vu if vu is not None else '',
-            vu * s.cantidad if vu is not None else '',
+            vu * fila['total'] if vu is not None else '',
         ])
+    n_grados = len(GRADOS)
+    columnas = (['Categoría', 'Referencia', 'Bodega', 'Unidad']
+                + [f'{g}°' for g in GRADOS]
+                + ['Total', 'Mínimo global', 'Valor unitario', 'Valor total'])
+    col_valor_unitario = 4 + n_grados + 3  # tras los 12 grados, total y mínimo
     excel = _generar_excel(
         titulo='Existencias',
-        columnas=['Código', 'Artículo', 'Categoría', 'Unidad', 'Bodega',
-                  'Cantidad', 'Mínimo global', 'Valor unitario', 'Valor total'],
+        columnas=columnas,
         filas=filas,
-        anchos=[12, 32, 18, 12, 18, 10, 12, 14, 14],
-        formatos={8: '"$"#,##0', 9: '"$"#,##0'})
+        anchos=[20, 26, 18, 12] + [6] * n_grados + [10, 12, 14, 14],
+        formatos={col_valor_unitario: '"$"#,##0',
+                  col_valor_unitario + 1: '"$"#,##0'})
     hoy = timezone.localdate().strftime('%Y%m%d')
     return _respuesta_xlsx(excel, f'Existencias_{hoy}.xlsx')
 
@@ -719,7 +811,7 @@ def movimientos_exportar(request):
     filtros de tipo (checkboxes) y rango de fechas. En orden cronológico:
     así el saldo por fila se lee como un kardex."""
     qs = (Movimiento.objects
-          .select_related('item', 'bodega', 'creado_por')
+          .select_related('item', 'item__categoria', 'bodega', 'creado_por')
           .order_by('creado_en', 'id'))
     tipos_validos = set(Movimiento.Tipo.values)
     tipos = [t for t in request.POST.getlist('tipos') if t in tipos_validos]
@@ -733,16 +825,17 @@ def movimientos_exportar(request):
 
     filas = [[
         timezone.localtime(m.creado_en).strftime('%d/%m/%Y %H:%M'),
-        m.get_tipo_display(), m.item.codigo, m.item.nombre, m.bodega.nombre,
+        m.get_tipo_display(), m.item.categoria.nombre, m.item.referencia,
+        m.item.grado_display, m.bodega.nombre,
         m.delta, m.saldo_resultante, m.detalle,
         m.creado_por.username if m.creado_por else '',
     ] for m in qs]
     excel = _generar_excel(
         titulo='Movimientos',
-        columnas=['Fecha', 'Tipo', 'Código', 'Artículo', 'Bodega', 'Cantidad',
-                  'Saldo', 'Detalle', 'Registró'],
+        columnas=['Fecha', 'Tipo', 'Categoría', 'Referencia', 'Grado',
+                  'Bodega', 'Cantidad', 'Saldo', 'Detalle', 'Registró'],
         filas=filas,
-        anchos=[16, 24, 12, 32, 18, 10, 10, 40, 14])
+        anchos=[16, 24, 20, 26, 8, 18, 10, 10, 40, 14])
     partes = [desde.strftime('%Y%m%d') if desde else 'inicio',
               hasta.strftime('%Y%m%d') if hasta else 'fin']
     return _respuesta_xlsx(excel, f'Movimientos_{partes[0]}_{partes[1]}.xlsx')

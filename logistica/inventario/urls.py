@@ -7,7 +7,10 @@ urlpatterns = [
 
     # Artículos (lista + alta/edición vía modal)
     path('articulos/', views.items_lista, name='log_items_lista'),
-    path('articulos/guardar/', views.item_guardar, name='log_item_guardar'),
+    # La URL sigue bajo /articulos/ (el prefijo del módulo de permisos no
+    # cambia); lo que se guarda ahora es el material con sus 12 grados.
+    path('articulos/guardar/', views.material_guardar,
+         name='log_material_guardar'),
 
     # Catálogos
     path('catalogos/bodegas/', views.bodegas, name='log_bodegas'),

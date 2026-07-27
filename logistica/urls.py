@@ -8,4 +8,6 @@ from django.urls import path, include
 urlpatterns = [
     path('', include('logistica.inventario.urls')),
     path('', include('logistica.personalizacion.urls')),
+    path('', include('logistica.despachos.urls')),
+    path('', include('logistica.devoluciones.urls')),
 ]

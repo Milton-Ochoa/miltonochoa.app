@@ -1,0 +1,71 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Bodegas por usuario{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_despachos_tablero' %}" class="btn btn-outline-secondary btn-sm fw-bold">
+    <i class="fas fa-arrow-left me-1"></i> Volver al tablero
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 900px;">
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <h5 class="mb-1"><i class="fas fa-warehouse text-secondary me-2"></i>Bodega por defecto de cada usuario</h5>
+            <p class="text-muted small mb-0">
+                <i class="fas fa-info-circle me-1"></i>
+                La bodega asignada pre-filtra el tablero de despachos del usuario (puede quitar
+                el filtro para ver todo). Dejar «(sin asignar)» borra la asignación. Solo el
+                administrador puede cambiarla.
+            </p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th style="width: 40%;">Bodega por defecto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td><strong>{{ u.username }}</strong></td>
+                        <td>{{ u.get_full_name|default:"—" }}</td>
+                        <td>
+                            <form method="post" action="{% url 'log_despachos_bodegas' %}" class="d-flex gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ u.pk }}">
+                                <select name="bodega" class="form-select form-select-sm">
+                                    <option value="">(sin asignar)</option>
+                                    {% for b in bodegas %}
+                                    <option value="{{ b }}"{% if u.bodega_despachos and u.bodega_despachos.bodega == b %} selected{% endif %}>{{ b }}</option>
+                                    {% endfor %}
+                                    {% if u.bodega_despachos and u.bodega_despachos.bodega not in bodegas %}
+                                    <option value="{{ u.bodega_despachos.bodega }}" selected>{{ u.bodega_despachos.bodega }}</option>
+                                    {% endif %}
+                                </select>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-4">
+                            <i class="fas fa-users me-1"></i> No hay usuarios de logística para asignar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
