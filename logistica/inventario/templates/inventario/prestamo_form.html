@@ -4,7 +4,8 @@
 {% block content %}
 <div class="container-fluid py-3">
     <div class="row justify-content-center">
-        <div class="col-lg-8">
+        {% comment %} Ancho generoso: las líneas traen 12 columnas de grado. {% endcomment %}
+        <div class="col-xl-11">
             <div class="card shadow-sm">
                 <div class="card-header d-flex justify-content-between align-items-center py-2">
                     <strong><i class="fas fa-handshake me-1 text-primary"></i> Nuevo préstamo</strong>
@@ -40,7 +41,7 @@
                         </div>
                     </div>
 
-                    {% include 'inventario/_lineas_doc.html' with con_bodega=True %}
+                    {% include 'inventario/_lineas_material.html' with con_bodega=True %}
 
                     <div class="text-end mt-3">
                         <button type="submit" class="btn btn-primary fw-bold">

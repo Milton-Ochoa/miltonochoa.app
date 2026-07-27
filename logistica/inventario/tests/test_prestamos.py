@@ -16,7 +16,8 @@ from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 from logistica.inventario.models import (Bodega, Categoria, Devolucion, Item, Movimiento,
                      Prestamo, Stock, Tercero)
 from logistica.inventario.services import crear_prestamo, registrar_entrada, registrar_salida
-from logistica.inventario.tests.utils import crear_item
+from logistica.inventario.tests.utils import (crear_item, crear_material,
+                                              lineas_post)
 
 
 class _BasePrestamosTest(TestCase):
@@ -33,6 +34,9 @@ class _BasePrestamosTest(TestCase):
         self.bodega2 = Bodega.objects.create(nombre='Sucursal')
         self.item = crear_item(categoria=self.categoria, referencia='Resma carta')
         self.item2 = crear_item(categoria=self.categoria, referencia='Marcadores')
+        # Material completo: las líneas se capturan por material + grados.
+        self.material = crear_material(categoria=self.categoria,
+                                       referencia='Cuadernillo')
         self.tercero = Tercero.objects.create(nombre='Colegio Norte',
                                               documento='900123')
         self.manana = timezone.localdate() + timedelta(days=1)
@@ -103,9 +107,9 @@ class CrearPrestamoUITest(_BasePrestamosTest):
         r = self.client.post('/prestamos/nuevo/', {
             'direccion': 'OTORGADO', 'tercero': self.tercero.pk,
             'fecha_compromiso': self.manana.isoformat(), 'observaciones': '',
-            'linea_item': [self.item.pk, self.item2.pk],
-            'linea_bodega': [self.bodega.pk, self.bodega2.pk],
-            'linea_cantidad': ['4', '3'],
+            **lineas_post([(self.item, self.bodega, {0: 4}),
+                           (self.item2, self.bodega2, {0: 3})],
+                          con_bodega=True),
         }, follow=True)
         prestamo = Prestamo.objects.get()
         self.assertEqual(prestamo.direccion, Prestamo.Direccion.OTORGADO)
@@ -127,8 +131,7 @@ class CrearPrestamoUITest(_BasePrestamosTest):
         r = self.client.post('/prestamos/nuevo/', {
             'direccion': 'OTORGADO', 'tercero': self.tercero.pk,
             'fecha_compromiso': self.manana.isoformat(),
-            'linea_item': [self.item.pk], 'linea_bodega': [self.bodega.pk],
-            'linea_cantidad': ['9'],
+            **lineas_post([(self.item, self.bodega, {0: 9})], con_bodega=True),
         })
         self.assertEqual(r.status_code, 200)  # re-render, no redirect
         self.assertFalse(Prestamo.objects.exists())
@@ -140,8 +143,7 @@ class CrearPrestamoUITest(_BasePrestamosTest):
         self.client.post('/prestamos/nuevo/', {
             'direccion': 'RECIBIDO', 'tercero': self.tercero.pk,
             'fecha_compromiso': self.manana.isoformat(),
-            'linea_item': [self.item.pk], 'linea_bodega': [self.bodega.pk],
-            'linea_cantidad': ['6'],
+            **lineas_post([(self.item, self.bodega, {0: 6})], con_bodega=True),
         }, follow=True)
         prestamo = Prestamo.objects.get()
         self.assertEqual(prestamo.direccion, Prestamo.Direccion.RECIBIDO)
@@ -154,8 +156,7 @@ class CrearPrestamoUITest(_BasePrestamosTest):
         r = self.client.post('/prestamos/nuevo/', {
             'direccion': 'OTORGADO', 'tercero': '',
             'fecha_compromiso': self.manana.isoformat(),
-            'linea_item': [self.item.pk], 'linea_bodega': [self.bodega.pk],
-            'linea_cantidad': ['2'],
+            **lineas_post([(self.item, self.bodega, {0: 2})], con_bodega=True),
         })
         self.assertEqual(r.status_code, 200)
         self.assertFalse(Prestamo.objects.exists())
@@ -166,11 +167,30 @@ class CrearPrestamoUITest(_BasePrestamosTest):
         r = self.client.post('/prestamos/nuevo/', {
             'direccion': 'OTORGADO', 'tercero': self.tercero.pk,
             'fecha_compromiso': self.manana.isoformat(),
-            'linea_item': [self.item.pk], 'linea_bodega': [''],
-            'linea_cantidad': ['2'],
+            **lineas_post([(self.item, '', {0: 2})], con_bodega=True),
         })
         self.assertFalse(Prestamo.objects.exists())
         self.assertTrue(any('sin bodega válida' in m for m in self._mensajes(r)))
+
+    def test_una_fila_con_varios_grados_hereda_la_bodega_de_la_linea(self):
+        # La fila lleva UNA bodega y N grados: cada grado se presta desde esa
+        # misma bodega (la devolución después opera sobre ella).
+        for grado in (0, 3, 7):
+            self._sembrar(self.material[grado], self.bodega2, 5)
+        self.client.post('/prestamos/nuevo/', {
+            'direccion': 'OTORGADO', 'tercero': self.tercero.pk,
+            'fecha_compromiso': self.manana.isoformat(),
+            **lineas_post([(self.material, self.bodega2, {0: 1, 3: 2, 7: 3})],
+                          con_bodega=True),
+        })
+        prestamo = Prestamo.objects.get()
+        self.assertEqual(prestamo.lineas.count(), 3)
+        self.assertEqual({l.bodega_id for l in prestamo.lineas.all()},
+                         {self.bodega2.pk})
+        self.assertEqual(
+            {(l.item.grado, l.cantidad_prestada) for l in prestamo.lineas.all()},
+            {(0, 1), (3, 2), (7, 3)})
+        self.assertEqual(self._stock(self.material[7], self.bodega2), 2)
 
 
 class DevolucionUITest(_BasePrestamosTest):
