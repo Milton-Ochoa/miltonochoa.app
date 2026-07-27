@@ -134,13 +134,16 @@ AAMO/
 │   ├── urls.py        #   agrupa las rutas del área en la RAÍZ de su subdominio
 │   ├── configuracion/ colegios/ profesores/ informes/ auditoria/ exportar/ pagos/ pendientes/ viaticos/ monitores/
 │   │                  #   monitores/ = monitores+simulacros+colegios de simulacro+sus pagos
-├── financiera/        # ÁREA: urls.py + viaticos/ + pagos/ + monitores/ (SIN modelos propios,
-│   │                  #   importan los de programacion.*)
-├── logistica/         # ÁREA: urls.py + 3 sub-apps: inventario/ (label log_inventario;
+├── financiera/        # ÁREA: urls.py + viaticos/ + pagos/ + monitores/ + devoluciones/
+│   │                  #   (SIN modelos propios: importan los de programacion.* y, en
+│   │                  #   devoluciones, los de logistica.inventario — solo lectura)
+├── logistica/         # ÁREA: urls.py + 4 sub-apps: inventario/ (label log_inventario;
 │   │                  #   catálogos, existencias, movimientos, préstamos, dashboard),
-│   │                  #   personalizacion/ (log_personalizacion; PDFs AcroForm) y
+│   │                  #   personalizacion/ (log_personalizacion; PDFs AcroForm),
 │   │                  #   despachos/ (log_despachos; tablero de órdenes ERP + estados,
-│   │                  #   cambio de material, alertas, export, badge). Tablas log_*
+│   │                  #   cambio de material, alertas, export, badge) y devoluciones/
+│   │                  #   (log_devoluciones; UI de las devoluciones de colegios, cuyo
+│   │                  #   dominio vive en inventario). Tablas log_*
 ├── templates/         # globales: base_chrome (chrome compartido), base (menú programación),
 │   │                  #   base_financiera (menú financiera), base_logistica (menú logística),
 │   │                  #   base_apex (lobby), home, 404/500, login, sw.js
@@ -327,8 +330,8 @@ Sistema de inventario por cantidades (sin seriales ni costos: el kardex es de
 **cantidades**, `Item.valor_unitario` es solo referencial para exports). Multi-bodega,
 préstamos **bidireccionales** (`Prestamo.direccion`: OTORGADO = prestamos nosotros,
 RECIBIDO = nos prestan) con devolución parcial, y ajustes con motivo obligatorio.
-Modelos en `logistica/inventario/models.py` (migraciones `0001_initial` y
-`0002_item_material_grados`):
+Modelos en `logistica/inventario/models.py` (migraciones `0001_initial`,
+`0002_item_material_grados` y `0003_devolucion_colegio`):
 
 | Modelo | Tabla | | Modelo | Tabla |
 |---|---|---|---|---|
@@ -339,8 +342,8 @@ Modelos en `logistica/inventario/models.py` (migraciones `0001_initial` y
 | `Stock` | `log_stock` | | `Prestamo` | `log_prestamos` |
 | `Movimiento` | `log_movimientos` | | `PrestamoLinea` | `log_prestamos_lineas` |
 | `Entrada` | `log_entradas` | | `Devolucion` | `log_prestamos_devoluciones` |
-| `EntradaLinea` | `log_entradas_lineas` | | | |
-| `AdjuntoEntrada` | `log_entradas_adjuntos` | | | |
+| `EntradaLinea` | `log_entradas_lineas` | | `DevolucionColegio` | `log_devoluciones_colegios` |
+| `AdjuntoEntrada` | `log_entradas_adjuntos` | | `DevolucionColegioLinea` | `log_devoluciones_colegios_lineas` |
 
 Reglas de oro (NO romper):
 
@@ -375,7 +378,8 @@ Reglas de oro (NO romper):
   usuario, direccion=OTORGADO, observaciones='')`, `registrar_devolucion(prestamo,
   lineas=[(PrestamoLinea, cant)], usuario, observaciones='')` (opera sobre la bodega de
   cada línea; recalcula estado PARCIAL/CERRADO), `registrar_ajuste(item, bodega,
-  nueva_cantidad, usuario, motivo)` (motivo obligatorio). Todos keyword-only. Excepciones
+  nueva_cantidad, usuario, motivo)` (motivo obligatorio) y `registrar_devolucion_colegio(...)`
+  (ver _Devoluciones de colegios_ abajo). Todos keyword-only. Excepciones
   de dominio: `StockInsuficiente` (item/bodega/disponible/solicitado) y `ErrorDevolucion`
   → las vistas las traducen a `messages.error`. Consultas: `kardex(item, bodega=None,
   desde=None, hasta=None)`, `items_bajo_minimo()` (mínimo **global** por item, suma de
@@ -524,8 +528,11 @@ cruzada contra el ERP. Ítem "Despachos" de primer nivel en `base_logistica.html
   `Factura…` (= cerrada de verdad); `Orden anulada` + `Pendiente` = cancelada. Los atributos de
   orden (bodega, estados, fechas, cliente) son **idénticos en todas las líneas de la misma orden**
   → se materializan una vez en `OrdenDespacho`, las líneas cuelgan en `LineaOrden`. Líneas
-  categoría **FORMACIÓN** (HORAS CLASE) no son material: fuera del tablero (`es_material=False`);
-  una orden 100% FORMACIÓN no es despachable (`es_despachable=False`) y no alerta.
+  categoría **FORMACIÓN** (HORAS CLASE) no son material (`es_material=False`) y no cuentan para
+  `n_lineas`/`es_despachable`; una orden 100% FORMACIÓN **sí aparece** en el tablero (desde jul
+  2026, a petición del usuario: el filtro de Artículos es quien las oculta) pero **no alerta**
+  (ni resaltado de vencida ni badge, ambos condicionados a `es_despachable`). Su `resumen_articulos`
+  sí las incluye — es lo que alimenta el embudo de la columna Artículos.
 - **Parser puro `reporte.py`** (patrón `personalizacion/excel.py`, sin ORM): `parsear_reporte(
   archivo) -> ReporteParseado(filas, max_fecha_orden, n_descartadas)` con `html.parser.HTMLParser`
   alimentado en chunks + decodificador incremental (sniff utf-8 en meta, si no latin-1). Encabezados
@@ -560,12 +567,26 @@ cruzada contra el ERP. Ítem "Despachos" de primer nivel en `base_logistica.html
   `orden_estado`/`linea_cambio`/`linea_cambio_quitar`/`linea_erp_toggle`, y de **F5**:
   `tablero_exportar` (`/despachos/exportar/`) y `bodegas_usuarios` (`/despachos/bodegas/`, SOLO
   superusuario). Montaje: `logistica/urls.py` += `path('', include('logistica.despachos.urls'))`.
-- **Tablero:** 3 tabs — "abiertas" (PENDIENTE+ALISTADA despachables), "sin_remision" (DESPACHADA),
-  "cerradas" (REMITIDA/ANULADA, rango server sobre `fecha_orden`, default últimos 30 días). Filtros
+- **Tablero:** 3 tabs — "abiertas" (PENDIENTE+ALISTADA, **todas**, despachables o no),
+  "sin_remision" (DESPACHADA), "cerradas" (REMITIDA/ANULADA, rango server sobre `fecha_orden`,
+  default últimos 30 días). Filtros
   por columna + rango/atajos de fecha de entrega (hoy/semana/mes/vencidas/próx. 7 días) client-side
-  (`_tabla_js.html`); resaltado server-side `fila-vencida` (roja) / `fila-proxima` (amarilla).
+  (`_tabla_js.html`); resaltado server-side `fila-vencida` (roja) / `fila-proxima` (amarilla),
+  condicionado además a `es_despachable`.
   `?q=PPAL-N` salto al detalle. Acciones desde la fila vía un ÚNICO form oculto compartido (un solo
   csrf para las ~930 filas). Cambio de material por modal (select2 `inventario/_select2.html`).
+- **Filtro tipo Excel en la columna Artículos:** embudo en el `<th>` que abre un panel
+  (buscador + "seleccionar todo" + un checkbox por nombre único) construido client-side desde
+  `data-artnombres` de cada fila (property `OrdenDespacho.articulos_nombres`). El panel va **fuera
+  de la tabla y `position: fixed`** — dentro lo recortarían `.table-responsive` y el `overflow`
+  de las celdas. El motor guarda el `Set` de **excluidos** (no de incluidos) en `localStorage`
+  (`desp_filtro_articulos_v1`) para que los artículos de futuras cargas nazcan visibles; una fila
+  se ve si ≥1 de sus artículos no está excluido. Es el mecanismo con el que el usuario oculta las
+  órdenes de HORAS CLASE. El export lleva DOS hidden: `f_articulos_sel` (nombres marcados,
+  separados por `;`) y `f_articulos_on` (flag) — sin el flag no se distingue "sin filtro" de "todo
+  desmarcado" (que debe exportar vacío); el server re-aplica contra `LineaOrden` con match EXACTO
+  (`descripcion__in` / `cod_articulo__in` + `distinct`), no `icontains` sobre el resumen, que
+  colisionaría entre nombres que son subcadena de otros.
 - **F5 — badge + export + bodega por usuario:**
   - **Badge:** context processor `logistica.despachos.context_processors.alertas_despachos` →
     `{'desp_vencidas_count': N}` (COUNT de abiertas + `es_despachable` + `fecha_entrega < hoy`,
@@ -594,6 +615,58 @@ cruzada contra el ERP. Ítem "Despachos" de primer nivel en `base_logistica.html
   **Subida de 26–40 MB NO requiere tocar settings** (`TemporaryFileUploadHandler` manda el archivo
   a temp-disk; `DATA_UPLOAD_MAX_MEMORY_SIZE` excluye archivos). El archivo de muestra vive en
   `docs/` (gitignored, JAMÁS se commitea).
+
+## Devoluciones de colegios (`logistica.devoluciones` + `financiera.devoluciones`)
+
+Material despachado que un colegio **devuelve sin usar**. Logística lo registra (suma
+automática a existencias, con rastro en el kardex) y financiera lo **consulta en solo
+lectura** para ajustar cobros y comisiones de los asesores comerciales. **Sin valores
+monetarios**: es un conteo de unidades por grado, calcado de la hoja `Registro
+Devoluciones.xlsx` del usuario (la columna "Registro Effi" se **omite** a propósito).
+
+- **El dominio vive en `logistica.inventario`, NO en la sub-app de UI** — toda escritura al
+  stock/ledger debe pasar por sus servicios transaccionales. Modelos `DevolucionColegio`
+  (`log_devoluciones_colegios`: `fecha_recibido`, `colegio`, `codigo_colegio`, `regional`,
+  `ejecutivo`, `bodega` PROTECT, `observaciones`, `creado_por` SET_NULL) y
+  `DevolucionColegioLinea` (`log_devoluciones_colegios_lineas`: FK devolución CASCADE, FK
+  item PROTECT, `cantidad` > 0). Migración `log_inventario/0003`. Tipo de movimiento
+  `Movimiento.Tipo.DEV_COLEGIO` (positivo, suma stock). OJO: el nombre `Devolucion` ya
+  estaba tomado por las devoluciones de **préstamo** — por eso `DevolucionColegio`.
+- **Servicio** `registrar_devolucion_colegio(*, bodega, lineas, usuario, fecha_recibido,
+  colegio, codigo_colegio='', regional='', ejecutivo='', observaciones='')` — molde exacto
+  de `registrar_entrada` (atómico; `lineas` = `[(Item, cantidad)]`).
+- **UI de logística** (`logistica/devoluciones/`, label `log_devoluciones`, **sin modelos**,
+  prefijo `/devoluciones/`, names `log_devoluciones_*`, gate `solo_logistica`): `lista`
+  (tabla con filtros + paginación client-side), `nueva` (cabecera por `DevolucionColegioForm`
+  + líneas con el parcial compartido `inventario/_lineas_material.html`, `con_bodega=False`
+  porque la bodega es de la devolución completa), `detalle` (pivote por material) y
+  `exportar`. El **colegio es texto libre** con `<datalist>` alimentado por `_colegios_erp()`
+  (distinct de `OrdenDespacho.centro_costos`, con `cliente` de respaldo — criterio de
+  `colegio_erp`): el que devuelve puede no estar en el ERP.
+- **Excel compartido** en `logistica/devoluciones/export.py` (NO en `views.py`, porque
+  financiera lo reutiliza tal cual): `COLUMNAS`/`ANCHOS`, `materiales_devueltos(devolucion)`
+  (pivote por material, suma el mismo material capturado en dos filas),
+  `filas_export(devoluciones)` y `generar_excel_devoluciones(devoluciones)` → bytes. Layout =
+  Fecha de recibido, Colegio, Código, Regional, Ejecutivo, Categoría, Referencia, 0°…11°,
+  Total, Observaciones; un grado no devuelto sale **vacío**, no en 0. El queryset que se le
+  pase necesita `prefetch_related('lineas__item__categoria')` (las properties del material
+  leen la categoría). También son públicos `devoluciones_anotadas()` y
+  `devoluciones_para_export(post)` (filtros `desde`/`hasta` sobre `fecha_recibido` +
+  `colegio` icontains) — financiera los importa para no divergir de logística.
+- **UI de financiera** (`financiera/devoluciones/`, label `fin_devoluciones`, **sin modelos**,
+  gate local `solo_financiera`): solo `fin_devoluciones_lista` (`@require_GET`) y
+  `fin_devoluciones_exportar` (`@require_POST`, es un POST "de lectura"). No hay alta ni
+  detalle: registrar es competencia de logística. Template `financiera/devoluciones.html`
+  extiende `base_financiera.html` y **NO lleva bloques de `messages`** (contrato del área).
+- **Permisos** (`core/modulos.py`): `Modulo('devoluciones', 'Devoluciones de colegios',
+  ('/devoluciones/',), ('/devoluciones/exportar/',))` en **las dos** áreas. En logística
+  LECTURA = lista/detalle/export y COMPLETO añade registrar; en financiera, al no haber
+  escrituras, LECTURA y COMPLETO se comportan igual. Ítem de primer nivel en
+  `base_logistica.html` (tras Despachos) y en `base_financiera.html`, icono `fa-rotate-left`.
+- **Tests:** `logistica/devoluciones/tests/test_devoluciones.py` (gates, alta por grados,
+  detalle, export, autocompletado del ERP), `financiera/devoluciones/tests.py` (gate por
+  área, solo lectura, mismo layout de Excel) y el servicio en
+  `logistica/inventario/tests/test_servicios.py`.
 
 ## Documentos de profesor (`configuracion.DocumentoProfesor`, tabla `prog_profesores_documentos`)
 
@@ -781,8 +854,9 @@ checkboxes de tipo y rango de fechas). Tests en
   de devolución parcial/total `log_prestamo_devolver`) y los **reportes de la F6**: dashboard
   en `log_home` (tarjetas + últimos movimientos), badges del menú (context processor
   `alertas_inventario`) y exports a Excel (`log_stock_exportar`, `log_movimientos_exportar`,
-  `log_prestamos_exportar`) — ver sección _Inventario de logística_ abajo. Ver
-  `logistica/README.md`.
+  `log_prestamos_exportar`) — ver sección _Inventario de logística_ abajo. Junto al inventario
+  cuelgan del área las sub-apps `personalizacion`, `despachos` y `devoluciones` (esta última
+  con espejo de solo lectura en financiera). Ver `logistica/README.md`.
 - **Área financiera:** acceso por grupo `area:financiera` (o superusuario). Predicado
   `core.areas.es_personal_financiera` (espejo de `es_personal_programacion`); gate de sus
   vistas (`financiera.viaticos.solo_financiera`). `request.es_personal_financiera` (lo fija
@@ -810,7 +884,8 @@ checkboxes de tipo y rango de fechas). Tests en
   Financiera también **exporta a Excel** las solicitudes (modal con filtro de estado —default
   `APROBADA`— y rango de fecha de viaje; openpyxl self-contained en `fin_viaticos_exportar`).
   Asignación al grupo por ahora vía `/admin/`. El menú financiera tiene además **Pagos**
-  (ver abajo).
+  (ver abajo) y **Devoluciones** (consulta de solo lectura de lo que registra logística; ver
+  _Devoluciones de colegios_).
 - **Sub-app `programacion.pagos` (label `pagos`):** módulo propio de los pagos semanales a
   profesores. Dueño de los modelos `PagoRealizado` (tabla `prog_pagos`), `SoportePagoProfesor`
   (`prog_pagos_soportes`), `LotePagos` (`prog_pagos_lotes`) y `ExtraPago` (`prog_pagos_extras`).
@@ -1070,7 +1145,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 908 tests OK
+python manage.py test                        # baseline: 982 tests OK
 python manage.py runserver
 ```
 
@@ -1091,7 +1166,9 @@ python manage.py runserver
   `usuarios/tests/` (acceso, gestión, seguridad, menús, permisos),
   `programacion/colegios/tests/` (modelos, vistas, htmx, cache, cancelaciones),
   `logistica/inventario/tests/` (área, catálogos, movimientos, préstamos, reportes,
-  servicios) y `logistica/personalizacion/tests/` (generar, plantillas, generación).
+  servicios), `logistica/personalizacion/tests/` (generar, plantillas, generación),
+  `logistica/despachos/tests/` (reporte, modelos, importación, tablero, acciones, reportes)
+  y `logistica/devoluciones/tests/`.
   OJO: dentro de un paquete `tests/` los imports de la app van en **absoluto**
   (`from logistica.inventario.models import …`); un `from .models import …` resolvería
   contra el paquete de tests. Una app no puede tener `tests.py` y `tests/` a la vez.
@@ -1129,7 +1206,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   cerrar cualquier cambio en `.html`, revisa que no quede ningún `{# #}` partido en dos líneas.
 - Comenta el **porqué** de decisiones no obvias, no el **qué**.
 - Si tocas modelos, incluye la migración en el commit.
-- Ejecuta `python manage.py test` y compara con el baseline (908 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (982 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
   fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran

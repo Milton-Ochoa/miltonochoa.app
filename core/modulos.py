@@ -57,6 +57,11 @@ MODULOS = {
                ('/pagos/proyeccion/exportar/',)),
         Modulo('monitores', 'Pagos a monitores', ('/monitores/',),
                ('/monitores/pagos/exportar/',)),
+        # Espejo de solo lectura del módulo de logística: aquí NO hay escrituras,
+        # así que LECTURA y COMPLETO se comportan igual (el export es POST de
+        # lectura, ruta hoja → match exacto seguro).
+        Modulo('devoluciones', 'Devoluciones de colegios', ('/devoluciones/',),
+               ('/devoluciones/exportar/',)),
     ),
     'logistica': (
         Modulo('articulos', 'Artículos y kardex', ('/articulos/',)),

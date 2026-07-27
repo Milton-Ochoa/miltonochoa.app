@@ -4,6 +4,8 @@ Sub-app de UI **sin modelos propios**: el dominio (`DevolucionColegio` y su
 servicio) vive en `logistica.inventario`, porque toda escritura al stock/ledger
 debe pasar por sus servicios transaccionales.
 """
+from datetime import date
+
 from django.contrib import messages
 from django.db import models
 from django.db.models.functions import Coalesce
@@ -16,7 +18,7 @@ from logistica.inventario.forms import parsear_lineas_material
 from logistica.inventario.models import GRADOS, DevolucionColegio
 from logistica.inventario.permisos import solo_logistica
 from logistica.inventario.services import registrar_devolucion_colegio
-from logistica.inventario.views import (_fecha_post, _form_a_messages,
+from logistica.inventario.views import (_form_a_messages,
                                         _lineas_previas_material,
                                         _materiales_para_lineas,
                                         _respuesta_xlsx)
@@ -25,10 +27,39 @@ from .export import generar_excel_devoluciones, materiales_devueltos
 from .forms import DevolucionColegioForm
 
 
-def _devoluciones():
+def devoluciones_anotadas():
+    """Devoluciones con sus totales para la tabla. Público: financiera lo
+    reutiliza en su vista de solo lectura (misma lista, otro chrome)."""
     return (DevolucionColegio.objects.select_related('bodega', 'creado_por')
             .annotate(n_materiales=models.Count('lineas', distinct=True),
                       unidades=Coalesce(models.Sum('lineas__cantidad'), 0)))
+
+
+def _fecha(post, nombre):
+    try:
+        return date.fromisoformat(post.get(nombre, ''))
+    except ValueError:
+        return None
+
+
+def devoluciones_para_export(post):
+    """Queryset del export con sus filtros (rango de recibido + colegio).
+
+    Público por el mismo motivo que el builder del Excel: financiera exporta
+    exactamente lo mismo, así que los filtros no pueden divergir entre áreas.
+    """
+    qs = (DevolucionColegio.objects.select_related('bodega')
+          .prefetch_related('lineas__item__categoria')
+          .order_by('fecha_recibido', 'id'))
+    desde, hasta = _fecha(post, 'desde'), _fecha(post, 'hasta')
+    if desde:
+        qs = qs.filter(fecha_recibido__gte=desde)
+    if hasta:
+        qs = qs.filter(fecha_recibido__lte=hasta)
+    colegio = (post.get('colegio') or '').strip()
+    if colegio:
+        qs = qs.filter(colegio__icontains=colegio)
+    return qs
 
 
 def _colegios_erp():
@@ -46,7 +77,7 @@ def _colegios_erp():
 @solo_logistica
 def lista(request):
     return render(request, 'devoluciones/lista.html', {
-        'devoluciones': _devoluciones(),
+        'devoluciones': devoluciones_anotadas(),
     })
 
 
@@ -104,18 +135,7 @@ def detalle(request, pk):
 def exportar(request):
     """Excel con el layout de la hoja del usuario (una fila por devolución y
     material). Filtros opcionales de rango de fecha de recibido y colegio."""
-    qs = (DevolucionColegio.objects.select_related('bodega')
-          .prefetch_related('lineas__item__categoria')
-          .order_by('fecha_recibido', 'id'))
-    desde, hasta = _fecha_post(request, 'desde'), _fecha_post(request, 'hasta')
-    if desde:
-        qs = qs.filter(fecha_recibido__gte=desde)
-    if hasta:
-        qs = qs.filter(fecha_recibido__lte=hasta)
-    colegio = (request.POST.get('colegio') or '').strip()
-    if colegio:
-        qs = qs.filter(colegio__icontains=colegio)
-
     hoy = timezone.localdate().strftime('%Y%m%d')
-    return _respuesta_xlsx(generar_excel_devoluciones(qs),
-                           f'Devoluciones_{hoy}.xlsx')
+    return _respuesta_xlsx(
+        generar_excel_devoluciones(devoluciones_para_export(request.POST)),
+        f'Devoluciones_{hoy}.xlsx')

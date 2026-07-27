@@ -94,6 +94,7 @@ INSTALLED_APPS = [
     'financiera.viaticos',
     'financiera.pagos',
     'financiera.monitores',
+    'financiera.devoluciones',
     'logistica.inventario',
     'logistica.personalizacion',
     'logistica.despachos',

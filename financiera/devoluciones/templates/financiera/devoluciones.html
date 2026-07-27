@@ -1,0 +1,132 @@
+{% extends 'base_financiera.html' %}
+{% block header_title %}Devoluciones de colegios{% endblock %}
+
+{% block header_center %}
+<button type="button" class="btn btn-success btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalExportarDevoluciones">
+    <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+</button>
+{% endblock %}
+
+{% comment %}
+   Espejo de solo lectura de la lista de logística: mismas columnas y mismos
+   filtros, sin las acciones de alta/detalle (registrar es competencia de
+   logística). SIN bloque de `messages`: el área financiera no muestra toasts.
+{% endcomment %}
+{% block content %}
+<style>
+    .tabla-inv tr.fila-filtros th { background-color: #2c3136; padding: 4px 6px; }
+    .tabla-inv tr.fila-filtros th input {
+        width: 100%; font-size: 0.78rem; padding: 2px 6px;
+        border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
+    }
+</style>
+<div class="container-fluid py-3">
+    <div class="alert alert-light border small py-2 mb-3">
+        <i class="fas fa-circle-info text-primary me-1"></i>
+        Consulta del material que los colegios devolvieron sin usar. El registro lo
+        hace logística; aquí la información es de <strong>solo lectura</strong>. El
+        detalle por material y grado sale en el Excel.
+    </div>
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaDevoluciones">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 5%;">#</th>
+                        <th style="width: 12%;">Recibido</th>
+                        <th style="width: 24%;">Colegio</th>
+                        <th style="width: 9%;">Código</th>
+                        <th style="width: 12%;">Regional</th>
+                        <th style="width: 16%;">Ejecutivo</th>
+                        <th style="width: 12%;">Bodega</th>
+                        <th style="width: 5%; text-align: right;">Materiales</th>
+                        <th style="width: 5%; text-align: right;">Unidades</th>
+                    </tr>
+                    <tr class="fila-filtros">
+                        <th></th>
+                        <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
+                        <th><input type="text" data-filtro="colegio"></th>
+                        <th><input type="text" data-filtro="codigo"></th>
+                        <th><input type="text" data-filtro="regional"></th>
+                        <th><input type="text" data-filtro="ejecutivo"></th>
+                        <th><input type="text" data-filtro="bodega"></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in devoluciones %}
+                    <tr data-fila
+                        data-fecha="{{ d.fecha_recibido|date:'Y-m-d' }}"
+                        data-colegio="{{ d.colegio|lower }}"
+                        data-codigo="{{ d.codigo_colegio|lower }}"
+                        data-regional="{{ d.regional|lower }}"
+                        data-ejecutivo="{{ d.ejecutivo|lower }}"
+                        data-bodega="{{ d.bodega.nombre|lower }}">
+                        <td class="fw-bold">{{ d.pk }}</td>
+                        <td>{{ d.fecha_recibido|date:'Y-m-d' }}</td>
+                        <td>{{ d.colegio }}</td>
+                        <td>{{ d.codigo_colegio|default:'—' }}</td>
+                        <td>{{ d.regional|default:'—' }}</td>
+                        <td>{{ d.ejecutivo|default:'—' }}</td>
+                        <td>{{ d.bodega.nombre }}</td>
+                        <td class="text-end">{{ d.n_materiales }}</td>
+                        <td class="text-end fw-bold">{{ d.unidades }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="fas fa-rotate-left me-1"></i> Logística no ha registrado devoluciones todavía.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
+            <small class="text-muted">Mostrando <span id="tablaDevoluciones_contador">0</span> de {{ devoluciones|length }}</small>
+            <nav><ul class="pagination pagination-sm mb-0" id="tablaDevoluciones_paginas"></ul></nav>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_tabla_filtros_js.html' with tabla_id='tablaDevoluciones' %}
+
+{# ── Modal: exportar devoluciones a Excel (mismo layout y filtros que logística) ── #}
+<div class="modal fade" id="modalExportarDevoluciones" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'fin_devoluciones_exportar' %}" class="modal-content">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel text-success me-2"></i>Exportar devoluciones</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Una fila por devolución y material, con las cantidades por grado
+                    (mismo formato de la hoja de registro).
+                </p>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="exp_desde">Recibido desde</label>
+                        <input type="date" name="desde" id="exp_desde" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label mb-1" for="exp_hasta">Recibido hasta</label>
+                        <input type="date" name="hasta" id="exp_hasta" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label mb-1" for="exp_colegio">Colegio <small class="text-muted">(opcional)</small></label>
+                        <input type="text" name="colegio" id="exp_colegio" class="form-control form-control-sm">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success btn-sm fw-bold">
+                    <i class="fas fa-file-excel me-1"></i> Exportar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
