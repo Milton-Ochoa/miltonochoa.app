@@ -109,6 +109,12 @@ class Item(models.Model):
     def grado_display(self):
         return f'{self.grado}°'
 
+    @property
+    def clave_material(self):
+        """Identifica al MATERIAL (no a esta fila) en los formularios; la
+        deshace `forms.parsear_clave_material`."""
+        return f'{self.categoria_id}:{self.referencia}'
+
 
 class Tercero(models.Model):
     """Destinatario/origen externo de salidas y préstamos (catálogo ligero,

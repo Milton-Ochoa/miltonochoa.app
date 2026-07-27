@@ -354,7 +354,7 @@ Reglas de oro (NO romper):
   queryset que las pinte). El alta (`material_guardar`, `MaterialForm`) crea los 12 Items
   de golpe y la edición actualiza los campos compartidos (unidad, descripción, mínimo,
   valor, activo) de **todo el grupo**; los forms identifican el material con la clave
-  `'<categoria_id>:<referencia>'` (`clave_material`/`parsear_clave_material`). La
+  `'<categoria_id>:<referencia>'` (`Item.clave_material` ⇄ `parsear_clave_material`). La
   migración 0002 **borró los datos operativos** (items, stock, ledger, documentos) porque
   un artículo viejo no dice a qué grado pertenece; catálogos conservados.
 - **`Movimiento` es un ledger append-only** (kardex): jamás vistas de edición/borrado;

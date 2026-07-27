@@ -112,15 +112,10 @@ class MaterialForm(_BootstrapForm):
         return cleaned
 
 
-def clave_material(categoria_id, referencia):
-    """Identificador de un material en los formularios: `'<cat_id>:<ref>'`.
-    La referencia puede contener ':' → el parseo parte solo en el primero."""
-    return f'{categoria_id}:{referencia}'
-
-
 def parsear_clave_material(valor):
-    """Inversa de `clave_material`. Devuelve (categoria_id:int, referencia:str)
-    o None si la clave viene vacía o mal formada."""
+    """Inversa de `Item.clave_material` (`'<cat_id>:<ref>'`): devuelve
+    (categoria_id:int, referencia:str), o None si viene vacía o mal formada.
+    La referencia puede contener ':' → se parte solo en el primero."""
     if not valor or ':' not in valor:
         return None
     cat_id, _, referencia = valor.partition(':')
