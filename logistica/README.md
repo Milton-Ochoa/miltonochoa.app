@@ -3,8 +3,9 @@
 Área del edificio AAMO servida en su propio subdominio
 (`logistica.miltonochoa.app`; dev: `logistica.lvh.me:8000`). Aquí viven el
 **inventario** de la operación (artículos, bodegas, movimientos y préstamos), la
-**personalización** de PDFs (rellena plantillas AcroForm por estudiante) y los
-**despachos** de material (tablero de órdenes del ERP externo).
+**personalización** de PDFs (rellena plantillas AcroForm por estudiante), los
+**despachos** de material (tablero de órdenes del ERP externo) y las
+**devoluciones de colegios** (material que vuelve sin usar y suma al inventario).
 
 ## Estado
 
@@ -74,13 +75,34 @@ reporte y da el tablero de órdenes por despachar.
 - **Permisos**: módulo `despachos` del área; ver tablero/detalle y exportar = LECTURA; cargar,
   marcar y cambiar material = COMPLETO.
 
+### Devoluciones de colegios (sub-app `logistica.devoluciones`)
+
+Sub-app de **UI sin modelos** (label `log_devoluciones`): el material que un colegio
+devuelve sin usar. El dominio (`DevolucionColegio` + `DevolucionColegioLinea`, tablas
+`log_devoluciones_colegios*`, y el servicio `registrar_devolucion_colegio`) vive en
+`logistica.inventario`, porque toda escritura al stock/ledger pasa por sus servicios.
+
+- **Registro** (`/devoluciones/nueva/`): cabecera comercial (fecha de recibido, colegio,
+  código, regional, ejecutivo, bodega de ingreso, observaciones) + líneas con el parcial
+  compartido `inventario/_lineas_material.html` (un material con sus **12 cantidades por
+  grado**; la bodega es de la cabecera, no por línea). El colegio es texto libre con
+  autocompletado desde los clientes del **ERP de despachos**.
+- Lo devuelto **suma automáticamente** a la bodega elegida y queda en el kardex como
+  movimiento `DEV_COLEGIO` (positivo), con el documento como origen (`PROTECT`).
+- **Lista** con filtros por columna + paginación y **export a Excel** con el layout de la
+  hoja del usuario (una fila por devolución y material; sin "Registro Effi", omitido a
+  propósito). El builder del Excel (`devoluciones/export.py`) lo reutiliza financiera.
+- **Permisos**: módulo `devoluciones` del área; lista/detalle y export = LECTURA;
+  registrar = COMPLETO. **Sin valores monetarios** (financiera ajusta cobros aparte).
+
 ## Cómo está montada
 
 - `logistica/urls.py` → `include('logistica.inventario.urls')`,
-  `include('logistica.personalizacion.urls')` y `include('logistica.despachos.urls')` en la
-  raíz `/`.
+  `include('logistica.personalizacion.urls')`, `include('logistica.despachos.urls')` e
+  `include('logistica.devoluciones.urls')` en la raíz `/`.
 - `logistica/inventario/` (label `log_inventario`), `logistica/personalizacion/` (label
-  `log_personalizacion`) y `logistica/despachos/` (label `log_despachos`) son las 3 sub-apps.
+  `log_personalizacion`), `logistica/despachos/` (label `log_despachos`) y
+  `logistica/devoluciones/` (label `log_devoluciones`, sin modelos) son las 4 sub-apps.
   Sus tablas usan el prefijo `log_` en `Meta.db_table` (registro completo en las secciones
   _Inventario de logística_ y _Despachos de material_ de `CLAUDE.md`).
 - **Reglas de oro del dominio** (detalle en `CLAUDE.md`): `Movimiento` es un

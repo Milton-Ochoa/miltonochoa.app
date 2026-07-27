@@ -1,6 +1,7 @@
 from django.contrib import admin
 
-from .models import (AdjuntoEntrada, Bodega, Categoria, Devolucion, Entrada,
+from .models import (AdjuntoEntrada, Bodega, Categoria, Devolucion,
+                     DevolucionColegio, DevolucionColegioLinea, Entrada,
                      EntradaLinea, Item, Movimiento, Prestamo, PrestamoLinea,
                      Salida, SalidaLinea, Stock, Tercero, Traslado,
                      TrasladoLinea)
@@ -130,3 +131,18 @@ class PrestamoAdmin(admin.ModelAdmin):
 @admin.register(Devolucion)
 class DevolucionAdmin(admin.ModelAdmin):
     list_display = ('id', 'prestamo', 'creado_por', 'creado_en')
+
+
+class DevolucionColegioLineaInline(admin.TabularInline):
+    model = DevolucionColegioLinea
+    extra = 0
+
+
+@admin.register(DevolucionColegio)
+class DevolucionColegioAdmin(admin.ModelAdmin):
+    list_display = ('id', 'fecha_recibido', 'colegio', 'regional', 'ejecutivo',
+                    'bodega', 'creado_por')
+    list_filter = ('bodega', 'regional')
+    search_fields = ('colegio', 'codigo_colegio', 'ejecutivo')
+    date_hierarchy = 'fecha_recibido'
+    inlines = [DevolucionColegioLineaInline]

@@ -73,6 +73,10 @@ MODULOS = {
         # Cargar/marcar/cambiar material = escrituras (COMPLETO); tablero/detalle
         # + el export son LECTURA. El export es ruta hoja (match EXACTO seguro).
         Modulo('despachos', 'Despachos', ('/despachos/',), ('/despachos/exportar/',)),
+        # Registrar la devolución escribe stock (COMPLETO); lista/detalle y el
+        # export son LECTURA. Ruta hoja → el match exacto del export es seguro.
+        Modulo('devoluciones', 'Devoluciones de colegios', ('/devoluciones/',),
+               ('/devoluciones/exportar/',)),
     ),
 }
 

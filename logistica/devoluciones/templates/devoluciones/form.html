@@ -1,0 +1,71 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Nueva devolución{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        {% comment %} Ancho generoso: las líneas traen 12 columnas de grado. {% endcomment %}
+        <div class="col-xl-11">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <strong><i class="fas fa-rotate-left me-1 text-warning"></i> Nueva devolución de colegio</strong>
+                    <a href="{% url 'log_devoluciones_lista' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <form method="post" class="card-body">
+                    {% csrf_token %}
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label mb-1" for="id_fecha_recibido">Fecha de recibido *</label>
+                            {{ form.fecha_recibido }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label mb-1" for="id_colegio">Colegio *</label>
+                            {{ form.colegio }}
+                            {% comment %} Autocompletado con los clientes del ERP de despachos; acepta texto libre. {% endcomment %}
+                            <datalist id="colegios_erp">
+                                {% for c in colegios_erp %}<option value="{{ c }}"></option>{% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label mb-1" for="id_codigo_colegio">Código</label>
+                            {{ form.codigo_colegio }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label mb-1" for="id_regional">Regional</label>
+                            {{ form.regional }}
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label mb-1" for="id_ejecutivo">Ejecutivo</label>
+                            {{ form.ejecutivo }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label mb-1" for="id_bodega">Bodega de ingreso *</label>
+                            {{ form.bodega }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label mb-1" for="id_observaciones">Observaciones</label>
+                            {{ form.observaciones }}
+                        </div>
+                    </div>
+
+                    {% include 'inventario/_lineas_material.html' %}
+
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-primary fw-bold">
+                            <i class="fas fa-save me-1"></i> Registrar devolución
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <p class="text-muted small mt-2 mb-0">
+                <i class="fas fa-circle-info me-1"></i>
+                Lo devuelto se suma a la bodega elegida y queda en el kardex como
+                "Devolución de colegio".
+            </p>
+        </div>
+    </div>
+</div>
+{% include 'inventario/_select2.html' %}
+{% endblock %}
