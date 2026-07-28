@@ -11,23 +11,41 @@ ORIGEN se restringe) y devolución de colegio (esta última en
 se prueba por sus dos barreras: el `<select>` recortado y el POST **forjado**
 con la bodega ajena, que no debe escribir nada.
 
+Fase 3 — las escrituras SIN form de cabecera: préstamos (bodega por línea),
+devolución de préstamo (rechazo total si hay líneas mixtas), ajuste manual y
+adjuntos de entrada. Aquí vive además `LecturaGlobalTest`, el guardián de que
+nadie scopee por bodega los querysets de LECTURA.
+
 Mismo arnés que el resto del área: `Client(HTTP_HOST='logistica.testserver')`.
 """
+import shutil
+import tempfile
+from datetime import date
+
 from django.contrib.auth.models import AnonymousUser, Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import ProtectedError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from logistica.inventario.models import (Bodega, BodegaUsuario, Categoria,
-                                         Entrada, Movimiento, Salida, Stock,
-                                         Traslado)
+from logistica.inventario.models import (AdjuntoEntrada, Bodega, BodegaUsuario,
+                                         Categoria, Devolucion, Entrada,
+                                         Movimiento, Prestamo, Salida, Stock,
+                                         Tercero, Traslado)
 from logistica.inventario.permisos import (BodegaNoPermitida, bodega_asignada,
                                            bodegas_escribibles, es_restringido,
                                            exigir_bodega, exigir_bodegas,
                                            puede_escribir_en)
-from logistica.inventario.services import registrar_entrada
+from logistica.inventario.services import crear_prestamo, registrar_entrada
 from logistica.inventario.tests.utils import crear_material, lineas_post
+
+# Los adjuntos van a disco local (nunca a Supabase), patrón `test_movimientos`.
+_STORAGE_LOCAL = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+_MEDIA_TMP = tempfile.mkdtemp()
 
 
 class _BaseBodegaUsuarioTest(TestCase):
@@ -300,6 +318,7 @@ class _BaseDocumentosTest(TestCase):
         self.categoria = Categoria.objects.create(nombre='Papelería')
         self.material = crear_material(categoria=self.categoria,
                                        referencia='Cuadernillo')
+        self.tercero = Tercero.objects.create(nombre='Colegio X')
 
     # -- helpers ------------------------------------------------------------
 
@@ -333,6 +352,20 @@ class _BaseDocumentosTest(TestCase):
         datos = {'bodega_origen': origen.pk, 'bodega_destino': destino.pk,
                  'observaciones': '', **self._lineas(**kw)}
         return self.client.post('/traslados/nuevo/', datos)
+
+    def _post_prestamo(self, bodega, cantidad=2, grado=3,
+                       direccion=Prestamo.Direccion.OTORGADO):
+        datos = {'direccion': direccion, 'tercero': self.tercero.pk,
+                 'fecha_compromiso': '2030-01-01', 'observaciones': '',
+                 **lineas_post([(self.material, bodega, {grado: cantidad})],
+                               con_bodega=True)}
+        return self.client.post('/prestamos/nuevo/', datos)
+
+    def _post_ajuste(self, bodega, nueva_cantidad, grado=3):
+        return self.client.post('/ajustes/nuevo/', {
+            'item_id': self.material[grado].pk, 'bodega_id': bodega.pk,
+            'nueva_cantidad': nueva_cantidad, 'motivo': 'Conteo físico',
+        }, follow=True)
 
 
 class EntradaRestringidaTest(_BaseDocumentosTest):
@@ -436,6 +469,21 @@ class SinAsignacionRetrocompatTest(_BaseDocumentosTest):
         self.assertEqual(campo.queryset.count(), 2)
         self.assertEqual(campo.empty_label, '— Bodega —')
 
+    def test_presta_y_ajusta_en_cualquier_bodega(self):
+        """Fase 3: los caminos sin form de cabecera, también inertes."""
+        self._sembrar(self.ajena)
+        r = self._post_prestamo(self.ajena)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Prestamo.objects.count(), 1)
+
+        r = self._post_ajuste(self.ajena, 40)
+        self.assertEqual(self._stock(self.ajena), 40)
+        self.assertTrue(any('ajustado' in m for m in self._mensajes(r)))
+
+    def test_el_select_de_linea_ofrece_todas(self):
+        self.assertEqual(
+            self.client.get('/prestamos/nuevo/').context['bodegas'].count(), 2)
+
 
 class SuperusuarioNoRestringidoTest(_BaseDocumentosTest):
     """Tiene fila, pero es superusuario: escribe en la bodega ajena."""
@@ -452,6 +500,12 @@ class SuperusuarioNoRestringidoTest(_BaseDocumentosTest):
         r = self._post_traslado(self.ajena, self.propia)
         self.assertEqual(r.status_code, 302)
         self.assertEqual(self._stock(self.propia), 2)
+
+    def test_presta_y_ajusta_en_la_bodega_ajena(self):
+        self._sembrar(self.ajena)
+        self.assertEqual(self._post_prestamo(self.ajena).status_code, 302)
+        self._post_ajuste(self.ajena, 3)
+        self.assertEqual(self._stock(self.ajena), 3)
 
 
 class AvisoBodegaTest(_BaseDocumentosTest):
@@ -480,3 +534,219 @@ class SinAvisoBodegaTest(_BaseDocumentosTest):
     def test_sin_asignacion_no_hay_aviso(self):
         self.assertNotContains(self.client.get('/entradas/nueva/'),
                                'Operas la bodega')
+
+
+# ---------------------------------------------------------------------------
+# Fase 3 — escrituras sin form de cabecera
+# ---------------------------------------------------------------------------
+
+class PrestamoRestringidoTest(_BaseDocumentosTest):
+    """La bodega va POR LÍNEA: la valida `parsear_lineas_material`."""
+
+    def test_select_de_linea_solo_ofrece_su_bodega(self):
+        r = self.client.get('/prestamos/nuevo/')
+        self.assertEqual([b.nombre for b in r.context['bodegas']], ['Principal'])
+
+    def test_prestamo_desde_su_bodega(self):
+        self._sembrar(self.propia)
+        r = self._post_prestamo(self.propia)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Prestamo.objects.count(), 1)
+        self.assertEqual(self._stock(self.propia), 8)
+
+    def test_linea_con_bodega_ajena_no_escribe(self):
+        self._sembrar(self.ajena)
+        r = self._post_prestamo(self.ajena)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Prestamo.objects.count(), 0)
+        self.assertEqual(self._stock(self.ajena), 10)
+        mensajes = self._mensajes(r)
+        self.assertTrue(any('No puedes registrar movimientos' in m
+                            for m in mensajes), mensajes)
+        # Mensaje DISTINTO del de bodega inexistente/inactiva.
+        self.assertFalse(any('sin bodega válida' in m for m in mensajes))
+
+    def test_recibido_tambien_se_restringe(self):
+        """RECIBIDO suma stock en esa bodega: es escritura igual que OTORGADO."""
+        r = self._post_prestamo(self.ajena,
+                                direccion=Prestamo.Direccion.RECIBIDO)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Prestamo.objects.count(), 0)
+        self.assertEqual(self._stock(self.ajena), 0)
+
+
+class DevolucionPrestamoMixtaTest(_BaseDocumentosTest):
+    """Préstamo histórico con líneas de dos bodegas: rechazo TOTAL."""
+
+    def setUp(self):
+        super().setUp()
+        self._sembrar(self.propia)
+        self._sembrar(self.ajena)
+        # Creado por servicio (como si lo hubiera hecho alguien sin restricción).
+        self.prestamo = crear_prestamo(
+            tercero=self.tercero, fecha_compromiso=date(2030, 1, 1),
+            lineas=[(self.material[3], self.propia, 4),
+                    (self.material[3], self.ajena, 5)],
+            usuario=self.user)
+        self.linea_propia, self.linea_ajena = list(
+            self.prestamo.lineas.order_by('bodega__nombre'))
+        self.assertEqual(self.linea_propia.bodega, self.propia)
+
+    def _devolver(self, pares):
+        return self.client.post(
+            f'/prestamos/{self.prestamo.pk}/devolver/',
+            {'dev_linea_id': [str(l.pk) for l, _ in pares],
+             'dev_cantidad': [str(c) for _, c in pares],
+             'observaciones': ''}, follow=True)
+
+    def test_devolver_incluyendo_la_ajena_se_rechaza_entero(self):
+        r = self._devolver([(self.linea_propia, 4), (self.linea_ajena, 5)])
+        self.assertEqual(Devolucion.objects.count(), 0)
+        for linea in (self.linea_propia, self.linea_ajena):
+            linea.refresh_from_db()
+            self.assertEqual(linea.cantidad_devuelta, 0)
+        mensajes = self._mensajes(r)
+        self.assertTrue(any('Sucursal' in m and 'Principal' in m
+                            for m in mensajes), mensajes)
+
+    def test_devolver_solo_la_propia_pasa_y_deja_parcial(self):
+        r = self._devolver([(self.linea_propia, 4)])
+        self.assertEqual(Devolucion.objects.count(), 1)
+        self.linea_propia.refresh_from_db()
+        self.assertEqual(self.linea_propia.cantidad_devuelta, 4)
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, Prestamo.Estado.PARCIAL)
+        self.assertTrue(any('registrada' in m for m in self._mensajes(r)))
+
+    def test_el_modal_bloquea_la_linea_ajena(self):
+        r = self.client.get(f'/prestamos/{self.prestamo.pk}/')
+        self.assertEqual(r.context['bodegas_operables'], {self.propia.pk})
+        self.assertContains(r, 'readonly')
+
+
+class AjusteRestringidoTest(_BaseDocumentosTest):
+
+    def test_ajuste_en_su_bodega(self):
+        self._sembrar(self.propia)
+        r = self._post_ajuste(self.propia, 25)
+        self.assertEqual(self._stock(self.propia), 25)
+        self.assertTrue(any('ajustado' in m for m in self._mensajes(r)))
+
+    def test_ajuste_en_bodega_ajena_no_escribe(self):
+        self._sembrar(self.ajena)
+        r = self._post_ajuste(self.ajena, 99)
+        self.assertEqual(self._stock(self.ajena), 10)
+        self.assertEqual(Movimiento.objects.filter(
+            tipo__in=(Movimiento.Tipo.AJUSTE_POS,
+                      Movimiento.Tipo.AJUSTE_NEG)).count(), 0)
+        self.assertTrue(any('No puedes ajustar' in m
+                            for m in self._mensajes(r)), self._mensajes(r))
+
+    def test_la_celda_ajena_no_ofrece_ajuste(self):
+        self._sembrar(self.ajena)
+        r = self.client.get('/stock/')
+        self.assertNotContains(r, 'abrirAjuste(this)')
+        # Pero la celda sigue enlazando al kardex: la lectura es global.
+        self.assertContains(
+            r, f'/articulos/{self.material[3].pk}/kardex/?bodega={self.ajena.pk}')
+
+    def test_la_celda_propia_si_ofrece_ajuste(self):
+        self._sembrar(self.propia)
+        r = self.client.get('/stock/')
+        self.assertContains(r, 'abrirAjuste(this)')
+        self.assertEqual([f['editable'] for f in r.context['filas']], [True])
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP, STORAGES=_STORAGE_LOCAL)
+class AdjuntoRestringidoTest(_BaseDocumentosTest):
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_TMP, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        super().setUp()
+        self._sembrar(self.propia)
+        self._sembrar(self.ajena)
+        self.entrada_propia, self.entrada_ajena = Entrada.objects.order_by('pk')
+
+    def _subir(self, entrada):
+        return self.client.post(
+            f'/entradas/{entrada.pk}/adjuntos/subir/',
+            {'archivo': SimpleUploadedFile('factura.pdf', b'%PDF-1.4 x')},
+            follow=True)
+
+    def test_adjunta_a_su_entrada(self):
+        self._subir(self.entrada_propia)
+        self.assertEqual(AdjuntoEntrada.objects.count(), 1)
+
+    def test_no_adjunta_a_entrada_de_otra_bodega(self):
+        r = self._subir(self.entrada_ajena)
+        self.assertEqual(AdjuntoEntrada.objects.count(), 0)
+        self.assertTrue(any('Sucursal' in m for m in self._mensajes(r)),
+                        self._mensajes(r))
+
+    def test_no_elimina_adjunto_de_otra_bodega(self):
+        adjunto = AdjuntoEntrada.objects.create(
+            entrada=self.entrada_ajena,
+            archivo=SimpleUploadedFile('f.pdf', b'%PDF-1.4 x'),
+            nombre_original='f.pdf', subido_por=self.user)
+        self.client.post(f'/entradas/adjuntos/{adjunto.pk}/eliminar/',
+                         follow=True)
+        self.assertTrue(AdjuntoEntrada.objects.filter(pk=adjunto.pk).exists())
+
+    def test_descarga_sigue_siendo_global(self):
+        adjunto = AdjuntoEntrada.objects.create(
+            entrada=self.entrada_ajena,
+            archivo=SimpleUploadedFile('f.pdf', b'%PDF-1.4 x'),
+            nombre_original='f.pdf', subido_por=self.user)
+        r = self.client.get(f'/entradas/adjuntos/{adjunto.pk}/descargar/')
+        self.assertEqual(r.status_code, 200)
+        r.close()
+
+    def test_el_detalle_ajeno_oculta_la_subida(self):
+        propia = self.client.get(f'/entradas/{self.entrada_propia.pk}/')
+        self.assertTrue(propia.context['puede_operar'])
+        ajena = self.client.get(f'/entradas/{self.entrada_ajena.pk}/')
+        self.assertFalse(ajena.context['puede_operar'])
+        self.assertNotContains(ajena, 'adjuntos/subir/')
+
+
+class LecturaGlobalTest(_BaseDocumentosTest):
+    """Contra regresiones futuras: NADIE debe scopear los querysets de lectura.
+
+    Un usuario restringido tiene que seguir viendo el movimiento, el stock y los
+    documentos de la bodega ajena — es lo que le permite pedir un traslado.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._sembrar(self.ajena)
+        self.entrada_ajena = Entrada.objects.get()
+        self.prestamo_ajeno = crear_prestamo(
+            tercero=self.tercero, fecha_compromiso=date(2030, 1, 1),
+            lineas=[(self.material[3], self.ajena, 2)], usuario=self.user)
+
+    def test_ve_los_datos_de_la_bodega_ajena(self):
+        # La lista de préstamos no pinta bodega (es por línea) → va el detalle.
+        for url in ('/stock/', '/movimientos/', '/entradas/',
+                    f'/entradas/{self.entrada_ajena.pk}/',
+                    f'/articulos/{self.material[3].pk}/kardex/'
+                    f'?bodega={self.ajena.pk}',
+                    f'/prestamos/{self.prestamo_ajeno.pk}/'):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertContains(r, 'Sucursal', msg_prefix=url)
+
+    def test_las_listas_de_documentos_no_se_recortan(self):
+        for url in ('/salidas/', '/traslados/', '/prestamos/'):
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+        self.assertEqual(
+            self.client.get('/prestamos/').context['prestamos'].count(), 1)
+
+    def test_los_exports_siguen_cubriendo_todas_las_bodegas(self):
+        for url in ('/stock/exportar/', '/movimientos/exportar/',
+                    '/prestamos/exportar/'):
+            r = self.client.post(url, {})
+            self.assertEqual(r.status_code, 200, url)

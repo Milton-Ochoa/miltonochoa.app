@@ -165,8 +165,15 @@
                                 {# OJO: dev_linea_id y dev_cantidad son listas PARALELAS; #}
                                 {# las líneas sin pendiente no mandan ninguno de los dos. #}
                                 <input type="hidden" name="dev_linea_id" value="{{ l.pk }}">
+                                {% if l.bodega_id in bodegas_operables %}
                                 <input type="number" name="dev_cantidad" class="form-control form-control-sm"
                                        min="0" max="{{ l.pendiente }}" step="1" placeholder="0">
+                                {% else %}
+                                {% comment %} Bodega que no opera: se manda 0 (= no devolver). El rechazo real lo hace la vista, que bloquea la devolución COMPLETA si llega alguna línea ajena. {% endcomment %}
+                                <input type="number" name="dev_cantidad" class="form-control form-control-sm"
+                                       value="0" readonly
+                                       title="No operas la bodega «{{ l.bodega.nombre }}»: pide a alguien de esa bodega que devuelva esta línea.">
+                                {% endif %}
                                 {% else %}
                                 <span class="text-muted small">Sin pendiente</span>
                                 {% endif %}

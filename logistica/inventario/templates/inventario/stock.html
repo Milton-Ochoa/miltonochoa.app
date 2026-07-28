@@ -29,14 +29,19 @@
     .tabla-inv th.col-grado, .tabla-inv td.col-grado {
         text-align: center; padding: 0.25rem 0.1rem; font-size: 0.8rem;
     }
-    .tabla-inv td.col-grado button {
+    .tabla-inv td.col-grado button, .tabla-inv td.col-grado a.celda {
         width: 100%; border: 0; background: transparent; padding: 2px 0;
         border-radius: 4px; color: inherit; font-size: 0.8rem;
     }
     .tabla-inv td.col-grado button:hover { background: #fff3cd; }
+    {% comment %} Bodega ajena: la celda sigue enlazando al kardex (lectura global), pero no ajusta. {% endcomment %}
+    .tabla-inv td.col-grado a.celda { display: block; text-decoration: none; }
+    .tabla-inv td.col-grado a.celda:hover { background: #e9ecef; }
     .tabla-inv td.col-grado.vacia { color: #adb5bd; }
 </style>
 <div class="container-fluid py-3">
+
+    {% include 'inventario/_aviso_bodega.html' %}
 
     {% if items_alerta %}
     <div class="alert alert-danger py-2">
@@ -85,14 +90,18 @@
                         <td class="col-texto">{{ f.bodega.nombre }}</td>
                         {% for c in f.celdas %}
                         <td class="col-grado{% if not c.item %} vacia{% endif %}{% if c.item.pk in bajo_minimo_ids %} text-danger fw-bold{% endif %}">
-                            {% if c.item %}
+                            {% if c.item %}{% if f.editable %}
                             <button type="button" onclick="abrirAjuste(this)"
                                     title="Ajustar {{ f.material }} — {{ c.grado }}° en {{ f.bodega.nombre }}"
                                     data-item-id="{{ c.item.pk }}" data-item-nombre="{{ c.item.nombre }}"
                                     data-bodega-id="{{ f.bodega.pk }}" data-bodega-nombre="{{ f.bodega.nombre }}"
                                     data-cantidad="{{ c.cantidad }}"
                                     data-kardex="{% url 'log_item_kardex' c.item.pk %}?bodega={{ f.bodega.pk }}">{{ c.cantidad }}</button>
-                            {% else %}—{% endif %}
+                            {% else %}
+                            {% comment %} Bodega que no opera: solo lectura, pero el kardex sigue a un clic. {% endcomment %}
+                            <a class="celda" href="{% url 'log_item_kardex' c.item.pk %}?bodega={{ f.bodega.pk }}"
+                               title="Kardex de {{ f.material }} — {{ c.grado }}° en {{ f.bodega.nombre }} (no puedes ajustar esta bodega)">{{ c.cantidad }}</a>
+                            {% endif %}{% else %}—{% endif %}
                         </td>
                         {% endfor %}
                         <td class="col-num fw-bold">{{ f.total }}</td>
@@ -112,7 +121,13 @@
         </div>
 
         <div class="card-footer d-flex justify-content-between align-items-center py-2 px-3">
-            <small class="text-muted">Mostrando <span id="tablaStock_contador">0</span> de {{ filas|length }}</small>
+            <small class="text-muted">
+                Mostrando <span id="tablaStock_contador">0</span> de {{ filas|length }}
+                {% if inv_bodega_asignada %}
+                · Solo las celdas de <strong>{{ inv_bodega_asignada.nombre }}</strong> se
+                pueden ajustar; las demás abren el kardex.
+                {% endif %}
+            </small>
             <nav><ul class="pagination pagination-sm mb-0" id="tablaStock_paginas"></ul></nav>
         </div>
     </div>

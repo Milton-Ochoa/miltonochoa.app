@@ -72,6 +72,7 @@
                                class="btn btn-outline-primary btn-sm" title="Descargar">
                                 <i class="fas fa-download"></i>
                             </a>
+                            {% if puede_operar %}
                             <form method="post" action="{% url 'log_entrada_adjunto_eliminar' adj.pk %}"
                                   onsubmit="return confirm('¿Eliminar el adjunto {{ adj.nombre_mostrar }}?');">
                                 {% csrf_token %}
@@ -79,12 +80,14 @@
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
+                            {% endif %}
                         </div>
                     </div>
                     {% empty %}
                     <p class="text-muted small mb-2">Sin adjuntos todavía.</p>
                     {% endfor %}
 
+                    {% if puede_operar %}
                     <form method="post" action="{% url 'log_entrada_adjunto_subir' entrada.pk %}"
                           enctype="multipart/form-data" class="d-flex gap-2 mt-2">
                         {% csrf_token %}
@@ -95,6 +98,14 @@
                         </button>
                     </form>
                     <small class="text-muted">PDF, JPG o PNG, máximo 10 MB.</small>
+                    {% else %}
+                    {% comment %} Entrada de otra bodega: los adjuntos se ven y se descargan, pero no se tocan. {% endcomment %}
+                    <small class="text-muted">
+                        <i class="fas fa-lock me-1"></i>
+                        Esta entrada es de la bodega <strong>{{ entrada.bodega.nombre }}</strong>:
+                        puedes consultar y descargar sus adjuntos, pero no modificarlos.
+                    </small>
+                    {% endif %}
                 </div>
             </div>
 
