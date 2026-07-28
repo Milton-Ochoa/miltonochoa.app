@@ -39,6 +39,7 @@ from logistica.inventario.permisos import (BodegaNoPermitida, bodega_asignada,
                                            puede_escribir_en)
 from logistica.inventario.services import crear_prestamo, registrar_entrada
 from logistica.inventario.tests.utils import crear_material, lineas_post
+from usuarios.models import ModuloUsuario
 
 # Los adjuntos van a disco local (nunca a Supabase), patrón `test_movimientos`.
 _STORAGE_LOCAL = {
@@ -229,10 +230,54 @@ class BodegasUsuariosPaginaTest(TestCase):
         self.propia = Bodega.objects.create(nombre='Principal')
         self.ajena = Bodega.objects.create(nombre='Sucursal')
 
-    def test_lista_solo_usuarios_del_area_sin_superusuarios(self):
+    def test_lista_usuarios_del_area_sin_superusuarios(self):
         r = self.client.get(self.URL)
         usuarios = list(r.context['usuarios'])
         self.assertEqual([u.username for u in usuarios], ['logis'])
+
+    def _cruzado(self, username='finan', nivel='COM', area='logistica',
+                 modulo='stock'):
+        """Usuario de OTRA área con acceso cruzado a un módulo de logística."""
+        u = User.objects.create_user(username=username, password='pass')
+        u.groups.add(Group.objects.get(name=GRUPO_STAFF_FINANCIERA))
+        ModuloUsuario.objects.create(user=u, area=area, modulo=modulo, nivel=nivel)
+        return u
+
+    def test_lista_incluye_acceso_cruzado_de_otra_area(self):
+        """Caso real: la jefe de financiera que además opera una bodega."""
+        self._cruzado()
+        r = self.client.get(self.URL)
+        self.assertEqual([u.username for u in r.context['usuarios']],
+                         ['finan', 'logis'])
+
+    def test_no_lista_cruzado_sin_acceso_ni_de_otra_area(self):
+        self._cruzado(username='sin_acceso', nivel='SIN')
+        self._cruzado(username='otra_area', area='programacion', modulo='pagos')
+        usernames = [u.username for u in self.client.get(self.URL).context['usuarios']]
+        self.assertNotIn('sin_acceso', usernames)
+        self.assertNotIn('otra_area', usernames)
+
+    def test_cruzado_no_se_duplica_por_varios_overrides(self):
+        u = self._cruzado()
+        ModuloUsuario.objects.create(user=u, area='logistica',
+                                     modulo='movimientos', nivel='COM')
+        usernames = [x.username for x in self.client.get(self.URL).context['usuarios']]
+        self.assertEqual(usernames.count('finan'), 1)
+
+    def test_asignar_bodega_a_un_cruzado(self):
+        u = self._cruzado()
+        self.client.post(self.URL,
+                         {'user_id': u.pk, 'bodega_id': self.propia.pk})
+        self.assertEqual(BodegaUsuario.objects.get(usuario=u).bodega, self.propia)
+        # La restricción es agnóstica del grupo: le aplica igual que a logística.
+        self.assertTrue(es_restringido(User.objects.get(pk=u.pk)))
+
+    def test_lista_a_quien_ya_tiene_asignacion_aunque_pierda_el_acceso(self):
+        """Sin esto, quitarle los módulos lo dejaría restringido y sin fila editable."""
+        huerfano = User.objects.create_user(username='huerfano', password='pass')
+        BodegaUsuario.objects.create(usuario=huerfano, bodega=self.propia)
+        usernames = [u.username for u in self.client.get(self.URL).context['usuarios']]
+        self.assertIn('huerfano', usernames)
 
     def test_select_solo_ofrece_bodegas_activas(self):
         self.ajena.activa = False
