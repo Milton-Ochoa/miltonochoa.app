@@ -27,6 +27,14 @@
   devolución parcial/total por modal en el detalle y resaltado de vencidos.
 - **Exports a Excel** (openpyxl, desde modales con filtros): existencias,
   movimientos (histórico completo) y préstamos.
+- **Bodega por usuario** (`BodegaUsuario`, `log_bodegas_usuarios`): el superusuario
+  asigna en `/catalogos/bodegas/usuarios/` **una** bodega a cada persona de
+  logística y esa persona solo puede **escribir** ahí (entradas, salidas, ajustes,
+  préstamos, devoluciones y el **origen** de los traslados — el destino puede ser
+  cualquiera). La **lectura sigue global**: ve existencias, kardex, ledger,
+  documentos y exports de todas las bodegas, que es lo que le permite pedir un
+  traslado. Sin asignación (y el superusuario) opera todo, como siempre. No
+  confundir con la bodega del ERP de **despachos**, que solo filtra un tablero.
 
 ### Personalización de PDFs (sub-app `logistica.personalizacion`)
 
