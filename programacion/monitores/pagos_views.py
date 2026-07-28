@@ -81,6 +81,8 @@ def _fila_desde_pago_monitor(p):
         'excluida':     p.excluida,
         'pago_id':      p.id,
         'fecha_pago':   p.fecha_pago,
+        # Cuándo programación envió el lote a financiera (None mientras es BORRADOR).
+        'fecha_envio':  p.lote.enviado_en if p.lote_id else None,
         'marcado_por':  ((p.marcado_por.get_full_name() or p.marcado_por.username)
                          if p.marcado_por else '—'),
         'n_soportes':   getattr(p, 'n_soportes', p.soportes.count()),
@@ -92,7 +94,7 @@ def _filas_rango_monitores(estado, desde, hasta):
     acotadas por fecha. Mantiene el desglose vía ``_fila_desde_pago_monitor``."""
     qs = (PagoMonitor.objects
           .filter(lote__estado=estado)
-          .select_related('monitor', 'simulacro__colegio', 'marcado_por')
+          .select_related('monitor', 'simulacro__colegio', 'marcado_por', 'lote')
           .prefetch_related('extras')
           .annotate(n_soportes=Count('soportes'))
           .order_by('fecha', 'monitor__nombre'))
