@@ -40,6 +40,8 @@
             <th>Código</th>
             <th>Departamento</th>
             <th class="text-end">Valor</th>
+            {# Fecha en que programación envió el lote a financiera (LotePagos.enviado_en). #}
+            <th>Enviado</th>
             {% if tab == 'realizado' %}
             <th>Pagado</th>
             <th>Por</th>
@@ -57,6 +59,7 @@
             <th><input type="text" data-filtro="codigo"></th>
             <th><input type="text" data-filtro="departamento"></th>
             <th></th>
+            <th><input type="text" data-filtro="envio"></th>
             {% if tab == 'realizado' %}
             <th></th><th></th>
             {% endif %}
@@ -74,7 +77,8 @@
               data-banco="{{ f.banco|lower }}"
               data-colegio="{{ f.colegio|lower }}"
               data-codigo="{{ f.codigo|lower }}"
-              data-departamento="{{ f.departamento|lower }}">
+              data-departamento="{{ f.departamento|lower }}"
+              data-envio="{{ f.fecha_envio|date:'d/m/Y' }}">
             <td class="text-nowrap">{{ f.fecha|date:"d/m/Y" }}</td>
             <td><strong>{{ f.docente }}</strong></td>
             <td>{{ f.documento }}</td>
@@ -87,6 +91,7 @@
             <td class="text-end fw-bold">
               {% if f.valor_total or f.extras %}${{ f.valor_total|floatformat:"0" }}{% if f.extras %} <span class="badge bg-info text-dark" title="Incluye costos extra">+{{ f.extras|length }}</span>{% endif %}{% else %}<span class="text-muted small">Sin tarifa</span>{% endif %}
             </td>
+            <td class="text-muted small text-nowrap">{{ f.fecha_envio|date:"d/m/Y"|default:"—" }}</td>
             {% if tab == 'realizado' %}
             <td class="text-muted small text-nowrap">{{ f.fecha_pago|date:"d/m/Y H:i" }}</td>
             <td class="text-muted small">{{ f.marcado_por }}</td>
@@ -113,7 +118,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="{% if tab == 'realizado' %}13{% else %}11{% endif %}" class="text-center text-muted py-4">
+            <td colspan="{% if tab == 'realizado' %}14{% else %}12{% endif %}" class="text-center text-muted py-4">
               <i class="fas fa-info-circle me-1"></i>
               {% if tab == 'realizado' %}No hay pagos realizados en este período.{% else %}No hay pagos pendientes en este período.{% endif %}
             </td>

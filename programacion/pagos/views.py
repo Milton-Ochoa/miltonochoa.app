@@ -177,6 +177,8 @@ def _fila_desde_pago(p):
         'excluida':     p.excluida,
         'pago_id':      p.id,
         'fecha_pago':   p.fecha_pago,
+        # Cuándo programación envió el lote a financiera (None mientras es BORRADOR).
+        'fecha_envio':  p.lote.enviado_en if p.lote_id else None,
         'marcado_por':  ((p.marcado_por.get_full_name() or p.marcado_por.username)
                          if p.marcado_por else '—'),
         'n_soportes':   getattr(p, 'n_soportes', p.soportes.count()),
@@ -189,7 +191,7 @@ def _filas_desde_lote(lote):
     pagos = (
         PagoRealizado.objects
         .filter(lote=lote)
-        .select_related('profesor', 'colegio__colegio', 'marcado_por')
+        .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote')
         .prefetch_related('extras')
         .annotate(n_soportes=Count('soportes'))
         .order_by('fecha', 'profesor__nombre')
@@ -338,6 +340,16 @@ def _desglose_texto(f):
     return '; '.join(partes)
 
 
+def _fecha_envio_texto(f):
+    """`FECHA DE ENVÍO` del Excel: cuándo programación envió el lote a financiera.
+
+    Vacío mientras el lote sigue en BORRADOR (aún no se ha enviado). Se pasa a hora
+    local: `enviado_en` es aware (UTC en BD) y sin convertir mostraría un día corrido
+    en los envíos de la noche."""
+    dt = f.get('fecha_envio')
+    return timezone.localtime(dt).strftime('%d/%m/%Y') if dt else ''
+
+
 def _generar_excel_pagos(filas, semana_label):
     """Genera el Excel de pagos. Una fila por pago `(profesor, colegio, día)` con el monto
     final en VALOR; la columna DESGLOSE detalla base + costos extra cuando los hay."""
@@ -345,9 +357,10 @@ def _generar_excel_pagos(filas, semana_label):
     ws = wb.active
     ws.title = 'Pagos'
 
-    NUM_COLS = 10
+    NUM_COLS = 12
     COLS = ['FECHA', 'DOCENTE', 'DOCUMENTO', 'N° DE CUENTA',
-            'TIPO DE CUENTA', 'BANCO', 'COLEGIO', 'CODIGO', 'VALOR', 'DESGLOSE']
+            'TIPO DE CUENTA', 'BANCO', 'COLEGIO', 'CODIGO', 'DEPARTAMENTO',
+            'VALOR', 'FECHA DE ENVÍO', 'DESGLOSE']
 
     HEADER_FILL  = 'FF1F3864'  # azul oscuro
     SUBHDR_FILL  = 'FFD6E4F0'  # azul claro
@@ -406,30 +419,33 @@ def _generar_excel_pagos(filas, semana_label):
         _celda(i, 6, f['banco'],      fill=fill_row, h='center')
         _celda(i, 7, f['colegio'],    fill=fill_row, h='left')
         _celda(i, 8, f['codigo'],     fill=fill_row, h='center')
+        _celda(i, 9, f.get('departamento', ''), fill=fill_row, h='left')
         # Valor como número para que Excel pueda sumar
-        cell_val = ws.cell(i, 9, f['valor_total'])
+        cell_val = ws.cell(i, 10, f['valor_total'])
         cell_val.font = Font(name='Arial', size=10)
         cell_val.alignment = Alignment(horizontal='right', vertical='center')
         cell_val.fill = PatternFill('solid', fgColor=fill_row)
         cell_val.border = borde
         cell_val.number_format = '"$"#,##0'
-        _celda(i, 10, _desglose_texto(f), fill=fill_row, h='left')
+        _celda(i, 11, _fecha_envio_texto(f), fill=fill_row, h='center')
+        _celda(i, 12, _desglose_texto(f), fill=fill_row, h='left')
         ws.row_dimensions[i].height = 18
 
     # Fila TOTAL
     total_row = 3 + len(filas)
     ws.merge_cells(start_row=total_row, start_column=1,
-                   end_row=total_row, end_column=8)
+                   end_row=total_row, end_column=9)
     _celda(total_row, 1, 'TOTAL', bold=True, fill=TOTAL_FILL, h='right')
-    _bordear_combinada(total_row, 1, total_row, 8, fill=TOTAL_FILL)
+    _bordear_combinada(total_row, 1, total_row, 9, fill=TOTAL_FILL)
     total_val = sum(f['valor_total'] for f in filas)
-    cell_t = ws.cell(total_row, 9, total_val)
+    cell_t = ws.cell(total_row, 10, total_val)
     cell_t.font = Font(name='Arial', size=10, bold=True)
     cell_t.alignment = Alignment(horizontal='right', vertical='center')
     cell_t.fill = PatternFill('solid', fgColor=TOTAL_FILL)
     cell_t.border = borde
     cell_t.number_format = '"$"#,##0'
-    _celda(total_row, 10, '', fill=TOTAL_FILL)
+    _celda(total_row, 11, '', fill=TOTAL_FILL)
+    _celda(total_row, 12, '', fill=TOTAL_FILL)
     ws.row_dimensions[total_row].height = 22
 
     # Anchos de columna: auto-ajuste al contenido real (longitud máx. de la columna),
@@ -477,7 +493,7 @@ def _filas_rango(estado, desde, hasta):
     acotadas por fecha. Mantiene el desglose vía `_fila_desde_pago`."""
     qs = (PagoRealizado.objects
           .filter(lote__estado=estado)
-          .select_related('profesor', 'colegio__colegio', 'marcado_por')
+          .select_related('profesor', 'colegio__colegio', 'marcado_por', 'lote')
           .prefetch_related('extras')
           .annotate(n_soportes=Count('soportes'))
           .order_by('fecha', 'profesor__nombre'))

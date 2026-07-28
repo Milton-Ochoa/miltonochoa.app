@@ -8,7 +8,7 @@ cubren los tests de programación; aquí se valida la gestión propia y el gate 
 import io
 import shutil
 import tempfile
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User, Group
@@ -132,6 +132,32 @@ class FinPagosTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('spreadsheetml', r['Content-Type'])
         self.assertIn('attachment', r['Content-Disposition'])
+
+    def _pago_enviado_el(self, dia):
+        """Fila enviada por programación en `dia` (fija `LotePagos.enviado_en`)."""
+        pago = _crear_pago(self.colegio_anio, self.profesor)
+        pago.lote.enviado_en = timezone.make_aware(datetime.combine(dia, time(9, 30)))
+        pago.lote.save(update_fields=['enviado_en'])
+        return pago
+
+    def test_exportar_incluye_departamento_y_fecha_de_envio(self):
+        """El Excel trae el departamento del colegio y la fecha en que programación
+        envió el lote; VALOR queda corrido a la columna 10."""
+        self._login_financiera()
+        self._pago_enviado_el(date(2025, 3, 17))
+        r = self.client.post('/pagos/exportar/', {'tab': 'pendiente'})
+        ws = load_workbook(io.BytesIO(r.content)).active
+        self.assertEqual(ws.cell(2, 9).value, 'DEPARTAMENTO')
+        self.assertEqual(ws.cell(2, 11).value, 'FECHA DE ENVÍO')
+        self.assertEqual(ws.cell(3, 9).value, 'Santander')
+        self.assertEqual(ws.cell(3, 11).value, '17/03/2025')
+        self.assertEqual(ws.cell(3, 10).value, 80000)
+
+    def test_lista_muestra_fecha_de_envio(self):
+        self._login_financiera()
+        self._pago_enviado_el(date(2025, 3, 17))
+        r = self.client.get('/pagos/?tab=pendiente')
+        self.assertContains(r, '17/03/2025')
 
     # ── Detalle ───────────────────────────────────────────────
     def test_detalle_muestra_datos_y_desglose(self):

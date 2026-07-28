@@ -14,6 +14,11 @@ urlpatterns = [
 
     # Catálogos
     path('catalogos/bodegas/', views.bodegas, name='log_bodegas'),
+    # Bajo /catalogos/ a propósito: `modulo_de_path` hace longest-prefix, así
+    # que cae en el módulo 'catalogos' ya catalogado. Una URL propia sería ruta
+    # no catalogada = núcleo, alcanzable saltándose el gate de módulo.
+    path('catalogos/bodegas/usuarios/', views.bodegas_usuarios,
+         name='log_bodegas_usuarios'),
     path('catalogos/categorias/', views.categorias, name='log_categorias'),
     path('terceros/', views.terceros, name='log_terceros'),
     path('terceros/ajax/crear/', views.tercero_ajax_crear,

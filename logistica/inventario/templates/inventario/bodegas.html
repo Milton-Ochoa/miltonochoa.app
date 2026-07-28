@@ -2,13 +2,21 @@
 {% block header_title %}Bodegas{% endblock %}
 
 {% block header_center %}
+{% if request.user.is_superuser %}
+<a href="{% url 'log_bodegas_usuarios' %}" class="btn btn-outline-secondary btn-sm fw-bold me-1">
+    <i class="fas fa-users me-1"></i> Bodegas por usuario
+</a>
+{% endif %}
+{% if not inv_bodega_asignada %}
 <button type="button" class="btn btn-success btn-sm fw-bold" onclick="abrirBodegaModal(null)">
     <i class="fas fa-plus me-1"></i> Nueva bodega
 </button>
+{% endif %}
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid py-3">
+    {% include 'inventario/_aviso_bodega.html' %}
     <div class="card shadow-sm">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -32,6 +40,9 @@
                             {% else %}<span class="badge bg-secondary">Inactiva</span>{% endif %}
                         </td>
                         <td class="text-center">
+                            {% if inv_bodega_asignada %}
+                            <span class="text-muted small">—</span>
+                            {% else %}
                             <button type="button" class="btn btn-outline-info btn-sm py-0 px-2"
                                     onclick="abrirBodegaModal(this)" title="Editar"
                                     data-id="{{ b.pk }}" data-nombre="{{ b.nombre }}"
@@ -53,6 +64,7 @@
                                 </button>
                                 {% endif %}
                             </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
@@ -68,7 +80,11 @@
     </div>
 </div>
 
-{# ── Modal Nueva/Editar bodega ── #}
+{% comment %}
+Modal Nueva/Editar bodega. Solo para quien no está restringido a una bodega: el
+CRUD del catálogo es un acto global y la vista rechaza el POST igualmente.
+{% endcomment %}
+{% if not inv_bodega_asignada %}
 <div class="modal fade" id="modalBodega" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-sm">
         <form method="post" class="modal-content">
@@ -105,4 +121,5 @@ function abrirBodegaModal(btn) {
     new bootstrap.Modal(document.getElementById('modalBodega')).show();
 }
 </script>
+{% endif %}
 {% endblock %}

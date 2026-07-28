@@ -75,7 +75,7 @@ Está construida como **un único proyecto Django** organizado por **áreas** de
 | **Apex** | `miltonochoa.app` | Activa | Login único, selector de área y **panel del superusuario** (`/panel/`). |
 | **Programación** | `programacion.miltonochoa.app` | Activa | Gestión académica integral: calendario, auditoría, informes, pagos semanales a profesores, viáticos y **monitores/simulacros** (con su ciclo de pago propio). |
 | **Financiera** | `financiera.miltonochoa.app` | Activa | Gestión de **viáticos** (devolver / aprobar / pagar / legalización / finalizar + soportes), **pagos a profesores** y **a monitores** (marcar pago + soportes + Excel), **proyección de pagos** (costo estimado de clases programadas, solo lectura) y consulta de **devoluciones de colegios** (solo lectura), con badges de pendientes. Acceso por grupo `area:financiera`. |
-| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega por material y grado (catálogos, movimientos, kardex inmutable, préstamos), **personalización** de PDFs AcroForm por estudiante, **despachos** de material (tablero de órdenes del ERP externo, estados de trabajo, cambio de material, alertas y export) y **devoluciones de colegios** (material que vuelve sin usar, suma al inventario). Acceso por grupo `area:logistica`. |
+| **Logística** | `logistica.miltonochoa.app` | Activa | **Inventario** multi-bodega por material y grado (catálogos, movimientos, kardex inmutable, préstamos), **personalización** de PDFs AcroForm por estudiante, **despachos** de material (tablero de órdenes del ERP externo, estados de trabajo, cambio de material, alertas y export) y **devoluciones de colegios** (material que vuelve sin usar, suma al inventario). Acceso por grupo `area:logistica`, con **restricción opcional de escritura a la bodega asignada** a cada usuario. |
 
 **Programación**, **Financiera** y **Logística** comparten el mismo *chrome* visual (sidebar,
 header, footer) definido en `templates/base_chrome.html`; cada área solo aporta su menú y
@@ -363,7 +363,8 @@ que se mueve —stock, kardex y líneas de documento— es el material **en un g
 ### Catálogos y existencias
 
 - **Materiales** (categoría + referencia + grados, unidad de medida, stock mínimo), **bodegas**
-  (soft-delete con guard: no se desactivan con existencias), **categorías** y **terceros**
+  (soft-delete con guard: no se desactivan con existencias ni con usuarios asignados),
+  **categorías** y **terceros**
   (destinatarios libres, con **alta al vuelo** desde los formularios de documentos).
 - **Existencias** por (material, bodega) con una celda por grado: resalta los grados **bajo
   mínimo** y cada celda abre el ajuste manual (cantidad absoluta + motivo obligatorio) y
@@ -390,6 +391,25 @@ que se mueve —stock, kardex y líneas de documento— es el material **en un g
 - Los documentos guardan **snapshot** del tercero → sobreviven a su borrado.
 - La lista resalta los **vencidos** (ambas direcciones) y distingue "Prestamos" / "Nos
   prestan" con badge.
+
+### Bodega por usuario (restricción de escritura)
+
+Con varias sedes (Bucaramanga, Barranquilla, Montería…), el superusuario puede asignar a
+cada persona de logística **una bodega** desde *Catálogos → Bodegas → Bodegas por usuario*:
+
+- **Ve todo, escribe solo en la suya.** Existencias, kardex, ledger, detalles de documentos,
+  dashboard y exports siguen siendo **globales** — necesita ver el stock de otra sede para
+  pedir un traslado. Lo que se restringe son las **escrituras**: entradas, salidas, ajustes,
+  préstamos, devoluciones y los adjuntos de entrada.
+- **Traslados:** el **origen** debe ser su bodega; el **destino** puede ser cualquiera (sacar
+  material de su sede hacia otra es la operación real).
+- **Sin asignación no hay restricción** (y el superusuario nunca se restringe): quien no
+  tenga bodega asignada sigue operando todas, como siempre.
+- El catálogo de bodegas (crear / renombrar / desactivar) queda reservado al administrador,
+  y una bodega con usuarios asignados no se puede desactivar ni borrar.
+
+> No confundir con la **bodega del ERP** de [Despachos](#despachos-de-material), que es solo
+> el filtro por defecto de ese tablero y no restringe nada.
 
 ### Dashboard, alertas y exports
 
@@ -731,7 +751,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 982 tests OK.**
+**Baseline actual: 1072 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -890,7 +910,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 982 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 1072 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
