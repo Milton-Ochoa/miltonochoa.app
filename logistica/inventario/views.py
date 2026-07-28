@@ -24,8 +24,9 @@ from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
 from .models import (GRADOS, AdjuntoEntrada, Bodega, BodegaUsuario, Categoria,
                      Entrada, Item, Movimiento, Prestamo, Salida, Stock,
                      Tercero, Traslado)
-from .permisos import (BodegaNoPermitida, bodegas_escribibles, exigir_bodega,
-                       exigir_bodegas, puede_escribir_en, solo_logistica)
+from .permisos import (BodegaNoPermitida, bodegas_escribibles, es_restringido,
+                       exigir_bodega, exigir_bodegas, puede_escribir_en,
+                       solo_logistica)
 from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, registrar_ajuste,
@@ -146,6 +147,15 @@ def material_guardar(request):
 @solo_logistica
 def bodegas(request):
     if request.method == 'POST':
+        # El catálogo es global: crear una bodega afecta a todas las sedes, y
+        # renombrar/desactivar una ajena es justamente "escritura sobre otra
+        # bodega". Desactivar la propia dejaría al usuario sin poder trabajar.
+        # La página sigue visible (lectura global), solo se bloquea el POST.
+        if es_restringido(request.user):
+            messages.error(
+                request,
+                'Solo el administrador puede crear, editar o desactivar bodegas.')
+            return redirect('log_bodegas')
         if request.POST.get('accion') == 'toggle':
             bodega = get_object_or_404(Bodega, pk=request.POST.get('bodega_id'))
             if bodega.activa:

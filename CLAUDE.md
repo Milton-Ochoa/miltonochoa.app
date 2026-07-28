@@ -331,19 +331,21 @@ Sistema de inventario por cantidades (sin seriales ni costos: el kardex es de
 préstamos **bidireccionales** (`Prestamo.direccion`: OTORGADO = prestamos nosotros,
 RECIBIDO = nos prestan) con devolución parcial, y ajustes con motivo obligatorio.
 Modelos en `logistica/inventario/models.py` (migraciones `0001_initial`,
-`0002_item_material_grados` y `0003_devolucion_colegio`):
+`0002_item_material_grados`, `0003_devolucion_colegio`, `0004` y
+`0005_bodega_usuario`):
 
 | Modelo | Tabla | | Modelo | Tabla |
 |---|---|---|---|---|
 | `Categoria` | `log_categorias` | | `Salida` | `log_salidas` |
 | `Bodega` | `log_bodegas` | | `SalidaLinea` | `log_salidas_lineas` |
-| `Item` | `log_articulos` | | `Traslado` | `log_traslados` |
-| `Tercero` | `log_terceros` | | `TrasladoLinea` | `log_traslados_lineas` |
-| `Stock` | `log_stock` | | `Prestamo` | `log_prestamos` |
-| `Movimiento` | `log_movimientos` | | `PrestamoLinea` | `log_prestamos_lineas` |
-| `Entrada` | `log_entradas` | | `Devolucion` | `log_prestamos_devoluciones` |
-| `EntradaLinea` | `log_entradas_lineas` | | `DevolucionColegio` | `log_devoluciones_colegios` |
-| `AdjuntoEntrada` | `log_entradas_adjuntos` | | `DevolucionColegioLinea` | `log_devoluciones_colegios_lineas` |
+| `BodegaUsuario` | `log_bodegas_usuarios` | | `Traslado` | `log_traslados` |
+| `Item` | `log_articulos` | | `TrasladoLinea` | `log_traslados_lineas` |
+| `Tercero` | `log_terceros` | | `Prestamo` | `log_prestamos` |
+| `Stock` | `log_stock` | | `PrestamoLinea` | `log_prestamos_lineas` |
+| `Movimiento` | `log_movimientos` | | `Devolucion` | `log_prestamos_devoluciones` |
+| `Entrada` | `log_entradas` | | `DevolucionColegio` | `log_devoluciones_colegios` |
+| `EntradaLinea` | `log_entradas_lineas` | | `DevolucionColegioLinea` | `log_devoluciones_colegios_lineas` |
+| `AdjuntoEntrada` | `log_entradas_adjuntos` | | | |
 
 Reglas de oro (NO romper):
 
@@ -428,6 +430,54 @@ Reglas de oro (NO romper):
   histórico COMPLETO sin el cap de 500 de la vista, filtros tipo/rango, orden cronológico)
   y préstamos (`log_prestamos_exportar`, filtros dirección/estado/solo-vencidos, totales
   prestado/devuelto/pendiente).
+- **Bodega por usuario (restricción de ESCRITURA, jul 2026):** `BodegaUsuario`
+  (`log_bodegas_usuarios`, OneToOne user→`Bodega`) asigna a cada persona de logística **una**
+  bodega. **La lectura NUNCA se restringe** (existencias, kardex, ledger, detalles de
+  documentos, badges, dashboard y exports siguen globales — lo blinda `LecturaGlobalTest`);
+  lo que se restringe son las **escrituras**. Reglas, en orden: sin usuario/anónimo → sin
+  restricción; **`is_superuser` → sin restricción aunque tenga fila**; **sin fila → sin
+  restricción** (comportamiento histórico, por eso el enforcement nació inerte y no rompió el
+  baseline); con fila → solo esa bodega. **Traslados: el ORIGEN debe ser su bodega, el DESTINO
+  puede ser cualquiera** (sacar material de su sede hacia otra es la operación real).
+  **OJO con el homónimo:** `logistica.despachos.AsignacionBodega`
+  (`log_despachos_bodegas_usuarios`) es **otra cosa** — la bodega del **ERP** (texto libre) que
+  solo pre-puebla un filtro del tablero de despachos. No se mezclan ni se reutilizan.
+  - **Dónde vive:** helpers en `logistica/inventario/permisos.py` (junto a `solo_logistica`):
+    `bodega_asignada` (memoizado en el objeto `user`), `es_restringido`, `bodegas_escribibles`
+    (NO filtra por `activa`: quien consume intersecta, para poder decir "tu bodega está
+    inactiva"), `puede_escribir_en`, `exigir_bodega`/`exigir_bodegas` y la excepción
+    `BodegaNoPermitida` (mismo contrato que `StockInsuficiente`: las vistas la vuelcan a
+    `messages.error`). **NO vive en `services.py` a propósito:** el `usuario` que reciben los
+    servicios es el actor del ledger (lo llaman tests y podría llamarlos un command), las
+    reglas son de caso de uso y no de dominio (origen sí / destino no) y hay escrituras que no
+    pasan por servicios (catálogo de bodegas, adjuntos).
+  - **Puntos de escritura cubiertos** (dos barreras server-side donde hay form; la UI es una
+    tercera capa de comodidad, nunca de seguridad): entrada, salida, traslado (origen) y
+    devolución de colegio → queryset del `ModelChoiceField` recortado con `_restringir_bodega`
+    (un POST forjado cae en `invalid_choice`) + `exigir_bodega` antes del servicio; préstamo →
+    `parsear_lineas_material(..., usuario=)` valida la bodega de cada línea; devolución de
+    préstamo → `exigir_bodegas` sobre las bodegas de las líneas, con **rechazo total** si hay
+    alguna ajena (el servicio es atómico y recalcula el estado PARCIAL/CERRADO: filtrar en
+    silencio mentiría en el toast y sería un agujero de auditoría); ajuste manual y adjuntos de
+    entrada → `puede_escribir_en` tras el `get_object_or_404`; **CRUD del catálogo de bodegas
+    → cerrado a los restringidos** (crear es global, editar/desactivar una ajena es escritura
+    sobre otra bodega, y desactivar la propia lo dejaría sin poder trabajar; la página sigue
+    visible). Los forms y el parser toman `usuario=None` **keyword-only con default**.
+  - **Página de asignación** `/catalogos/bodegas/usuarios/` (`log_bodegas_usuarios`), **solo
+    superusuario** (patrón `plantilla_eliminar`: el botón del header de `bodegas.html` se
+    oculta y la vista rechaza el POST). Va bajo `/catalogos/` **por una razón dura**:
+    `modulo_de_path` hace longest-prefix, así que cae en el módulo `catalogos` ya catalogado y
+    **no hay que tocar `core/modulos.py`**. Solo ofrece bodegas `activa=True`; `bodega_id`
+    vacío borra la asignación. `bodega` en **`PROTECT`** (con CASCADE, borrar la bodega
+    borraría la fila y el usuario ganaría acceso global en silencio) y guard en `views.bodegas`
+    que impide **desactivar** una bodega con usuarios asignados.
+  - **Aviso** `inventario/_aviso_bodega.html` en los formularios de escritura y en Existencias,
+    alimentado por `inv_bodega_asignada` del context processor `alertas_inventario` (solo si
+    está restringido; reutiliza el memo). En Existencias la celda de una bodega ajena pierde el
+    botón de ajuste pero **conserva el enlace al kardex**.
+  - **Deuda anotada:** `ajuste_crear` no valida `bodega.activa` (comportamiento previo, no se
+    tocó). Tests en `logistica/inventario/tests/test_bodega_usuario.py` y
+    `logistica/devoluciones/tests/test_bodega.py`.
 - En `/admin/` todo está registrado; `Movimiento` y `Stock` son **solo lectura**.
 
 ## Personalización de PDFs (sub-app `logistica.personalizacion`, label `log_personalizacion`)
@@ -1165,7 +1215,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 996 tests OK
+python manage.py test                        # baseline: 1072 tests OK
 python manage.py runserver
 ```
 
@@ -1237,7 +1287,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   una arista al grafo y las copias locales que ya aplicaron la original fallan con
   `InconsistentMigrationHistory`, así que en una migración ya publicada `atomic = False` es
   la salida sin daños colaterales.
-- Ejecuta `python manage.py test` y compara con el baseline (996 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (1072 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
   fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran

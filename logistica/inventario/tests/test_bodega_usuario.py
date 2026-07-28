@@ -162,7 +162,10 @@ class HelperBodegaUsuarioTest(_BaseBodegaUsuarioTest):
 class GuardDesactivarBodegaAsignadaTest(_BaseBodegaUsuarioTest):
 
     def test_no_desactiva_bodega_con_usuarios_asignados(self):
-        self._asignar()
+        # La asignación es de OTRO usuario a propósito: quien postea debe llegar
+        # sin restricción a este guard (un restringido lo corta antes, F4).
+        otro = User.objects.create_user(username='logis2', password='pass')
+        self._asignar(usuario=otro)
         r = self.client.post('/catalogos/bodegas/',
                              {'accion': 'toggle', 'bodega_id': self.propia.pk},
                              follow=True)
@@ -170,7 +173,7 @@ class GuardDesactivarBodegaAsignadaTest(_BaseBodegaUsuarioTest):
         self.assertTrue(self.propia.activa)
         mensajes = self._mensajes(r)
         self.assertTrue(any('está asignada' in m for m in mensajes), mensajes)
-        self.assertTrue(any('logis' in m for m in mensajes), mensajes)
+        self.assertTrue(any('logis2' in m for m in mensajes), mensajes)
 
     def test_sin_asignados_se_desactiva_normal(self):
         r = self.client.post('/catalogos/bodegas/',
@@ -750,3 +753,57 @@ class LecturaGlobalTest(_BaseDocumentosTest):
                     '/prestamos/exportar/'):
             r = self.client.post(url, {})
             self.assertEqual(r.status_code, 200, url)
+
+
+# ---------------------------------------------------------------------------
+# Fase 4 — catálogo de bodegas
+# ---------------------------------------------------------------------------
+
+class CatalogoBodegasRestringidoTest(_BaseDocumentosTest):
+    """El CRUD del catálogo es un acto global → cerrado a los restringidos.
+
+    La página sigue siendo visible (lectura global); lo que se bloquea es el
+    POST, en las dos capas: guard en la vista y botones ocultos en la plantilla.
+    """
+
+    URL = '/catalogos/bodegas/'
+
+    def test_la_pagina_sigue_visible(self):
+        r = self.client.get(self.URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Sucursal')
+
+    def test_no_puede_crear(self):
+        r = self.client.post(self.URL, {'nombre': 'Nueva'}, follow=True)
+        self.assertFalse(Bodega.objects.filter(nombre='Nueva').exists())
+        self.assertTrue(any('Solo el administrador' in m
+                            for m in self._mensajes(r)))
+
+    def test_no_puede_editar(self):
+        self.client.post(self.URL, {'bodega_id': self.ajena.pk,
+                                    'nombre': 'Renombrada'})
+        self.ajena.refresh_from_db()
+        self.assertEqual(self.ajena.nombre, 'Sucursal')
+
+    def test_no_puede_desactivar_ni_la_suya(self):
+        self.client.post(self.URL, {'accion': 'toggle',
+                                    'bodega_id': self.propia.pk})
+        self.propia.refresh_from_db()
+        self.assertTrue(self.propia.activa)
+
+    def test_los_botones_de_escritura_no_se_pintan(self):
+        r = self.client.get(self.URL)
+        self.assertNotContains(r, 'abrirBodegaModal(null)')
+        self.assertNotContains(r, "value=\"toggle\"")
+
+
+class CatalogoBodegasSinAsignacionTest(_BaseDocumentosTest):
+    """Sin asignación el catálogo funciona como siempre (retrocompatibilidad)."""
+
+    asignar = False
+
+    def test_puede_crear_y_ve_los_botones(self):
+        r = self.client.post('/catalogos/bodegas/', {'nombre': 'Nueva'},
+                             follow=True)
+        self.assertTrue(Bodega.objects.filter(nombre='Nueva').exists())
+        self.assertContains(r, 'abrirBodegaModal(null)')
