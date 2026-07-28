@@ -1,10 +1,10 @@
 from django.contrib import admin
 
-from .models import (AdjuntoEntrada, Bodega, Categoria, Devolucion,
-                     DevolucionColegio, DevolucionColegioLinea, Entrada,
-                     EntradaLinea, Item, Movimiento, Prestamo, PrestamoLinea,
-                     Salida, SalidaLinea, Stock, Tercero, Traslado,
-                     TrasladoLinea)
+from .models import (AdjuntoEntrada, Bodega, BodegaUsuario, Categoria,
+                     Devolucion, DevolucionColegio, DevolucionColegioLinea,
+                     Entrada, EntradaLinea, Item, Movimiento, Prestamo,
+                     PrestamoLinea, Salida, SalidaLinea, Stock, Tercero,
+                     Traslado, TrasladoLinea)
 
 
 @admin.register(Categoria)
@@ -16,6 +16,16 @@ class CategoriaAdmin(admin.ModelAdmin):
 class BodegaAdmin(admin.ModelAdmin):
     list_display = ('nombre', 'ubicacion', 'activa')
     list_filter = ('activa',)
+
+
+@admin.register(BodegaUsuario)
+class BodegaUsuarioAdmin(admin.ModelAdmin):
+    """Restricción de ESCRITURA por bodega. Sin fila = opera todas."""
+    list_display = ('usuario', 'bodega', 'asignado_por', 'asignado_en')
+    list_select_related = ('usuario', 'bodega', 'asignado_por')
+    list_filter = ('bodega',)
+    search_fields = ('usuario__username', 'bodega__nombre')
+    raw_id_fields = ('usuario', 'asignado_por')
 
 
 @admin.register(Item)

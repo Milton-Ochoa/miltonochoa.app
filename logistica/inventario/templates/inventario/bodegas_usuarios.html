@@ -1,0 +1,78 @@
+{% extends 'base_logistica.html' %}
+{% block header_title %}Bodegas por usuario{% endblock %}
+
+{% block header_center %}
+<a href="{% url 'log_bodegas' %}" class="btn btn-outline-secondary btn-sm fw-bold">
+    <i class="fas fa-arrow-left me-1"></i> Volver a bodegas
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 900px;">
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <h5 class="mb-1"><i class="fas fa-warehouse text-secondary me-2"></i>Bodega que opera cada usuario</h5>
+            <p class="text-muted small mb-0">
+                <i class="fas fa-info-circle me-1"></i>
+                El usuario podrá <strong>consultar todas</strong> las bodegas, pero solo registrar
+                entradas, salidas, ajustes, préstamos y devoluciones en la suya. Puede trasladar
+                <strong>desde</strong> su bodega <strong>hacia</strong> cualquier otra.
+                Dejar «(todas las bodegas)» borra la restricción. Solo el administrador puede cambiarla.
+            </p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th style="width: 40%;">Bodega asignada</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td><strong>{{ u.username }}</strong></td>
+                        <td>{{ u.get_full_name|default:"—" }}</td>
+                        <td>
+                            <form method="post" action="{% url 'log_bodegas_usuarios' %}" class="d-flex gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ u.pk }}">
+                                <select name="bodega_id" class="form-select form-select-sm">
+                                    <option value="">(todas las bodegas)</option>
+                                    {% for b in bodegas %}
+                                    <option value="{{ b.pk }}"{% if u.bodega_inventario and u.bodega_inventario.bodega_id == b.pk %} selected{% endif %}>{{ b.nombre }}</option>
+                                    {% endfor %}
+                                    {% comment %}
+                                    Fallback: una bodega inactiva no está en el select, pero
+                                    /admin/ sí permite asignarla (salta el guard de la vista).
+                                    Sin esta opción la fila mostraría "(todas)" y guardar sin
+                                    querer borraría la restricción.
+                                    {% endcomment %}
+                                    {% if u.bodega_inventario and not u.bodega_inventario.bodega.activa %}
+                                    <option value="{{ u.bodega_inventario.bodega_id }}" selected>{{ u.bodega_inventario.bodega.nombre }} (inactiva)</option>
+                                    {% endif %}
+                                </select>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-4">
+                            <i class="fas fa-users me-1"></i> No hay usuarios de logística para asignar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

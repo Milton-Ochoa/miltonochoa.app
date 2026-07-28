@@ -38,6 +38,41 @@ class Bodega(models.Model):
         return self.nombre
 
 
+class BodegaUsuario(models.Model):
+    """Bodega del inventario que un usuario puede OPERAR (escribir en ella).
+
+    Sin fila = sin restricción (comportamiento histórico: opera todas). El
+    superusuario nunca se restringe, tenga fila o no. La LECTURA jamás se
+    restringe: existencias, kardex, ledger, documentos y exports siguen siendo
+    globales — hay que poder ver si otra sede tiene stock para pedir un traslado.
+
+    OJO: no confundir con `despachos.AsignacionBodega`, que es la bodega del ERP
+    (texto libre) y solo pre-puebla el filtro del tablero de despachos. Aquí la
+    bodega es la del inventario (FK) y sí manda sobre los permisos de escritura.
+    """
+
+    usuario = models.OneToOneField(User, on_delete=models.CASCADE,
+                                   related_name='bodega_inventario')
+    # PROTECT y no CASCADE a propósito: si borrar la bodega borrara la
+    # asignación, el usuario pasaría a "sin fila" = sin restricción, ganando
+    # acceso global en silencio. El camino normal es desactivarla (soft-delete).
+    bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT,
+                               related_name='usuarios_asignados')
+    asignado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                     blank=True,
+                                     related_name='bodegas_inv_asignadas')
+    asignado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'log_bodegas_usuarios'
+        ordering = ['usuario__username']
+        verbose_name = 'Bodega por usuario (inventario)'
+        verbose_name_plural = 'Bodegas por usuario (inventario)'
+
+    def __str__(self):
+        return f'{self.usuario} → {self.bodega}'
+
+
 # Grados escolares del material: 0° (transición) a 11°. Todo material existe
 # en los 12 grados — no hay material "sin grado".
 GRADO_MIN, GRADO_MAX = 0, 11

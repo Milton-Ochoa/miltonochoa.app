@@ -3,6 +3,7 @@ import os
 from datetime import date
 
 from django.contrib import messages
+from django.contrib.auth.models import Group, User
 from django.db import models, transaction
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
@@ -14,12 +15,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from core.areas import GRUPO_STAFF_LOGISTICA
+
 from .adjuntos import validar_adjunto
 from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
                     PrestamoForm, SalidaForm, TerceroForm, TrasladoForm,
                     parsear_clave_material, parsear_lineas_material)
-from .models import (GRADOS, AdjuntoEntrada, Bodega, Categoria, Entrada, Item,
-                     Movimiento, Prestamo, Salida, Stock, Tercero, Traslado)
+from .models import (GRADOS, AdjuntoEntrada, Bodega, BodegaUsuario, Categoria,
+                     Entrada, Item, Movimiento, Prestamo, Salida, Stock,
+                     Tercero, Traslado)
 from .permisos import solo_logistica
 from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
@@ -153,6 +157,18 @@ def bodegas(request):
                         f'No se puede desactivar "{bodega.nombre}": aún tiene '
                         f'{total} unidades en existencia. Trasládalas o ajústalas primero.')
                     return redirect('log_bodegas')
+                # Segundo guard: si alguien la tiene asignada, desactivarla lo
+                # dejaría sin poder escribir en NINGUNA bodega.
+                asignados = list(bodega.usuarios_asignados
+                                 .select_related('usuario')
+                                 .values_list('usuario__username', flat=True))
+                if asignados:
+                    messages.error(
+                        request,
+                        f'No se puede desactivar "{bodega.nombre}": está asignada a '
+                        f'{len(asignados)} usuario(s) ({", ".join(asignados)}). '
+                        f'Reasígnalos primero en Bodegas por usuario.')
+                    return redirect('log_bodegas')
                 bodega.activa = False
                 messages.success(request, f'Bodega "{bodega.nombre}" desactivada.')
             else:
@@ -175,6 +191,57 @@ def bodegas(request):
              .annotate(stock_total=Coalesce(models.Sum('stocks__cantidad'), 0))
              .order_by('nombre'))
     return render(request, 'inventario/bodegas.html', {'bodegas': lista})
+
+
+@solo_logistica
+def bodegas_usuarios(request):
+    """Asigna a cada usuario de logística la bodega en la que puede ESCRIBIR.
+
+    Solo superusuario (patrón `plantilla_eliminar`: el botón se oculta a los
+    demás y la vista rechaza el POST). Sin asignación el usuario opera todas las
+    bodegas, que es el comportamiento histórico.
+    """
+    if not request.user.is_superuser:
+        messages.error(request, 'Solo el administrador puede asignar bodegas.')
+        return redirect('log_bodegas')
+
+    if request.method == 'POST':
+        usuario = get_object_or_404(User, pk=request.POST.get('user_id', ''))
+        bodega_id = (request.POST.get('bodega_id') or '').strip()
+        if bodega_id.isdigit():
+            # Solo activas: asignar una inactiva dejaría al usuario sin poder
+            # escribir en ninguna parte.
+            bodega = get_object_or_404(Bodega, pk=bodega_id, activa=True)
+            BodegaUsuario.objects.update_or_create(
+                usuario=usuario,
+                defaults={'bodega': bodega, 'asignado_por': request.user})
+            messages.success(
+                request,
+                f'{usuario.username} solo podrá registrar movimientos en '
+                f'"{bodega.nombre}".')
+        else:
+            BodegaUsuario.objects.filter(usuario=usuario).delete()
+            messages.success(
+                request,
+                f'{usuario.username} ya no tiene bodega asignada: vuelve a operar '
+                f'todas.')
+        return redirect('log_bodegas_usuarios')
+
+    # Usuarios del área (grupo de etiqueta) + los que ya tengan asignación.
+    grupo = Group.objects.filter(name=GRUPO_STAFF_LOGISTICA).first()
+    usuarios = User.objects.filter(is_active=True)
+    if grupo:
+        usuarios = usuarios.filter(groups=grupo)
+    else:
+        usuarios = usuarios.filter(bodega_inventario__isnull=False)
+    usuarios = (usuarios.exclude(is_superuser=True)
+                .select_related('bodega_inventario__bodega')
+                .order_by('username').distinct())
+
+    return render(request, 'inventario/bodegas_usuarios.html', {
+        'usuarios': usuarios,
+        'bodegas': Bodega.objects.filter(activa=True).order_by('nombre'),
+    })
 
 
 @solo_logistica
