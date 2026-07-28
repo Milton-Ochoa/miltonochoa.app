@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 from django.contrib import messages
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import User
 from django.db import models, transaction
 from django.db.models import ProtectedError
 from django.db.models.functions import Coalesce
@@ -16,6 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from core.areas import GRUPO_STAFF_LOGISTICA
+from usuarios.models import ModuloUsuario
 
 from .adjuntos import validar_adjunto
 from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
@@ -206,11 +207,13 @@ def bodegas(request):
 
 @solo_logistica
 def bodegas_usuarios(request):
-    """Asigna a cada usuario de logística la bodega en la que puede ESCRIBIR.
+    """Asigna la bodega en la que cada usuario puede ESCRIBIR en el inventario.
 
     Solo superusuario (patrón `plantilla_eliminar`: el botón se oculta a los
     demás y la vista rechaza el POST). Sin asignación el usuario opera todas las
-    bodegas, que es el comportamiento histórico.
+    bodegas, que es el comportamiento histórico. La restricción es agnóstica del
+    grupo: aplica a quien tenga fila, venga del grupo de logística o de un
+    acceso cruzado por permisos granulares.
     """
     if not request.user.is_superuser:
         messages.error(request, 'Solo el administrador puede asignar bodegas.')
@@ -238,14 +241,25 @@ def bodegas_usuarios(request):
                 f'todas.')
         return redirect('log_bodegas_usuarios')
 
-    # Usuarios del área (grupo de etiqueta) + los que ya tengan asignación.
-    grupo = Group.objects.filter(name=GRUPO_STAFF_LOGISTICA).first()
-    usuarios = User.objects.filter(is_active=True)
-    if grupo:
-        usuarios = usuarios.filter(groups=grupo)
-    else:
-        usuarios = usuarios.filter(bodega_inventario__isnull=False)
-    usuarios = (usuarios.exclude(is_superuser=True)
+    # Quién es asignable: cualquiera que pueda ESCRIBIR en el inventario, no solo
+    # el grupo de etiqueta. Con permisos granulares alguien de otra área puede
+    # tener acceso cruzado a los módulos de logística (p. ej. la jefe de
+    # financiera que además opera una bodega); si no apareciera aquí habría que
+    # asignarle la bodega por /admin/, saltándose el guard de "solo activas".
+    # Se incluye también a quien ya tenga asignación, para que una fila existente
+    # nunca desaparezca de la UI (si no, quedaría restringido sin poder editarlo).
+    # Los cruzados van por subconsulta y no por Q sobre la relación: dentro de un
+    # mismo filter(), "tiene un override de logística" y "ese override no es SIN"
+    # deben casar la MISMA fila, y un ~Q encadenado no lo garantiza.
+    cruzados = (ModuloUsuario.objects.filter(area='logistica')
+                .exclude(nivel=ModuloUsuario.Nivel.SIN_ACCESO)
+                .values('user_id'))
+    asignables = (models.Q(bodega_inventario__isnull=False)
+                  | models.Q(groups__name=GRUPO_STAFF_LOGISTICA)
+                  | models.Q(pk__in=cruzados))
+    usuarios = (User.objects.filter(is_active=True)
+                .filter(asignables)
+                .exclude(is_superuser=True)
                 .select_related('bodega_inventario__bodega')
                 .order_by('username').distinct())
 

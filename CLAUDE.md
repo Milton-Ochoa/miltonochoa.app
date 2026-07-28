@@ -471,6 +471,15 @@ Reglas de oro (NO romper):
     vacío borra la asignación. `bodega` en **`PROTECT`** (con CASCADE, borrar la bodega
     borraría la fila y el usuario ganaría acceso global en silencio) y guard en `views.bodegas`
     que impide **desactivar** una bodega con usuarios asignados.
+    **A quién lista** (no solo al grupo `area:logistica`): también a quien tenga **acceso
+    cruzado** por permisos granulares (`ModuloUsuario(area='logistica')` con nivel != SIN —
+    caso real: la jefe de financiera que además opera una bodega) y a quien **ya tenga
+    asignación**, para que una fila existente nunca desaparezca de la UI y quede restringido
+    sin forma de editarlo. Los cruzados entran por **subconsulta** (`pk__in`), no por `Q` sobre
+    la relación: dentro de un mismo `filter()`, "tiene override de logística" y "ese override
+    no es SIN" deben casar la MISMA fila, y un `~Q` encadenado no lo garantiza. **El orden
+    importa al configurar:** asigna la bodega ANTES de dar los módulos cruzados — sin fila,
+    `es_restringido` es False y esa persona escribe en todas las bodegas.
   - **Aviso** `inventario/_aviso_bodega.html` en los formularios de escritura y en Existencias,
     alimentado por `inv_bodega_asignada` del context processor `alertas_inventario` (solo si
     está restringido; reutiliza el memo). En Existencias la celda de una bodega ajena pierde el
