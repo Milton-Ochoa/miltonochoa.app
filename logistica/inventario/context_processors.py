@@ -16,8 +16,17 @@ def alertas_inventario(request):
         return {}
     if not getattr(request, 'es_personal_logistica', False):
         return {}
+    from .permisos import bodega_asignada, es_restringido
     from .services import items_bajo_minimo, prestamos_vencidos
-    return {
+    datos = {
         'inv_bajo_minimo_count': items_bajo_minimo().count(),
         'inv_prestamos_vencidos_count': prestamos_vencidos().count(),
     }
+    # Bodega que opera el usuario, para el aviso `_aviso_bodega.html` de los
+    # formularios de escritura. Solo si está restringido (superusuario y quien
+    # no tiene asignación escriben en todas → nada que avisar). El helper
+    # memoiza en el objeto `user`, así que la vista no repite la consulta.
+    usuario = getattr(request, 'user', None)
+    if es_restringido(usuario):
+        datos['inv_bodega_asignada'] = bodega_asignada(usuario)
+    return datos

@@ -15,6 +15,7 @@ servicios, nunca un form.save().
 from django import forms
 
 from .models import GRADOS, Bodega, Categoria, Item, Prestamo, Tercero
+from .permisos import bodega_asignada, bodegas_escribibles, es_restringido
 
 
 class _BootstrapMixin:
@@ -154,6 +155,36 @@ def _bodegas_activas():
     return Bodega.objects.filter(activa=True)
 
 
+def _bodegas_para(usuario):
+    """Bodegas activas que `usuario` puede OPERAR (escribir).
+
+    Sin asignación y superusuario → todas las activas, que es exactamente el
+    comportamiento histórico (por eso `usuario=None` es un default seguro).
+    """
+    return bodegas_escribibles(usuario).filter(activa=True)
+
+
+def _restringir_bodega(campo, usuario, *, mensaje=None):
+    """Recorta el `<select>` de bodega a las que el usuario puede operar.
+
+    Es la PRIMERA barrera server-side: un POST forjado con una bodega ajena no
+    está en el queryset y cae en `invalid_choice` — de ahí el mensaje propio,
+    porque el de Django ("Escoja una opción válida") haría pensar en un bug de
+    la página en vez de en un permiso. La segunda barrera es `exigir_bodega`
+    en la vista, antes de llamar al servicio.
+    """
+    campo.queryset = _bodegas_para(usuario)
+    asignada = bodega_asignada(usuario) if es_restringido(usuario) else None
+    if asignada is None:
+        return
+    campo.error_messages['invalid_choice'] = mensaje or (
+        f'Solo puedes registrar movimientos en tu bodega ("{asignada}").')
+    # Con una sola opción el placeholder solo estorba: se preselecciona.
+    if campo.queryset.count() == 1:
+        campo.initial = campo.queryset.first().pk
+        campo.empty_label = None
+
+
 class EntradaForm(_BootstrapForm):
     bodega = forms.ModelChoiceField(label='Bodega', queryset=None,
                                     empty_label='— Bodega —')
@@ -162,9 +193,9 @@ class EntradaForm(_BootstrapForm):
     observaciones = forms.CharField(label='Observaciones', required=False,
                                     widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['bodega'].queryset = _bodegas_activas()
+        _restringir_bodega(self.fields['bodega'], usuario)
         _con_buscador(self.fields['bodega'])
 
 
@@ -180,9 +211,9 @@ class SalidaForm(_BootstrapForm):
     observaciones = forms.CharField(label='Observaciones', required=False,
                                     widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['bodega'].queryset = _bodegas_activas()
+        _restringir_bodega(self.fields['bodega'], usuario)
         self.fields['tercero'].queryset = Tercero.objects.filter(activo=True)
         _con_buscador(self.fields['bodega'], self.fields['tercero'])
 
@@ -197,9 +228,15 @@ class TrasladoForm(_BootstrapForm):
     observaciones = forms.CharField(label='Observaciones', required=False,
                                     widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['bodega_origen'].queryset = _bodegas_activas()
+        # Solo el ORIGEN se restringe: sacar material de la propia sede hacia
+        # otra es la operación real; jalarlo de una sede ajena, no.
+        asignada = bodega_asignada(usuario) if es_restringido(usuario) else None
+        _restringir_bodega(
+            self.fields['bodega_origen'], usuario,
+            mensaje=(f'Solo puedes trasladar DESDE tu bodega ("{asignada}").'
+                     if asignada else None))
         self.fields['bodega_destino'].queryset = _bodegas_activas()
         _con_buscador(self.fields['bodega_origen'],
                       self.fields['bodega_destino'])

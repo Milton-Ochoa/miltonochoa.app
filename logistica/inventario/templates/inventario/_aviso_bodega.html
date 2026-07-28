@@ -1,0 +1,30 @@
+{% comment %}
+Aviso "operas la bodega X" para los formularios de escritura del inventario.
+
+`inv_bodega_asignada` lo pone el context processor `alertas_inventario` y solo
+existe cuando el usuario está restringido (superusuario y quien no tiene
+asignación no ven nada). Es comodidad, NUNCA seguridad: el permiso se valida
+server-side en el form (queryset recortado) y en la vista (`exigir_bodega`).
+{% endcomment %}
+{% if inv_bodega_asignada %}
+{% if inv_bodega_asignada.activa %}
+<div class="alert alert-info py-2 small d-flex align-items-start gap-2 mb-3">
+    <i class="fas fa-warehouse mt-1"></i>
+    <div>
+        Operas la bodega <strong>{{ inv_bodega_asignada.nombre }}</strong>.
+        Puedes consultar las existencias y el kardex de todas las bodegas, pero
+        solo registrar movimientos en la tuya. Los traslados salen de la tuya
+        hacia cualquier otra.
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning py-2 small d-flex align-items-start gap-2 mb-3">
+    <i class="fas fa-triangle-exclamation mt-1"></i>
+    <div>
+        Tu bodega <strong>{{ inv_bodega_asignada.nombre }}</strong> está
+        <strong>inactiva</strong>, así que no puedes registrar movimientos.
+        Pídele al administrador que la reactive o que te asigne otra.
+    </div>
+</div>
+{% endif %}
+{% endif %}

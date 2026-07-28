@@ -16,7 +16,8 @@ from django.views.decorators.http import require_POST
 from logistica.despachos.models import OrdenDespacho
 from logistica.inventario.forms import parsear_lineas_material
 from logistica.inventario.models import GRADOS, DevolucionColegio
-from logistica.inventario.permisos import solo_logistica
+from logistica.inventario.permisos import (BodegaNoPermitida, exigir_bodega,
+                                           solo_logistica)
 from logistica.inventario.services import registrar_devolucion_colegio
 from logistica.inventario.views import (_form_a_messages,
                                         _lineas_previas_material,
@@ -93,12 +94,15 @@ def nueva(request):
     """Alta con el mismo patrón que los documentos del inventario: cabecera por
     form, líneas por `parsear_lineas_material` (un material con sus 12 grados) y
     el documento SIEMPRE creado por el servicio (atómico)."""
-    form = DevolucionColegioForm(request.POST or None)
+    form = DevolucionColegioForm(request.POST or None, usuario=request.user)
     if request.method == 'POST':
         try:
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
+            # 2.ª barrera (la 1.ª es el queryset recortado del form).
+            exigir_bodega(request.user, form.cleaned_data['bodega'],
+                          accion='registrar devoluciones en')
             lineas = parsear_lineas_material(request.POST)
             datos = form.cleaned_data
             devolucion = registrar_devolucion_colegio(
@@ -109,7 +113,7 @@ def nueva(request):
                 observaciones=datos['observaciones'],
                 valida=not datos['no_valida'],
                 motivo_no_valida=datos['motivo_no_valida'])
-        except ValueError as e:
+        except (ValueError, BodegaNoPermitida) as e:
             if str(e):
                 messages.error(request, str(e))
         else:

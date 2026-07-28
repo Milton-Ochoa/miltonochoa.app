@@ -1,10 +1,15 @@
-"""Tests de la restricción de escritura por bodega — Fase 1: el modelo
-`BodegaUsuario`, los helpers de `permisos.py` y la página de asignación.
+"""Tests de la restricción de escritura por bodega.
 
-En esta fase NADA cambia todavía en las vistas de escritura (eso llega en las
-fases siguientes); lo que se blinda aquí es la semántica del helper —sobre todo
-los dos casos que mantienen verde el resto de la suite: **sin fila = sin
-restricción** y **superusuario nunca restringido**— y el gate de la página.
+Fase 1 — el modelo `BodegaUsuario`, los helpers de `permisos.py` y la página de
+asignación. Lo que se blinda es la semántica del helper (sobre todo los dos
+casos que mantienen verde el resto de la suite: **sin fila = sin restricción** y
+**superusuario nunca restringido**) y el gate de la página.
+
+Fase 2 — los documentos con form de cabecera: entrada, salida, traslado (solo el
+ORIGEN se restringe) y devolución de colegio (esta última en
+`logistica/devoluciones/tests/test_bodega.py`, junto a su sub-app). Cada camino
+se prueba por sus dos barreras: el `<select>` recortado y el POST **forjado**
+con la bodega ajena, que no debe escribir nada.
 
 Mismo arnés que el resto del área: `Client(HTTP_HOST='logistica.testserver')`.
 """
@@ -14,11 +19,15 @@ from django.test import Client, TestCase
 
 from core.areas import GRUPO_STAFF_FINANCIERA, GRUPO_STAFF_LOGISTICA
 
-from logistica.inventario.models import Bodega, BodegaUsuario
+from logistica.inventario.models import (Bodega, BodegaUsuario, Categoria,
+                                         Entrada, Movimiento, Salida, Stock,
+                                         Traslado)
 from logistica.inventario.permisos import (BodegaNoPermitida, bodega_asignada,
                                            bodegas_escribibles, es_restringido,
                                            exigir_bodega, exigir_bodegas,
                                            puede_escribir_en)
+from logistica.inventario.services import registrar_entrada
+from logistica.inventario.tests.utils import crear_material, lineas_post
 
 
 class _BaseBodegaUsuarioTest(TestCase):
@@ -255,3 +264,219 @@ class BodegasUsuariosPaginaTest(TestCase):
         c = Client(HTTP_HOST='logistica.testserver')
         c.login(username='logis', password='pass')
         self.assertNotContains(c.get('/catalogos/bodegas/'), self.URL)
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — documentos con form de cabecera
+# ---------------------------------------------------------------------------
+
+class _BaseDocumentosTest(TestCase):
+    """Staff de logística + dos bodegas + un material completo (12 grados).
+
+    Los flags de clase dejan reusar el mismo arnés para los tres escenarios:
+    restringido (default), sin asignación (retrocompatibilidad) y superusuario
+    con asignación.
+    """
+
+    asignar = True
+    superusuario = False
+
+    def setUp(self):
+        self.client = Client(HTTP_HOST='logistica.testserver')
+        if self.superusuario:
+            self.user = User.objects.create_superuser(username='logis',
+                                                      password='pass')
+        else:
+            self.user = User.objects.create_user(username='logis',
+                                                 password='pass')
+            self.user.groups.add(Group.objects.get(name=GRUPO_STAFF_LOGISTICA))
+        self.client.login(username='logis', password='pass')
+
+        self.propia = Bodega.objects.create(nombre='Principal')
+        self.ajena = Bodega.objects.create(nombre='Sucursal')
+        if self.asignar:
+            BodegaUsuario.objects.create(usuario=self.user, bodega=self.propia)
+
+        self.categoria = Categoria.objects.create(nombre='Papelería')
+        self.material = crear_material(categoria=self.categoria,
+                                       referencia='Cuadernillo')
+
+    # -- helpers ------------------------------------------------------------
+
+    def _mensajes(self, response):
+        return [str(m) for m in response.context['messages']]
+
+    def _lineas(self, cantidad=2, grado=3):
+        return lineas_post([(self.material, {grado: cantidad})])
+
+    def _sembrar(self, bodega, cantidad=10, grado=3):
+        """Siempre por servicio, nunca tocando `Stock` a mano."""
+        registrar_entrada(bodega=bodega, lineas=[(self.material[grado], cantidad)],
+                          usuario=self.user)
+
+    def _stock(self, bodega, grado=3):
+        fila = Stock.objects.filter(item=self.material[grado],
+                                    bodega=bodega).first()
+        return fila.cantidad if fila else 0
+
+    def _post_entrada(self, bodega, **kw):
+        datos = {'bodega': bodega.pk, 'proveedor': '', 'observaciones': '',
+                 **self._lineas(**kw)}
+        return self.client.post('/entradas/nueva/', datos)
+
+    def _post_salida(self, bodega, **kw):
+        datos = {'bodega': bodega.pk, 'tercero': '', 'motivo': 'Consumo',
+                 'observaciones': '', **self._lineas(**kw)}
+        return self.client.post('/salidas/nueva/', datos)
+
+    def _post_traslado(self, origen, destino, **kw):
+        datos = {'bodega_origen': origen.pk, 'bodega_destino': destino.pk,
+                 'observaciones': '', **self._lineas(**kw)}
+        return self.client.post('/traslados/nuevo/', datos)
+
+
+class EntradaRestringidaTest(_BaseDocumentosTest):
+
+    def test_select_solo_ofrece_su_bodega(self):
+        r = self.client.get('/entradas/nueva/')
+        campo = r.context['form'].fields['bodega']
+        self.assertEqual(list(campo.queryset), [self.propia])
+        # Una sola opción → preseleccionada y sin placeholder.
+        self.assertIsNone(campo.empty_label)
+
+    def test_entrada_en_su_bodega(self):
+        r = self._post_entrada(self.propia)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Entrada.objects.count(), 1)
+        self.assertEqual(self._stock(self.propia), 2)
+
+    def test_post_forjado_a_bodega_ajena_no_escribe(self):
+        r = self._post_entrada(self.ajena)
+        self.assertEqual(r.status_code, 200)  # re-render, sin redirect
+        self.assertEqual(Entrada.objects.count(), 0)
+        self.assertEqual(Movimiento.objects.count(), 0)
+        self.assertEqual(self._stock(self.ajena), 0)
+        self.assertTrue(any('Principal' in m for m in self._mensajes(r)),
+                        self._mensajes(r))
+
+    def test_el_re_render_conserva_las_lineas(self):
+        r = self._post_entrada(self.ajena, cantidad=7)
+        celdas = r.context['lineas_previas'][0]['celdas']
+        self.assertEqual([c['valor'] for c in celdas if c['valor']], ['7'])
+
+
+class SalidaRestringidaTest(_BaseDocumentosTest):
+
+    def test_select_solo_ofrece_su_bodega(self):
+        r = self.client.get('/salidas/nueva/')
+        self.assertEqual(list(r.context['form'].fields['bodega'].queryset),
+                         [self.propia])
+
+    def test_salida_de_su_bodega(self):
+        self._sembrar(self.propia)
+        r = self._post_salida(self.propia)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Salida.objects.count(), 1)
+        self.assertEqual(self._stock(self.propia), 8)
+
+    def test_post_forjado_a_bodega_ajena_no_descuenta(self):
+        self._sembrar(self.ajena)
+        r = self._post_salida(self.ajena)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Salida.objects.count(), 0)
+        self.assertEqual(self._stock(self.ajena), 10)  # intacto
+        self.assertTrue(any('Principal' in m for m in self._mensajes(r)))
+
+
+class TrasladoRestringidoTest(_BaseDocumentosTest):
+
+    def test_solo_el_origen_se_restringe(self):
+        r = self.client.get('/traslados/nuevo/')
+        campos = r.context['form'].fields
+        self.assertEqual(list(campos['bodega_origen'].queryset), [self.propia])
+        self.assertEqual(campos['bodega_destino'].queryset.count(), 2)
+
+    def test_desde_la_suya_hacia_la_ajena_pasa(self):
+        """La operación real: sacar material de su sede hacia otra."""
+        self._sembrar(self.propia)
+        r = self._post_traslado(self.propia, self.ajena)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Traslado.objects.count(), 1)
+        self.assertEqual(self._stock(self.propia), 8)
+        self.assertEqual(self._stock(self.ajena), 2)
+
+    def test_desde_la_ajena_se_rechaza(self):
+        self._sembrar(self.ajena)
+        r = self._post_traslado(self.ajena, self.propia)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Traslado.objects.count(), 0)
+        self.assertEqual(self._stock(self.ajena), 10)
+        self.assertEqual(self._stock(self.propia), 0)
+        self.assertTrue(any('trasladar DESDE tu bodega' in m
+                            for m in self._mensajes(r)), self._mensajes(r))
+
+
+class SinAsignacionRetrocompatTest(_BaseDocumentosTest):
+    """El guardián del baseline: sin fila, todo funciona como siempre."""
+
+    asignar = False
+
+    def test_escribe_en_cualquier_bodega(self):
+        self._post_entrada(self.ajena)
+        self.assertEqual(self._stock(self.ajena), 2)
+        self._post_salida(self.ajena, cantidad=1)
+        self.assertEqual(self._stock(self.ajena), 1)
+        self._post_traslado(self.ajena, self.propia, cantidad=1)
+        self.assertEqual(self._stock(self.propia), 1)
+        self.assertEqual(Traslado.objects.count(), 1)
+
+    def test_los_selects_ofrecen_todas(self):
+        r = self.client.get('/entradas/nueva/')
+        campo = r.context['form'].fields['bodega']
+        self.assertEqual(campo.queryset.count(), 2)
+        self.assertEqual(campo.empty_label, '— Bodega —')
+
+
+class SuperusuarioNoRestringidoTest(_BaseDocumentosTest):
+    """Tiene fila, pero es superusuario: escribe en la bodega ajena."""
+
+    superusuario = True
+
+    def test_escribe_en_la_bodega_ajena(self):
+        r = self._post_entrada(self.ajena)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._stock(self.ajena), 2)
+
+    def test_traslada_desde_la_ajena(self):
+        self._sembrar(self.ajena)
+        r = self._post_traslado(self.ajena, self.propia)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._stock(self.propia), 2)
+
+
+class AvisoBodegaTest(_BaseDocumentosTest):
+
+    def test_aviso_en_los_formularios(self):
+        for url in ('/entradas/nueva/', '/salidas/nueva/', '/traslados/nuevo/',
+                    '/devoluciones/nueva/'):
+            r = self.client.get(url)
+            self.assertContains(r, 'Operas la bodega', msg_prefix=url)
+            self.assertContains(r, 'Principal', msg_prefix=url)
+
+    def test_bodega_inactiva_avisa_distinto(self):
+        self.propia.activa = False
+        self.propia.save(update_fields=['activa'])
+        r = self.client.get('/entradas/nueva/')
+        self.assertContains(r, 'está')
+        self.assertContains(r, 'inactiva')
+        # Sin bodega operable el select queda vacío: no puede registrar nada.
+        self.assertEqual(r.context['form'].fields['bodega'].queryset.count(), 0)
+
+
+class SinAvisoBodegaTest(_BaseDocumentosTest):
+
+    asignar = False
+
+    def test_sin_asignacion_no_hay_aviso(self):
+        self.assertNotContains(self.client.get('/entradas/nueva/'),
+                               'Operas la bodega')
