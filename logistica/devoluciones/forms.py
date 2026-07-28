@@ -10,8 +10,8 @@ from django import forms
 
 # Helpers de la sub-app dueña del dominio (mismo patrón que financiera.pagos
 # reutilizando programacion.pagos).
-from logistica.inventario.forms import _BootstrapForm, _con_buscador
-from logistica.inventario.models import Bodega
+from logistica.inventario.forms import (_BootstrapForm, _con_buscador,
+                                        _restringir_bodega)
 
 
 class DevolucionColegioForm(_BootstrapForm):
@@ -40,9 +40,10 @@ class DevolucionColegioForm(_BootstrapForm):
     observaciones = forms.CharField(label='Observaciones', required=False,
                                     widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['bodega'].queryset = Bodega.objects.filter(activa=True)
+        # Quien opera una bodega solo puede ingresar devoluciones a la suya.
+        _restringir_bodega(self.fields['bodega'], usuario)
         _con_buscador(self.fields['bodega'])
 
     def clean_colegio(self):

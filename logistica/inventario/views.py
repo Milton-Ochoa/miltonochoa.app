@@ -24,7 +24,7 @@ from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
 from .models import (GRADOS, AdjuntoEntrada, Bodega, BodegaUsuario, Categoria,
                      Entrada, Item, Movimiento, Prestamo, Salida, Stock,
                      Tercero, Traslado)
-from .permisos import solo_logistica
+from .permisos import BodegaNoPermitida, exigir_bodega, solo_logistica
 from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, registrar_ajuste,
@@ -414,19 +414,21 @@ def entradas_lista(request):
 
 @solo_logistica
 def entrada_nueva(request):
-    form = EntradaForm(request.POST or None)
+    form = EntradaForm(request.POST or None, usuario=request.user)
     if request.method == 'POST':
         try:
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
+            # 2.ª barrera (la 1.ª es el queryset recortado del form).
+            exigir_bodega(request.user, form.cleaned_data['bodega'])
             lineas = parsear_lineas_material(request.POST)
             entrada = registrar_entrada(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
                 usuario=request.user,
                 proveedor=form.cleaned_data['proveedor'],
                 observaciones=form.cleaned_data['observaciones'])
-        except ValueError as e:
+        except (ValueError, BodegaNoPermitida) as e:
             if str(e):
                 messages.error(request, str(e))
         else:
@@ -503,12 +505,13 @@ def salidas_lista(request):
 
 @solo_logistica
 def salida_nueva(request):
-    form = SalidaForm(request.POST or None)
+    form = SalidaForm(request.POST or None, usuario=request.user)
     if request.method == 'POST':
         try:
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
+            exigir_bodega(request.user, form.cleaned_data['bodega'])
             lineas = parsear_lineas_material(request.POST)
             salida = registrar_salida(
                 bodega=form.cleaned_data['bodega'], lineas=lineas,
@@ -516,7 +519,7 @@ def salida_nueva(request):
                 tercero=form.cleaned_data['tercero'],
                 motivo=form.cleaned_data['motivo'],
                 observaciones=form.cleaned_data['observaciones'])
-        except (ValueError, StockInsuficiente) as e:
+        except (ValueError, StockInsuficiente, BodegaNoPermitida) as e:
             if str(e):
                 messages.error(request, str(e))
         else:
@@ -551,19 +554,22 @@ def traslados_lista(request):
 
 @solo_logistica
 def traslado_nuevo(request):
-    form = TrasladoForm(request.POST or None)
+    form = TrasladoForm(request.POST or None, usuario=request.user)
     if request.method == 'POST':
         try:
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')
+            # Solo el origen: el destino puede ser cualquier bodega.
+            exigir_bodega(request.user, form.cleaned_data['bodega_origen'],
+                          accion='trasladar desde')
             lineas = parsear_lineas_material(request.POST)
             traslado = registrar_traslado(
                 bodega_origen=form.cleaned_data['bodega_origen'],
                 bodega_destino=form.cleaned_data['bodega_destino'],
                 lineas=lineas, usuario=request.user,
                 observaciones=form.cleaned_data['observaciones'])
-        except (ValueError, StockInsuficiente) as e:
+        except (ValueError, StockInsuficiente, BodegaNoPermitida) as e:
             if str(e):
                 messages.error(request, str(e))
         else:
