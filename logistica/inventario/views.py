@@ -24,7 +24,8 @@ from .forms import (BodegaForm, CategoriaForm, EntradaForm, MaterialForm,
 from .models import (GRADOS, AdjuntoEntrada, Bodega, BodegaUsuario, Categoria,
                      Entrada, Item, Movimiento, Prestamo, Salida, Stock,
                      Tercero, Traslado)
-from .permisos import BodegaNoPermitida, exigir_bodega, solo_logistica
+from .permisos import (BodegaNoPermitida, bodegas_escribibles, exigir_bodega,
+                       exigir_bodegas, puede_escribir_en, solo_logistica)
 from .pivote import agrupar_materiales, agrupar_materiales_por_bodega
 from .services import (ErrorDevolucion, StockInsuficiente, crear_prestamo,
                        items_bajo_minimo, kardex, registrar_ajuste,
@@ -345,6 +346,11 @@ def stock(request):
     en columnas. Cada celda abre el ajuste de ese Item×Bodega — también las que
     están en 0 o sin fila de `Stock` todavía (el servicio la crea)."""
     filas = agrupar_materiales_por_bodega(_items_activos(), _stocks_visibles())
+    # La lectura sigue siendo global: las filas de una bodega ajena se ven
+    # completas (y enlazan al kardex), solo pierden el botón de ajuste.
+    operables = set(bodegas_escribibles(request.user).values_list('pk', flat=True))
+    for fila in filas:
+        fila['editable'] = fila['bodega'].pk in operables
     alertas = list(items_bajo_minimo())
     return render(request, 'inventario/stock.html', {
         'filas': filas,
@@ -448,13 +454,23 @@ def entrada_detalle(request, pk):
     entrada = get_object_or_404(
         Entrada.objects.select_related('bodega', 'creado_por')
         .prefetch_related('lineas__item__categoria', 'adjuntos__subido_por'), pk=pk)
-    return render(request, 'inventario/entrada_detalle.html', {'entrada': entrada})
+    return render(request, 'inventario/entrada_detalle.html', {
+        'entrada': entrada,
+        # La entrada de otra bodega se ve entera (lectura global), pero sus
+        # adjuntos no se tocan.
+        'puede_operar': puede_escribir_en(request.user, entrada.bodega),
+    })
 
 
 @require_POST
 @solo_logistica
 def entrada_adjunto_subir(request, pk):
-    entrada = get_object_or_404(Entrada, pk=pk)
+    entrada = get_object_or_404(Entrada.objects.select_related('bodega'), pk=pk)
+    if not puede_escribir_en(request.user, entrada.bodega):
+        messages.error(request, f'La entrada #{entrada.pk} es de la bodega '
+                                f'"{entrada.bodega.nombre}": no puedes adjuntar '
+                                f'archivos a documentos de otra bodega.')
+        return redirect('log_entradas_detalle', pk=entrada.pk)
     archivo = request.FILES.get('archivo')
     if not archivo:
         messages.error(request, 'Selecciona un archivo para subir.')
@@ -473,8 +489,14 @@ def entrada_adjunto_subir(request, pk):
 @require_POST
 @solo_logistica
 def entrada_adjunto_eliminar(request, adjunto_id):
-    adjunto = get_object_or_404(AdjuntoEntrada, pk=adjunto_id)
+    adjunto = get_object_or_404(
+        AdjuntoEntrada.objects.select_related('entrada__bodega'), pk=adjunto_id)
     entrada_pk = adjunto.entrada_id
+    if not puede_escribir_en(request.user, adjunto.entrada.bodega):
+        messages.error(request, f'El adjunto es de una entrada de la bodega '
+                                f'"{adjunto.entrada.bodega.nombre}": no puedes '
+                                f'eliminarlo.')
+        return redirect('log_entradas_detalle', pk=entrada_pk)
     # Primero el archivo del storage, luego la fila (patrón soportes de pago).
     adjunto.archivo.delete(save=False)
     adjunto.delete()
@@ -617,7 +639,10 @@ def prestamo_nuevo(request):
             if not form.is_valid():
                 _form_a_messages(request, form)
                 raise ValueError('')  # cae al re-render conservando las líneas
-            lineas = parsear_lineas_material(request.POST, con_bodega=True)
+            # La bodega va por LÍNEA: la valida el parser (no hay campo de
+            # cabecera cuyo queryset recortar).
+            lineas = parsear_lineas_material(request.POST, con_bodega=True,
+                                             usuario=request.user)
             prestamo = crear_prestamo(
                 tercero=form.cleaned_data['tercero'],
                 fecha_compromiso=form.cleaned_data['fecha_compromiso'],
@@ -634,7 +659,8 @@ def prestamo_nuevo(request):
         'form': form,
         'materiales': _materiales_para_lineas(),
         'grados': GRADOS,
-        'bodegas': Bodega.objects.filter(activa=True).order_by('nombre'),
+        'bodegas': (bodegas_escribibles(request.user)
+                    .filter(activa=True).order_by('nombre')),
         'lineas_previas': _lineas_previas_material(
             request.POST if request.method == 'POST' else None,
             con_bodega=True),
@@ -649,8 +675,13 @@ def prestamo_detalle(request, pk):
                           'devoluciones__creado_por',
                           'devoluciones__movimientos__item__categoria',
                           'devoluciones__movimientos__bodega'), pk=pk)
-    return render(request, 'inventario/prestamo_detalle.html',
-                  {'prestamo': prestamo})
+    return render(request, 'inventario/prestamo_detalle.html', {
+        'prestamo': prestamo,
+        # Para el modal de devolución: las líneas de una bodega ajena se pintan
+        # bloqueadas (comodidad; el rechazo real lo hace `prestamo_devolver`).
+        'bodegas_operables': set(
+            bodegas_escribibles(request.user).values_list('pk', flat=True)),
+    })
 
 
 @require_POST
@@ -678,6 +709,20 @@ def prestamo_devolver(request, pk):
                 raise ErrorDevolucion(
                     f'Cantidad inválida para "{linea.item.nombre}".')
             lineas.append((linea, cantidad))
+        try:
+            exigir_bodegas(request.user, {l.bodega for l, _ in lineas},
+                           accion='devolver material a')
+        except BodegaNoPermitida as e:
+            # Rechazo TOTAL, no filtrado silencioso: `registrar_devolucion` es
+            # atómico y recalcula el estado del préstamo, así que saltarse las
+            # líneas ajenas lo dejaría en PARCIAL con un toast de éxito — y
+            # silenciar líneas es un agujero de auditoría. El mensaje enseña la
+            # salida. Solo pasa con préstamos mixtos históricos: los nuevos de
+            # un usuario restringido salen todos de su bodega.
+            raise ErrorDevolucion(
+                f'La devolución incluye líneas de la bodega "{e.bodega}", que '
+                f'no puedes operar. Registra solo las líneas de "{e.asignada}", '
+                f'o pide a alguien de "{e.bodega}" que devuelva las suyas.')
         devolucion = registrar_devolucion(
             prestamo=prestamo, lineas=lineas, usuario=request.user,
             observaciones=request.POST.get('observaciones', ''))
@@ -755,6 +800,13 @@ def ajuste_crear(request):
         return redirect('log_stock')
     item = get_object_or_404(Item, pk=item_id)
     bodega = get_object_or_404(Bodega, pk=bodega_id)
+    # POST crudo (el modal no pasa por form): el guard es la única barrera.
+    if not puede_escribir_en(request.user, bodega):
+        messages.error(
+            request,
+            f'No puedes ajustar existencias en "{bodega.nombre}": solo operas '
+            f'tu bodega. Puedes consultarla, pero no escribir en ella.')
+        return redirect('log_stock')
     try:
         nueva_cantidad = int(request.POST.get('nueva_cantidad', '').strip())
     except ValueError:

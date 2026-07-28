@@ -15,7 +15,8 @@ servicios, nunca un form.save().
 from django import forms
 
 from .models import GRADOS, Bodega, Categoria, Item, Prestamo, Tercero
-from .permisos import bodega_asignada, bodegas_escribibles, es_restringido
+from .permisos import (bodega_asignada, bodegas_escribibles, es_restringido,
+                       puede_escribir_en)
 
 
 class _BootstrapMixin:
@@ -287,7 +288,7 @@ def _cantidad_de_celda(crudo, grado):
     return cantidad or None
 
 
-def parsear_lineas_material(post, *, con_bodega=False):
+def parsear_lineas_material(post, *, con_bodega=False, usuario=None):
     """Convierte el POST de `_lineas_material.html` en líneas de servicio.
 
     Cada fila del formulario es un MATERIAL con sus 12 cantidades por grado
@@ -296,6 +297,11 @@ def parsear_lineas_material(post, *, con_bodega=False):
     por grado con cantidad > 0. Lee las listas paralelas `linea_material`
     (clave `'<categoria_id>:<referencia>'`), `linea_g0`…`linea_g11` y
     `linea_bodega` (solo si `con_bodega`, préstamos).
+
+    Con `usuario` (y solo entonces) valida además que la bodega de cada fila
+    sea operable por esa persona: en los préstamos la bodega va POR LÍNEA, así
+    que no hay form de cabecera donde recortar el queryset. El default `None`
+    deja intacto todo lo que no manda usuario (devoluciones y los tests).
 
     Devuelve [(Item, cantidad)] o [(Item, Bodega, cantidad)] — el contrato que
     ya esperan los servicios, que NO cambian. Las filas totalmente vacías se
@@ -343,6 +349,13 @@ def parsear_lineas_material(post, *, con_bodega=False):
                       if bodega_id.isdigit() else None)
             if bodega is None:
                 raise ValueError('Hay una línea sin bodega válida.')
+            # Mensaje DISTINTO del de arriba a propósito: "no puedes operarla"
+            # y "no existe/está inactiva" son problemas diferentes y el usuario
+            # tiene que poder distinguirlos.
+            if usuario is not None and not puede_escribir_en(usuario, bodega):
+                raise ValueError(
+                    f'No puedes registrar movimientos en "{bodega.nombre}": tu '
+                    f'bodega asignada es "{bodega_asignada(usuario)}".')
 
         for grado, cantidad in sorted(cantidades.items()):
             item = items.get(grado)
