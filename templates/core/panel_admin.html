@@ -25,6 +25,14 @@
     <a href="{{ areas.0.url }}usuarios/profesores/">Profesores</a>.
   </p>
 
+  {# Un solo control para las 3 tablas: los inhabilitados nacen ocultos en el parcial. #}
+  <div class="form-check form-switch mt-4 mb-0">
+    <input class="form-check-input" type="checkbox" id="verInhabilitados">
+    <label class="form-check-label small text-muted" for="verInhabilitados">
+      Ver usuarios inhabilitados
+    </label>
+  </div>
+
   {# ── Usuarios de etiqueta: una sección por área desde el mismo parcial ── #}
   {% for area in usuarios_por_area %}
     {% include 'core/_tabla_usuarios_area.html' with area=area %}
@@ -162,7 +170,7 @@ const URLS = {
     crear:    "{% url 'ajax_crear_usuario_area' %}",
     editar:   "{% url 'ajax_editar_usuario_area' %}",
     resetear: "{% url 'ajax_resetear_password_area' %}",
-    eliminar: "{% url 'ajax_eliminar_usuario_area' %}",
+    activar:  "{% url 'ajax_activar_usuario_area' %}",
     permisos:        "{% url 'ajax_permisos_usuario' %}",
     permisosGuardar: "{% url 'ajax_guardar_permisos_usuario' %}",
 };
@@ -246,15 +254,31 @@ function submitResetArea() {
         .catch(() => alert('Error de conexión.'));
 }
 
-function eliminarArea(userId, username) {
-    if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
-    _post(URLS.eliminar, { user_id: userId })
+// En la app no se elimina un usuario: se inhabilita (`is_active`). El estado deseado va
+// explícito en el POST (1/0) → idempotente aunque haya dos pestañas abiertas.
+function activarArea(userId, username, activo) {
+    const mensaje = activo
+        ? `¿Habilitar de nuevo al usuario "${username}"?`
+        : `¿Inhabilitar al usuario "${username}"? Se le bloqueará el acceso; podrás habilitarlo de nuevo cuando quieras.`;
+    if (!confirm(mensaje)) return;
+    _post(URLS.activar, { user_id: userId, activo: activo ? 1 : 0 })
         .then(data => {
             if (data.ok) location.reload();
-            else alert(data.error || 'Error al eliminar.');
+            else alert(data.error || 'Error al cambiar el estado del usuario.');
         })
         .catch(() => alert('Error de conexión.'));
 }
+
+// Un solo control para las 3 tablas de área (el parcial se incluye una vez por área).
+(function () {
+    var chk = document.getElementById('verInhabilitados');
+    if (!chk) return;
+    chk.addEventListener('change', function () {
+        document.querySelectorAll('tr[data-inactivo="1"]').forEach(function (tr) {
+            tr.classList.toggle('d-none', !chk.checked);
+        });
+    });
+})();
 
 // ── Permisos por módulo ──────────────────────────────────────────────────────
 const _NIVEL_LABELS = { SIN: 'Sin acceso', LEC: 'Solo lectura', COM: 'Completo' };

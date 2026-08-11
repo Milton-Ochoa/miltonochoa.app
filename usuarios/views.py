@@ -265,24 +265,47 @@ def ajax_editar_usuario(request):
 
     return JsonResponse({'ok': True})
 
+def _leer_activo(request):
+    """Lee el estado deseado del POST. **Estado explícito, no toggle ciego**: el cliente
+    manda a qué valor quiere llegar → la acción es idempotente y dos pestañas abiertas no
+    se pisan. Devuelve bool o None si el valor no es válido."""
+    valor = request.POST.get('activo')
+    return {'1': True, '0': False}.get(valor)
+
+
+# No se puede ELIMINAR un usuario desde la app: se inhabilita (`is_active`). Todas las FK
+# de auditoría son SET_NULL (CancelacionClase.registrado_por, PagoRealizado.marcado_por,
+# Movimiento.usuario, HistorialCambio, EventoOrden…), así que borrar al User destruye el
+# rastro de quién hizo qué y es irreversible. El borrado real queda solo en /admin/.
+#
+# Inhabilitar basta para cerrarle la puerta y NO requiere tocar la ruta de autenticación:
+# `ModelBackend` (no hay AUTHENTICATION_BACKENDS custom) rechaza a un `is_active=False` en
+# el login y convierte su sesión ya abierta en anónima en el siguiente request.
+
 @user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
-def ajax_eliminar_usuario(request):
-    """Elimina el perfil y el User asociado. Acción irreversible — registrada en el log."""
+def ajax_activar_usuario(request):
+    """Inhabilita o habilita el User de un perfil de colegio/profesor (`is_active`).
+
+    El perfil (UsuarioColegio/UsuarioProfesor) **no se toca**: al rehabilitar, el usuario
+    vuelve con su colegio/profesor vinculado intacto.
+    """
     tipo      = request.POST.get('tipo')
     perfil_id = request.POST.get('perfil_id')
+    activo    = _leer_activo(request)
 
-    if tipo not in ('colegio', 'profesor') or not perfil_id:
+    if tipo not in ('colegio', 'profesor') or not perfil_id or activo is None:
         return JsonResponse({'ok': False, 'error': 'Datos inválidos.'}, status=400)
 
     modelo = UsuarioColegio if tipo == 'colegio' else UsuarioProfesor
     perfil = get_object_or_404(modelo, id=perfil_id)
-    nombre = perfil.user.username
-    user   = perfil.user
-    perfil.delete()
-    user.delete()
-    logger.info('Usuario eliminado: %s (por %s)', nombre, request.user.username)
-    return JsonResponse({'ok': True, 'username': nombre})
+    user = perfil.user
+    user.is_active = activo
+    user.save(update_fields=['is_active'])
+    logger.info('Usuario %s: %s (por %s)',
+                'habilitado' if activo else 'inhabilitado',
+                user.username, request.user.username)
+    return JsonResponse({'ok': True, 'username': user.username, 'activo': activo})
 
 @user_passes_test(es_personal_programacion, login_url='login')
 @require_POST
@@ -375,15 +398,24 @@ def ajax_crear_usuario_area(request):
 
 @user_passes_test(solo_admin, login_url='login')
 @require_POST
-def ajax_eliminar_usuario_area(request):
-    """Elimina un usuario de etiqueta. Acción irreversible — registrada en el log."""
+def ajax_activar_usuario_area(request):
+    """Inhabilita o habilita un empleado de etiqueta (`is_active`). Ver la nota de
+    `ajax_activar_usuario`: en la app no existe el borrado de usuarios.
+
+    `_get_usuario_etiqueta` NO filtra por `is_active` (sirve tal cual para rehabilitar) y ya
+    excluye superusuarios; el panel es solo del superusuario → no hace falta un guard
+    anti-auto-bloqueo (nadie puede inhabilitarse a sí mismo por aquí).
+    """
     user = _get_usuario_etiqueta(request.POST.get('user_id'))
-    if not user:
+    activo = _leer_activo(request)
+    if not user or activo is None:
         return JsonResponse({'ok': False, 'error': 'Usuario no válido.'}, status=400)
-    nombre = user.username
-    user.delete()
-    logger.info('Usuario de etiqueta eliminado: %s (por %s)', nombre, request.user.username)
-    return JsonResponse({'ok': True, 'username': nombre})
+    user.is_active = activo
+    user.save(update_fields=['is_active'])
+    logger.info('Usuario de etiqueta %s: %s (por %s)',
+                'habilitado' if activo else 'inhabilitado',
+                user.username, request.user.username)
+    return JsonResponse({'ok': True, 'username': user.username, 'activo': activo})
 
 @user_passes_test(solo_admin, login_url='login')
 @require_POST

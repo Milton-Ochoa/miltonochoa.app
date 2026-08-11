@@ -36,15 +36,16 @@ urlpatterns = [
     path('gestionar/', lambda r: redirect('gestionar_usuarios_colegios')),
     path('', lambda r: redirect('gestionar_usuarios_colegios'), name='gestionar_usuarios'),
 
+    # No hay ruta de "eliminar": los usuarios se inhabilitan (ver usuarios/views.py).
     path('ajax/crear/',             views.ajax_crear_usuario,    name='ajax_crear_usuario'),
     path('ajax/editar/',            views.ajax_editar_usuario,   name='ajax_editar_usuario'),
-    path('ajax/eliminar/',          views.ajax_eliminar_usuario, name='ajax_eliminar_usuario'),
+    path('ajax/activar/',           views.ajax_activar_usuario,  name='ajax_activar_usuario'),
     path('ajax/resetear-password/', views.ajax_resetear_password, name='ajax_resetear_password'),
 
     # Usuarios de etiqueta (grupo area:programacion) — gestionados desde el panel del apex.
     path('ajax/area/crear/',    views.ajax_crear_usuario_area,     name='ajax_crear_usuario_area'),
     path('ajax/area/editar/',   views.ajax_editar_usuario_area,    name='ajax_editar_usuario_area'),
-    path('ajax/area/eliminar/', views.ajax_eliminar_usuario_area,  name='ajax_eliminar_usuario_area'),
+    path('ajax/area/activar/',  views.ajax_activar_usuario_area,   name='ajax_activar_usuario_area'),
     path('ajax/area/resetear/', views.ajax_resetear_password_area, name='ajax_resetear_password_area'),
 
     # Permisos granulares por módulo (modal del panel del apex).
