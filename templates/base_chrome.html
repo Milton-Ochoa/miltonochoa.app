@@ -948,22 +948,38 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <script>
-    // Sidebar acordeón: al abrir un grupo principal se cierra el otro que esté abierto.
-    // Solo aplica a los toggles top-level (hijos DIRECTOS de .sidebar-menu); los submenús
-    // anidados (Usuarios, Pagos→Profesores/Monitores) quedan fuera por el selector `>`.
+    // Sidebar acordeón: al abrir una sección se cierran las HERMANAS de su mismo nivel.
+    // Se agrupa por CONTENEDOR (`parentElement` del toggle), no por "hijo directo de
+    // .sidebar-menu": así entran también los submenús anidados, que viven dentro de un
+    // `.collapse-inner` (logística: Catálogos + Movimientos; programación: Simulacros +
+    // Usuarios). Antes solo se acordeonaban los top-level, y en logística el menú real
+    // está todo anidado bajo "Inventario" → no se acordeonaba nada.
     // En modo rail/flyout no se dispara `show.bs.collapse` (no hay collapse, se usan
     // flyouts), así que el acordeón es inerte ahí. Como cerrar dispara `hidden.bs.collapse`,
     // la persistencia en localStorage del bloque anterior converge sola al estado acordeón.
     document.addEventListener('DOMContentLoaded', function() {
-        var topTargets = Array.from(document.querySelectorAll('.sidebar-menu > .sidebar-section-toggle'))
-            .map(function(t) { return document.querySelector(t.getAttribute('href')); })
-            .filter(Boolean);
-        topTargets.forEach(function(target) {
-            target.addEventListener('show.bs.collapse', function() {
-                topTargets.forEach(function(other) {
-                    if (other !== target && other.classList.contains('show')) {
-                        bootstrap.Collapse.getOrCreateInstance(other).hide();
-                    }
+        var grupos = new Map();
+        document.querySelectorAll('.sidebar-menu .sidebar-section-toggle').forEach(function(toggle) {
+            var sel = toggle.getAttribute('href');
+            if (!sel) return;
+            var target = document.querySelector(sel);
+            if (!target) return;
+            if (!grupos.has(toggle.parentElement)) grupos.set(toggle.parentElement, []);
+            grupos.get(toggle.parentElement).push(target);
+        });
+        grupos.forEach(function(hermanos) {
+            if (hermanos.length < 2) return;   // grupo de uno: no hay hermano que cerrar
+            hermanos.forEach(function(target) {
+                target.addEventListener('show.bs.collapse', function(ev) {
+                    // `show.bs.collapse` BURBUJEA: sin este guard, abrir un submenú anidado
+                    // dispararía también el handler del collapse padre y cerraría los grupos
+                    // top-level hermanos del que contiene al submenú.
+                    if (ev.target !== target) return;
+                    hermanos.forEach(function(other) {
+                        if (other !== target && other.classList.contains('show')) {
+                            bootstrap.Collapse.getOrCreateInstance(other).hide();
+                        }
+                    });
                 });
             });
         });

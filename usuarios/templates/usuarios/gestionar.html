@@ -44,13 +44,19 @@
         border: 1px solid #495057; background: #fff; color: #212529; border-radius: 4px;
     }
     /* Anchos relativos para que la tabla quepa en pantalla sin scroll horizontal */
-    .col-entidad  { width: 45%; }
-    .col-username { width: 35%; }
+    .col-entidad  { width: 40%; }
+    .col-username { width: 27%; }
+    .col-estado   { width: 13%; }
     .col-acc      { width: 20%; text-align: center; }
     .password-field { font-family: monospace; letter-spacing: 0.05em; }
 </style>
 
 <div class="container-fluid py-3">
+{# Los usuarios inhabilitados se ocultan por defecto; este control los trae de vuelta. #}
+<div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" id="verInhabilitados">
+    <label class="form-check-label small text-muted" for="verInhabilitados">Ver inhabilitados</label>
+</div>
 {% if tipo == 'colegio' %}
     {% include 'usuarios/_partial_tabla.html' with col1_label='Colegio Asignado' %}
 {% else %}
@@ -225,6 +231,7 @@ const TIPO = '{{ tipo }}';
     var filas  = Array.from(document.querySelectorAll('#cuerpoTablaUsuarios tr[data-entidad]'));
     var ctrl   = document.getElementById('paginaControlesUsr');
     var cont   = document.getElementById('contadorVisibles');
+    var verInh = document.getElementById('verInhabilitados');
 
     function filtradas() {
         var q = {};
@@ -233,6 +240,9 @@ const TIPO = '{{ tipo }}';
             if (val) q[inp.dataset.filtro] = val;
         });
         return filas.filter(function (tr) {
+            // Los inhabilitados se descartan aquí (no con display) para que el contador
+            // de visibles y la paginación queden coherentes solos.
+            if (tr.dataset.estado === 'inhabilitado' && !(verInh && verInh.checked)) return false;
             for (var k in q) {
                 if ((tr.dataset[k] || '').indexOf(q[k]) === -1) return false;
             }
@@ -291,6 +301,7 @@ const TIPO = '{{ tipo }}';
     inputs.forEach(function (inp) {
         inp.addEventListener('input', function () { pagina = 1; render(); });
     });
+    if (verInh) verInh.addEventListener('change', function () { pagina = 1; render(); });
 
     render();
 })();
@@ -392,20 +403,27 @@ function submitReset() {
         .catch(() => alert('Error de conexión.'));
 }
 
-// ── Eliminar ────────────────────────────────────────────────────────────────
-function confirmarEliminar(perfilId, username) {
-    if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
+// ── Inhabilitar / habilitar ─────────────────────────────────────────────────
+// En la app no se elimina un usuario (borrarlo destruiría el rastro de auditoría, que
+// cuelga de FKs SET_NULL). El estado deseado va explícito en el POST (1/0), no como
+// toggle ciego → idempotente aunque haya dos pestañas abiertas.
+function cambiarActivo(perfilId, username, activo) {
+    const mensaje = activo
+        ? `¿Habilitar de nuevo al usuario "${username}"?`
+        : `¿Inhabilitar al usuario "${username}"? Se le bloqueará el acceso; podrás habilitarlo de nuevo cuando quieras.`;
+    if (!confirm(mensaje)) return;
 
     const body = new FormData();
     body.append('csrfmiddlewaretoken', CSRF);
     body.append('tipo', TIPO);
     body.append('perfil_id', perfilId);
+    body.append('activo', activo ? 1 : 0);
 
-    fetch('/usuarios/ajax/eliminar/', { method: 'POST', body, credentials: 'same-origin' })
+    fetch("{% url 'ajax_activar_usuario' %}", { method: 'POST', body, credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (data.ok) location.reload();
-            else alert(data.error || 'Error al eliminar.');
+            else alert(data.error || 'Error al cambiar el estado del usuario.');
         })
         .catch(() => alert('Error de conexión.'));
 }

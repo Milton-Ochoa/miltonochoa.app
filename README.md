@@ -578,8 +578,8 @@ comparte en `.miltonochoa.app` (**SSO**).
 
 **Panel del superusuario.** El superusuario no entra al área directamente, sino al **panel**
 (`miltonochoa.app/panel/`): acceso a todas las áreas, gestión de los **usuarios de etiqueta**
-(alta/reset/baja/correo) y edición de sus **permisos por módulo** (ver abajo). Los usuarios
-de colegio/profesor se gestionan dentro del área.
+(alta/reset/correo/inhabilitar) y edición de sus **permisos por módulo** (ver abajo). Los
+usuarios de colegio/profesor se gestionan dentro del área.
 
 | Rol | Vinculación | Rutas permitidas (en `programacion.miltonochoa.app`) |
 |-----|-------------|------------------------------------------------------|
@@ -618,6 +618,14 @@ uno de tres niveles:
 - **Empleados de área:** el admin crea el usuario con clave genérica + correo obligatorio. En el
   primer ingreso el sistema fuerza el cambio de contraseña. Hay auto-servicio
   "Olvidé mi contraseña" vía Resend/SMTP.
+
+**Dar de baja a alguien: se inhabilita, no se elimina.** La app **no borra usuarios**: el
+botón **Inhabilitar** desactiva la cuenta (`User.is_active`), le cierra el acceso de
+inmediato —el login la rechaza y su sesión abierta muere en el siguiente request— y es
+**reversible** con **Habilitar**. Los inhabilitados quedan ocultos en las listas hasta que
+se marca **Ver inhabilitados**. Se hace así porque los registros de auditoría (quién canceló
+una clase, quién marcó un pago, quién movió inventario…) apuntan al usuario: borrarlo
+destruiría ese rastro. Un borrado real solo es posible desde el admin de Django.
 
 **Ratelimit** (`@rate_limit` en `usuarios/ratelimit.py`):
 - Login: **10 intentos / 60 s** por IP.
@@ -751,7 +759,7 @@ coverage report -m
 coverage html  # → htmlcov/index.html
 ```
 
-**Baseline actual: 1072 tests OK.**
+**Baseline actual: 1092 tests OK.**
 
 **Convenciones:**
 - Tests con `unittest` / `Django TestCase`.
@@ -910,7 +918,7 @@ proyecto, regenera el grafo con `/graphify . --update` para mantenerlo actualiza
    desde ahí: `git checkout -b feat/mi-feature`. **Nunca** se commitea directo a `dev` ni a `main`.
 2. Comenta el **porqué** de decisiones no obvias, no el **qué**.
 3. Respeta la convención **ruta de import ≠ `app_label`** (ver [Estructura](#️-estructura-del-proyecto)).
-4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 1072 tests OK).
+4. Añade/actualiza tests y ejecuta `python manage.py test` (baseline: 1092 tests OK).
 5. Si tocas modelos, **incluye la migración** en el commit.
 6. Si modificas la estructura (rutas, modelos, áreas), actualiza también
    [`CLAUDE.md`](CLAUDE.md) y regenera el grafo con `/graphify . --update`.
