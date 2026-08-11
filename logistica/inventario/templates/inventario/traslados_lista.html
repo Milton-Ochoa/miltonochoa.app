@@ -21,17 +21,15 @@
             <table class="table table-hover align-middle mb-0 tabla-inv" id="tablaTraslados">
                 <thead class="table-dark">
                     <tr>
-                        <th style="width: 7%;">#</th>
-                        <th style="width: 16%;">Fecha</th>
-                        <th style="width: 20%;">Origen</th>
-                        <th style="width: 20%;">Destino</th>
+                        <th style="width: 18%;">Fecha</th>
+                        <th style="width: 24%;">Origen</th>
+                        <th style="width: 24%;">Destino</th>
                         <th style="width: 8%; text-align: right;">Líneas</th>
                         <th style="width: 8%; text-align: right;">Unidades</th>
-                        <th style="width: 12%;">Registró</th>
+                        <th style="width: 14%;">Registró</th>
                         <th style="width: 4%;"></th>
                     </tr>
                     <tr class="fila-filtros">
-                        <th></th>
                         <th><input type="text" data-filtro="fecha" placeholder="aaaa-mm-dd"></th>
                         <th><input type="text" data-filtro="origen"></th>
                         <th><input type="text" data-filtro="destino"></th>
@@ -48,7 +46,6 @@
                         data-origen="{{ t.bodega_origen.nombre|lower }}"
                         data-destino="{{ t.bodega_destino.nombre|lower }}"
                         data-usuario="{{ t.creado_por.username|lower }}">
-                        <td class="fw-bold">{{ t.pk }}</td>
                         <td>{{ t.creado_en|date:'Y-m-d H:i' }}</td>
                         <td>{{ t.bodega_origen.nombre }}</td>
                         <td>{{ t.bodega_destino.nombre }}</td>
@@ -63,7 +60,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td colspan="7" class="text-center text-muted py-4">
                             <i class="fas fa-right-left me-1"></i> Sin traslados registrados todavía.
                         </td>
                     </tr>
