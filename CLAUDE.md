@@ -891,6 +891,18 @@ checkboxes de tipo y rango de fechas). Tests en
   (lo fija el middleware) controla el menú completo en `base.html`. El staff **no** es
   `is_staff`. El panel y el CRUD de usuarios de etiqueta (`usuarios.views.solo_admin`) y
   las acciones destructivas/borrado siguen gated a `is_superuser`.
+- **Portal del gestor de colegio:** ve el dashboard de `/colegios/` en **solo lectura** y
+  acotado a su propio colegio (el middleware fuerza el `id_col` de
+  `request.colegio_anio_activo`, ignorando el de la URL). Desde ago 2026 ve **también el
+  panel "Estadísticas de avance"** (vistas **Simple** y **Detallada**), que antes estaba
+  gateado a `request.es_personal_programacion` en `colegios/dashboard.html` — el gate
+  ahora es solo `{% if not stats_vacio %}`, **en los dos puntos**: la sección
+  `#seccion-stats` y el `json_script` `stats-data` que la alimenta (sin ese segundo, el
+  panel se pinta vacío porque `initStats()` sale por `STATS_JSON` indefinido). No expone
+  nada nuevo: el nombre del profesor de cada clase ya está en el cronograma. Los perfiles
+  de **profesor** no llegan al panel (`/colegios/` no está en `_PERMITIDAS_PROFESOR`). Las
+  acciones de edición (botón "Crear clase", `#modalClase`, `ondblclick` de la celda) siguen
+  gateadas a staff. Tests: `colegios/tests/test_vistas.py::StatsVisiblesParaColegioTest`.
 - **Sacar a alguien del sistema: se INHABILITA, no se elimina.** En la app **no existe**
   "eliminar usuario" (se retiraron vistas, URLs, botones y JS en ago 2026); el borrado real
   queda solo en `/admin/` (superusuario). **Por qué:** todas las FK de auditoría son

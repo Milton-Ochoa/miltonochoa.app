@@ -153,6 +153,11 @@ de extremo a extremo. Es un paquete Python (`programacion/`) que agrupa **10 sub
   colegio → grado → bloque, con caché HTML por mes (10 min).
 - **Dashboard por colegio**: matriz `grado × fecha` editable inline con HTMX, con recálculo
   automático de secuencia al mover clases. Badge de calendario A/B y periodo label.
+- **Estadísticas de avance curricular** bajo el cronograma, en dos vistas: **Simple**
+  (badges de unidades dadas / repetidas / pendientes por libro y materia) y **Detallada**
+  (historial cronológico de clases con barra de progreso). Las ven tanto el personal de
+  programación como los **usuarios de colegio**, que las consultan de su propio colegio en
+  solo lectura.
 - **Recomendación inteligente** de la siguiente unidad al programar, considerando libro
   asignado, fecha y socializaciones.
 - **Clases particulares** fuera del horario regular.
