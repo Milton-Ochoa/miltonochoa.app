@@ -126,11 +126,16 @@
     </div>
     {% comment %}
     Estadísticas de Avance Curricular.
-    Solo visible para staff y cuando hay clases registradas (stats_vacio=False).
+    Visible para TODO el que puede abrir el dashboard (staff de programación y gestores
+    de colegio) siempre que haya clases registradas (stats_vacio=False). El panel es de
+    solo lectura y el gestor de colegio solo ve su propio colegio (el middleware fuerza
+    id_col), así que no expone nada que no muestre ya el cronograma —incluido el nombre
+    del profesor de cada clase—. Los perfiles de profesor no llegan aquí: /colegios/ no
+    está en _PERMITIDAS_PROFESOR.
     El contenido se renderiza completamente en JS (renderLibrosAsignados()) usando
     STATS_JSON inyectado más abajo — no hay HTML de stats en el servidor.
     {% endcomment %}
-    {% if not stats_vacio and request.es_personal_programacion %}
+    {% if not stats_vacio %}
     <div class="mt-4" id="seccion-stats">
       <div class="d-flex align-items-center flex-wrap gap-2 rounded-top bg-dark px-3 py-2" style="border:1px solid #dee2e6; border-bottom:none;">
         <span class="text-white fw-bold me-2" style="font-size:0.9rem;"><i class="fas fa-chart-bar me-1"></i> Estadísticas de avance</span>
@@ -458,7 +463,8 @@ Datos para JS: inyectados como constantes JSON desde Django.
     const BLOQUES_POR_GRADO = JSON.parse(document.getElementById('bloques-data').textContent);
     const LIBROS_ESPECIALES = JSON.parse(document.getElementById('libros-especiales-data').textContent);
 </script>
-{% if not stats_vacio and request.es_personal_programacion %}
+{# El mismo gate que la sección de stats: si el panel se pinta, sus datos deben viajar. #}
+{% if not stats_vacio %}
 {{ stats_data|json_script:"stats-data" }}
 <script>let STATS_JSON = JSON.parse(document.getElementById('stats-data').textContent);</script>
 {% endif %}

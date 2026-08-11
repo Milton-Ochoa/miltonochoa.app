@@ -4,6 +4,7 @@ dashboard_colegios, cargar_grados, clonación de configuración (A y B),
 _construir_stats e historial de cambios.
 """
 import json
+from django.core.cache import cache
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from datetime import date, time
@@ -342,6 +343,98 @@ class ConstruirStatsTest(TestCase):
         # 10-1 no tiene asignacion de libro ni clases (no sale porque no tiene materias en universo ni conteo para esa materia)
         # Verificamos que al menos 11-1 sí aparece (tiene asignacion)
         self.assertIn('11-1', stats)
+
+
+class StatsVisiblesParaColegioTest(TestCase):
+    """
+    El panel "Estadísticas de avance" (vistas Simple y Detallada) debe verlo también el
+    gestor de colegio, no solo el staff de programación. Antes el template lo gateaba con
+    `request.es_personal_programacion`, así que el gestor cargaba el dashboard sin panel
+    y sin el json_script `stats-data` que lo alimenta.
+    """
+
+    def setUp(self):
+        cache.clear()  # el dashboard cachea matriz/stats por (colegio, año)
+        self.client = Client(HTTP_HOST='programacion.testserver')
+        col = Colegio.objects.create(
+            nombre='Col Panel', departamento='Santander', ciudad='BGA'
+        )
+        self.colegio = ColegioAnio.objects.create(colegio=col, anio=2026, activo=True)
+
+        materia = Materia.objects.create(nombre='Matematicas', color='#e74c3c')
+        grado   = Grado.objects.create(nombre='11-1')
+        bloque  = Bloque.objects.create(
+            colegio=self.colegio, grado=grado,
+            hora_inicio=time(8, 0), hora_fin=time(10, 0),
+        )
+        libro = NombreLibro.objects.create(nombre='Libro Panel')
+        from programacion.configuracion.models import Unidad
+        Unidad.objects.create(libro=libro, materia=materia, numero=1, nombre='Unidad 1')
+        Asignacion.objects.create(
+            colegio=self.colegio, grado=grado, libro=libro,
+            fecha_inicio=date(2026, 1, 1), fecha_fin=date(2026, 12, 31),
+        )
+        Clase.objects.create(
+            colegio=self.colegio, bloque=bloque, fecha=date(2026, 3, 10),
+            profesor=Profesor.objects.create(nombre='Carlos', apellido='Lopez'),
+            materia=materia, unidad='1',
+        )
+
+        from usuarios.models import UsuarioColegio
+        gestor = User.objects.create_user('gestor_panel', password='pass123')
+        UsuarioColegio.objects.create(user=gestor, colegio=col)
+
+    def _html_gestor(self):
+        self.client.login(username='gestor_panel', password='pass123')
+        # El middleware fuerza id_col al año activo del colegio del perfil.
+        return self.client.get('/colegios/').content.decode()
+
+    def test_gestor_colegio_ve_el_panel_de_estadisticas(self):
+        html = self._html_gestor()
+        self.assertIn('id="seccion-stats"', html)
+        self.assertIn('Estadísticas de avance', html)
+
+    def test_gestor_colegio_ve_las_dos_vistas(self):
+        html = self._html_gestor()
+        self.assertIn('id="btn-vista-simple"', html)
+        self.assertIn('id="btn-vista-detallada"', html)
+
+    def test_gestor_colegio_recibe_los_datos_del_panel(self):
+        # Sin el json_script el panel se pinta vacío: initStats() sale por STATS_JSON undefined.
+        html = self._html_gestor()
+        self.assertIn('id="stats-data"', html)
+        self.assertIn('Libro Panel', html)
+
+    def test_gestor_colegio_no_ve_acciones_de_edicion(self):
+        # El panel es de solo lectura: abrirlo al gestor no debe destapar la edición.
+        # Se comprueba el MARCADO (botón, modal, doble-clic en la celda), no los literales:
+        # el JS del dashboard se sirve completo a todos y menciona "Crear clase" y
+        # abrirModalCrear() en su cuerpo aunque no haya nada que abrir.
+        html = self._html_gestor()
+        self.assertNotIn('onclick="abrirModalCrear()"', html)
+        self.assertNotIn('id="modalClase"', html)
+        self.assertNotIn('ondblclick=', html)
+
+    def test_staff_sigue_viendo_el_panel(self):
+        User.objects.create_superuser('admin_panel', password='pass123')
+        self.client.login(username='admin_panel', password='pass123')
+        html = self.client.get(f'/colegios/?id_col={self.colegio.id}').content.decode()
+        self.assertIn('id="seccion-stats"', html)
+        self.assertIn('id="stats-data"', html)
+
+    def test_colegio_sin_clases_no_muestra_el_panel(self):
+        # stats_vacio sigue mandando: sin datos no se pinta el panel (ni para el gestor).
+        col2 = Colegio.objects.create(
+            nombre='Col Vacio', departamento='Santander', ciudad='BGA'
+        )
+        ColegioAnio.objects.create(colegio=col2, anio=2026, activo=True)
+        from usuarios.models import UsuarioColegio
+        gestor2 = User.objects.create_user('gestor_vacio', password='pass123')
+        UsuarioColegio.objects.create(user=gestor2, colegio=col2)
+        self.client.login(username='gestor_vacio', password='pass123')
+        html = self.client.get('/colegios/').content.decode()
+        self.assertNotIn('id="seccion-stats"', html)
+        self.assertNotIn('id="stats-data"', html)
 
 
 class HistorialCambioTest(TestCase):
