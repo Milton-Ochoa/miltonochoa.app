@@ -891,6 +891,26 @@ checkboxes de tipo y rango de fechas). Tests en
   (lo fija el middleware) controla el menú completo en `base.html`. El staff **no** es
   `is_staff`. El panel y el CRUD de usuarios de etiqueta (`usuarios.views.solo_admin`) y
   las acciones destructivas/borrado siguen gated a `is_superuser`.
+- **Sacar a alguien del sistema: se INHABILITA, no se elimina.** En la app **no existe**
+  "eliminar usuario" (se retiraron vistas, URLs, botones y JS en ago 2026); el borrado real
+  queda solo en `/admin/` (superusuario). **Por qué:** todas las FK de auditoría son
+  `SET_NULL` (`CancelacionClase.registrado_por`, `PagoRealizado.marcado_por`,
+  `Movimiento.usuario`, `HistorialCambio`, `EventoOrden`…) → borrar el `User` **destruye el
+  rastro de quién hizo qué** y es irreversible. En su lugar se conmuta `User.is_active` con
+  `ajax_activar_usuario` (`/usuarios/ajax/activar/`, gate `es_personal_programacion`, para
+  colegio/profesor por `perfil_id`) y `ajax_activar_usuario_area`
+  (`/usuarios/ajax/area/activar/`, gate `solo_admin`, para los de etiqueta por `user_id`).
+  Ambas mandan el **estado deseado explícito** (`activo=1/0`, no un toggle ciego → idempotente
+  con dos pestañas abiertas) y guardan con `update_fields=['is_active']` + `logger.info`.
+  **No se toca la ruta de autenticación:** `ModelBackend` (no hay `AUTHENTICATION_BACKENDS`
+  custom) ya rechaza al inactivo en el login —con el mensaje genérico, sin revelar que la
+  cuenta existe— y convierte su sesión abierta en anónima al siguiente request. En la UI los
+  inhabilitados quedan **ocultos por defecto** con un control "Ver inhabilitados" (en el panel
+  del apex quita el `d-none` de las filas `data-inactivo="1"`; en `gestionar.html` se descarta
+  la fila dentro de `filtradas()` para que el contador y la paginación queden coherentes).
+  OJO: en el panel el badge "Clave activa" habla de la **contraseña**, no del usuario (el del
+  usuario es el badge rojo "Inhabilitado"). Efecto colateral deseado: un inhabilitado
+  desaparece de los selectores de asignación de bodega (ya filtran `is_active=True`).
 - **Contraseñas (dos flujos):**
   - **Colegios/profesores:** el staff de programación **asigna la contraseña a mano** al
     crear y al resetear (ya no es aleatoria). `ajax_crear_usuario`/`ajax_resetear_password`
@@ -1224,7 +1244,7 @@ programación, patrón `financiera.pagos`). Montadas en `programacion/urls.py` (
 python manage.py check                       # debe quedar limpio
 python manage.py makemigrations --check --dry-run   # no debe proponer migraciones
 python manage.py migrate
-python manage.py test                        # baseline: 1072 tests OK
+python manage.py test                        # baseline: 1092 tests OK
 python manage.py runserver
 ```
 
@@ -1296,7 +1316,7 @@ Los soportes nunca se sirven por URL pública: se proxian por una vista protegid
   una arista al grafo y las copias locales que ya aplicaron la original fallan con
   `InconsistentMigrationHistory`, así que en una migración ya publicada `atomic = False` es
   la salida sin daños colaterales.
-- Ejecuta `python manage.py test` y compara con el baseline (1072 OK).
+- Ejecuta `python manage.py test` y compara con el baseline (1092 OK).
 - **Trabajo por fases (planes multi-sesión): NO se corre la suite completa en cada fase.** Cuando
   un plan reparte el trabajo en fases (1 fase = 1 sesión) y una fase ya confirmó el baseline, las
   fases siguientes corren **solo los tests de su sesión y los del área que sus cambios pudieran

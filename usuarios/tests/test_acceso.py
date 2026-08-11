@@ -89,6 +89,37 @@ class LoginViewTest(TestCase):
         self.assertEqual(r.status_code, 302)
 
 
+class UsuarioInhabilitadoTest(TestCase):
+    """`is_active=False` cierra la puerta sin tocar la ruta de autenticación: `ModelBackend`
+    rechaza el login y convierte la sesión ya abierta en anónima en el siguiente request."""
+
+    def setUp(self):
+        self.apex_client = Client()
+        self.area_client = Client(HTTP_HOST='programacion.testserver')
+        self.grupo, _ = Group.objects.get_or_create(name=GRUPO_STAFF_PROGRAMACION)
+        self.user = User.objects.create_user('emp_off', password='pass', email='off@e.com')
+        self.user.groups.add(self.grupo)
+
+    def test_inhabilitado_no_puede_iniciar_sesion(self):
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+        r = self.apex_client.post('/usuarios/login/', {
+            'username': 'emp_off', 'password': 'pass',
+        })
+        self.assertEqual(r.status_code, 200)   # re-renderiza el login
+        # Mensaje genérico a propósito: no revela si la cuenta existe.
+        self.assertContains(r, 'incorrectos')
+
+    def test_sesion_abierta_muere_al_inhabilitar(self):
+        self.area_client.login(username='emp_off', password='pass')
+        self.assertEqual(self.area_client.get('/').status_code, 200)
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+        r = self.area_client.get('/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/usuarios/login/', r['Location'])
+
+
 # ── Middleware de control de acceso ───────────────────────────
 
 class MiddlewareAccesoTest(TestCase):
